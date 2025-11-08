@@ -23,7 +23,16 @@ public class WebSocketEventListener {
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
-        logger.info("Received a new web socket connection");
+        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+
+        String username = (String) Objects.requireNonNull(headerAccessor.getSessionAttributes()).get("username");
+        if (username != null) {
+            logger.info("User Connected : {}", username);
+            Message chatMessage = new Message(username, username + " joined the chat");
+            messagingTemplate.convertAndSend("/topic/public", chatMessage);
+        } else {
+            logger.info("Received a new web socket connection (unauthenticated)");
+        }
     }
 
     @EventListener

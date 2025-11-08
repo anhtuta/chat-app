@@ -66,3 +66,27 @@ When a message arrives at `@MessageMapping("/chat.send")`, Spring:
 - Minimal performance overhead (just a HashMap lookup)
 
 The solution now only validates that WebSocket messages come from authenticated users, without tracking cookie deletion.
+
+## Handles join notifications in BE
+
+1. **Backend now handles join notifications** (`WebSocketEventListener`):
+
+   - Updated `handleWebSocketConnectListener` to automatically send a join notification when a user connects
+   - Uses the same pattern as disconnect notifications for consistency
+
+2. **Removed frontend join notification** (`index.html`):
+
+   - Removed the manual `stompClient.send("/app/chat.addUser", ...)` call
+   - Added a comment explaining that the backend handles it automatically
+
+3. **Cleaned up unused code** (`WebSocketController`):
+   - Removed the `addUser` method since it's no longer needed
+
+## Benefits
+
+- Consistent behavior: both join and disconnect are handled by the backend
+- More secure: join notifications can't be faked by clients
+- Cleaner frontend: less code to maintain
+- Automatic: notifications happen when the WebSocket connection is established
+
+When a user connects, the backend automatically broadcasts "{username} joined the chat" to all clients, just like it does when they disconnect.

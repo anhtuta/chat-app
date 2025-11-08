@@ -38,23 +38,6 @@ public class WebSocketController {
         return messageRepository.save(message);
     }
 
-    @MessageMapping("/chat.addUser")
-    @SendTo("/topic/public")
-    @NonNull
-    public Message addUser(@Payload @NonNull Message message, SimpMessageHeaderAccessor headerAccessor) {
-        // Get username from WebSocket session attributes (set during handshake)
-        String username = getUsernameFromSession(headerAccessor);
-
-        if (username == null) {
-            throw new SecurityException("User is not authenticated. Please login and reconnect.");
-        }
-
-        // Use authenticated username (prevent spoofing)
-        message.setSender(username);
-
-        return message;
-    }
-
     /**
      * Gets username from WebSocket session attributes.
      * This is set during WebSocket handshake by WebSocketHandshakeInterceptor
