@@ -2,7 +2,15 @@
 
 A simple chat application using Spring Boot + WebSocket
 
-Ref: https://www.callicoder.com/spring-boot-websocket-chat-example/
+Ref:
+
+- https://www.callicoder.com/spring-boot-websocket-chat-example/
+- Cursor AI
+
+I will mainly use Cursor editor to help me to code, my main responsibilities are:
+
+- Prompt
+- Review code
 
 ## How Spring converts JSON to Message
 
