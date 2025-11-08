@@ -23,7 +23,17 @@ public class WebSocketController {
     @MessageMapping("/chat.send")
     @SendTo("/topic/public")
     @NonNull
-    public Message sendMessage(@Payload @NonNull Message message) {
+    public Message sendMessage(@Payload @NonNull Message message, SimpMessageHeaderAccessor headerAccessor) {
+        // Get username from WebSocket session attributes (stored during connection)
+        String authenticatedUsername = getUsernameFromSession(headerAccessor);
+
+        if (authenticatedUsername == null) {
+            throw new SecurityException("User is not authenticated. Please reconnect.");
+        }
+
+        // Use authenticated username (prevent spoofing)
+        message.setSender(authenticatedUsername);
+
         // Save message to database
         return messageRepository.save(message);
     }
@@ -32,11 +42,30 @@ public class WebSocketController {
     @SendTo("/topic/public")
     @NonNull
     public Message addUser(@Payload @NonNull Message message, SimpMessageHeaderAccessor headerAccessor) {
-        // Add username in websocket session
-        Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
-        if (sessionAttributes != null && message.getSender() != null) {
-            sessionAttributes.put("username", message.getSender());
+        // Get username from WebSocket session attributes (set during handshake)
+        String username = getUsernameFromSession(headerAccessor);
+
+        if (username == null) {
+            throw new SecurityException("User is not authenticated. Please login and reconnect.");
         }
+
+        // Use authenticated username (prevent spoofing)
+        message.setSender(username);
+
         return message;
     }
+
+    /**
+     * Gets username from WebSocket session attributes.
+     * This is set during WebSocket handshake by WebSocketHandshakeInterceptor
+     * which extracts it from the HTTP session.
+     */
+    private String getUsernameFromSession(SimpMessageHeaderAccessor headerAccessor) {
+        Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
+        if (sessionAttributes != null) {
+            return (String) sessionAttributes.get("username");
+        }
+        return null;
+    }
+
 }

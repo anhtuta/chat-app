@@ -39,3 +39,30 @@ When a message arrives at `@MessageMapping("/chat.send")`, Spring:
 1. Extracts the JSON payload (via `@Payload`)
 2. Uses `Jackson` to deserialize the JSON string into a `Message` object
 3. Matches JSON fields to `Message` fields (sender, content, timestamp)
+
+## WebSocket Authentication
+
+**How it works:**
+
+1. **During WebSocket handshake** (`WebSocketHandshakeInterceptor`):
+
+   - Extracts username from the HTTP session (set during login)
+   - Stores it in WebSocket session attributes
+
+2. **On each WebSocket message** (`WebSocketSecurityChannelInterceptor`):
+
+   - Validates that username exists in WebSocket session attributes
+   - Rejects message if not authenticated
+
+3. **In message handlers** (`WebSocketController`):
+   - Uses the authenticated username from WebSocket session
+   - Prevents spoofing (client can't fake the sender)
+
+**Result:**
+
+- Simple authentication validation
+- Prevents message spoofing
+- No complex session tracking
+- Minimal performance overhead (just a HashMap lookup)
+
+The solution now only validates that WebSocket messages come from authenticated users, without tracking cookie deletion.

@@ -1,7 +1,8 @@
 {
     "editor.formatOnSave": false,
     "cSpell.words": [
-        "chatapp"
+        "chatapp",
+        "springframework"
     ],
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "automatic"
