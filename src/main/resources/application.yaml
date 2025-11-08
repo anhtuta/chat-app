@@ -1,3 +1,14 @@
 spring:
   application:
     name: chat-app
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chatdb
+    username: postgres
+    password: 
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+server:
+  port: 9010
