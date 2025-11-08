@@ -163,3 +163,29 @@ In your `SecurityConfig`:
 | **Lifetime** | Until timeout/logout             | Until expiration            |
 
 **Summary**: The session stores your data on the server, and the `JSESSIONID` cookie is just a key to find that data.
+
+# How Spring Security uses `SPRING_SECURITY_CONTEXT_KEY`:
+
+- We store it in `authenticateUser()`:
+
+```java
+session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
+```
+
+- Spring Security retrieves it automatically on each HTTP request via its filter chain (`HttpSessionSecurityContextRepository`), loads it into `SecurityContextHolder`, and makes it available via `SecurityContextHolder.getContext()`.
+
+- We use it in:
+  1. `checkAuth()` endpoint — reads from `SecurityContextHolder.getContext().getAuthentication()`
+  2. Spring Security authorization — `.authenticated()` checks use the `SecurityContext`
+  3. `WebSocketHandshakeInterceptor` — fallback when the user object isn't in session
+
+We need it because:
+
+1. Spring Security's authorization checks (`.authenticated()` in `SecurityConfig`) rely on the SecurityContext being in the session.
+2. The `/check` endpoint uses `SecurityContextHolder.getContext().getAuthentication()`.
+3. It's the standard Spring Security pattern for session-based authentication.
+
+We could simplify by removing it and using only the user object, but that would require:
+
+- Changing `checkAuth()` to read from the session instead of `SecurityContextHolder`
+- Ensuring Spring Security's `.authenticated()` checks still work (they may not without a SecurityContext)
