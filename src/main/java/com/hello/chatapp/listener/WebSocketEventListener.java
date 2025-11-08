@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import java.util.Objects;
+import java.util.Map;
 
 @Component
 public class WebSocketEventListener {
@@ -23,27 +23,27 @@ public class WebSocketEventListener {
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
-        StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
-
-        String username = (String) Objects.requireNonNull(headerAccessor.getSessionAttributes()).get("username");
-        if (username != null) {
-            logger.info("User Connected : {}", username);
-            Message chatMessage = new Message(username, username + " joined the chat");
-            messagingTemplate.convertAndSend("/topic/public", chatMessage);
-        } else {
-            logger.info("Received a new web socket connection (unauthenticated)");
-        }
+        // Join notification is handled in WebSocketSecurityChannelInterceptor when CONNECT command is received,
+        // as session attributes are more reliably available there. At this point, we cannot get username from
+        // session attributes (headerAccessor.getSessionAttributes = null)
+        logger.info("WebSocket session connected");
     }
 
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
 
-        String username = (String) Objects.requireNonNull(headerAccessor.getSessionAttributes()).get("username");
-        if (username != null) {
-            logger.info("User Disconnected : {}", username);
-            Message chatMessage = new Message(username, username + " has left the chat");
-            messagingTemplate.convertAndSend("/topic/public", chatMessage);
+        Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
+        if (sessionAttributes != null) {
+            String username = (String) sessionAttributes.get("username");
+            if (username != null) {
+                logger.info("User Disconnected : {}", username);
+                // Create disconnect notification (not saved to DB)
+                Message disconnectMessage = new Message(username, "[SYSTEM] " + username + " disconnected");
+                messagingTemplate.convertAndSend("/topic/public", disconnectMessage);
+            }
+        } else {
+            logger.warn("User disconnected but session attributes not available");
         }
     }
 }

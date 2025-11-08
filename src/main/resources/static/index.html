@@ -107,6 +107,17 @@
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
 
+        .message.system {
+            background: transparent;
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            margin: 10px auto;
+            max-width: 100%;
+            padding: 8px;
+            font-size: 14px;
+        }
+
         .message-header {
             font-size: 12px;
             opacity: 0.8;
@@ -313,19 +324,33 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message';
 
-            const isOwnMessage = message.sender === username;
-            messageDiv.className += isOwnMessage ? ' sent' : ' received';
+            // Check if it's a system message (starts with "[SYSTEM] ")
+            const isSystemMessage = message.content && message.content.startsWith("[SYSTEM] ");
+            
+            if (isSystemMessage) {
+                messageDiv.className += ' system';
+                const content = document.createElement('div');
+                content.className = 'message-content';
+                // Remove the "[SYSTEM] " prefix for display
+                content.textContent = message.content.replace("[SYSTEM] ", "");
+                messageDiv.appendChild(content);
+            } else {
+                // Normal message
+                const isOwnMessage = message.sender === username;
+                messageDiv.className += isOwnMessage ? ' sent' : ' received';
 
-            const header = document.createElement('div');
-            header.className = 'message-header';
-            header.textContent = message.sender + ' • ' + new Date(message.timestamp).toLocaleTimeString();
+                const header = document.createElement('div');
+                header.className = 'message-header';
+                header.textContent = message.sender + ' • ' + new Date(message.timestamp).toLocaleTimeString();
 
-            const content = document.createElement('div');
-            content.className = 'message-content';
-            content.textContent = message.content;
+                const content = document.createElement('div');
+                content.className = 'message-content';
+                content.textContent = message.content;
 
-            messageDiv.appendChild(header);
-            messageDiv.appendChild(content);
+                messageDiv.appendChild(header);
+                messageDiv.appendChild(content);
+            }
+            
             messagesElement.appendChild(messageDiv);
             messagesElement.scrollTop = messagesElement.scrollHeight;
         }

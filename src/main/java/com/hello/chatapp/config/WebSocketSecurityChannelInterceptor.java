@@ -1,8 +1,12 @@
 package com.hello.chatapp.config;
 
+import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.repository.MessageRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
-import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -18,13 +22,22 @@ import java.util.Map;
 @Component
 public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
 
+    @Autowired
+    @Lazy
+    private SimpMessageSendingOperations messagingTemplate;
+
+    @Autowired
+    private MessageRepository messageRepository;
+
     @Override
-    public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+    public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
+            @NonNull MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (accessor != null) {
-            // Skip validation for CONNECT command (handled by handshake interceptor)
+            // Handle CONNECT command - send join notification
             if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                handleConnect(accessor);
                 return message;
             }
 
@@ -33,6 +46,22 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
         }
 
         return message;
+    }
+
+    /**
+     * Handles STOMP CONNECT command by sending a join notification.
+     * Session attributes should be available at this point.
+     */
+    private void handleConnect(StompHeaderAccessor accessor) {
+        Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
+        if (sessionAttributes != null) {
+            String username = (String) sessionAttributes.get("username");
+            if (username != null && !username.trim().isEmpty()) {
+                Message joinMessage = new Message(username, "[SYSTEM] " + username + " connected");
+                Message savedMessage = messageRepository.save(joinMessage);
+                messagingTemplate.convertAndSend("/topic/public", savedMessage);
+            }
+        }
     }
 
     /**
