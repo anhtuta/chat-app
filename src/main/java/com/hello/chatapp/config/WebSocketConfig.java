@@ -19,6 +19,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
         // The messages whose destination starts with “/topic” should be routed to the message broker.
         // Message broker broadcasts messages to all the connected clients who are subscribed to a particular topic.
+        // enableSimpleBroker --> SimpleBrokerMessageHandler is used to maintain the subscription mapping.
         config.enableSimpleBroker("/topic");
         // The messages whose destination starts with “/app” should be routed to message-handling methods (check WebSocketController).
         // E.g. a message with destination /app/chat.send will be routed to a method that has @MessageMapping("/chat.send")
