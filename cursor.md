@@ -287,3 +287,12 @@ private SimpMessagingTemplate messagingTemplate;
 | **Your Custom Registry**   | ✅ Full    | ✅ Simple  | ✅ Yes                     |
 | Spring's SimpUserRegistry  | ⚠️ Limited | ⚠️ Medium  | ❌ No (with simple broker) |
 | External Broker + Registry | ✅ Full    | ❌ Complex | N/A                        |
+
+# Session-based authentication (no JWT as requested)
+
+Spring Security isn't recognizing manual session attributes. We need to set an `Authentication` in the `SecurityContext`.
+
+1. **Creating proper Authentication object** - Using `UsernamePasswordAuthenticationToken` with user's username and `ROLE_USER` authority
+2. **Setting SecurityContext** - Storing the authentication in Spring Security's `SecurityContext`
+3. **Storing in session** - Using Spring Security's session key (`HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY`) to store the SecurityContext
+4. **Updated checkAuth** - Now checks `SecurityContext` instead of manual session attributes

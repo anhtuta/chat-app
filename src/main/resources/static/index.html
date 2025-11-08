@@ -42,6 +42,28 @@
             text-align: center;
             font-size: 24px;
             font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            flex: 1;
+        }
+
+        .logout-button {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .logout-button:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
 
         .chat-messages {
@@ -103,14 +125,6 @@
             gap: 10px;
         }
 
-        .username-input {
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 14px;
-            width: 150px;
-        }
-
         .message-input {
             flex: 1;
             padding: 12px;
@@ -119,8 +133,7 @@
             font-size: 16px;
         }
 
-        .message-input:focus,
-        .username-input:focus {
+        .message-input:focus {
             outline: none;
             border-color: #667eea;
         }
@@ -193,12 +206,14 @@
 
 <body>
     <div class="chat-container">
-        <div class="chat-header">💬 Chat Application</div>
+        <div class="chat-header">
+            <div class="header-title">💬 Chat Application</div>
+            <button class="logout-button" onclick="logout()">Logout</button>
+        </div>
         <div class="status disconnected" id="status">Disconnected</div>
         <div class="loading-indicator" id="loadingIndicator">Loading previous messages</div>
         <div class="chat-messages" id="chatMessages"></div>
         <div class="chat-input-container">
-            <input type="text" id="username" class="username-input" placeholder="Your name" />
             <input type="text" id="messageInput" class="message-input" placeholder="Type a message..." />
             <button class="send-button" onclick="sendMessage()">Send</button>
         </div>
@@ -210,8 +225,40 @@
         const statusElement = document.getElementById('status');
         const messagesElement = document.getElementById('chatMessages');
         const messageInput = document.getElementById('messageInput');
-        const usernameInput = document.getElementById('username');
         const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // Check authentication on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/auth/check', {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+                
+                if (data.authenticated) {
+                    username = data.username;
+                    connect();
+                } else {
+                    window.location.href = '/login.html';
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                window.location.href = '/login.html';
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                window.location.href = '/login.html';
+            } catch (error) {
+                console.error('Logout failed:', error);
+                window.location.href = '/login.html';
+            }
+        }
 
         function connect() {
             const socket = new SockJS('/ws');
@@ -221,8 +268,6 @@
                 console.log('Connected: ' + frame);
                 statusElement.textContent = 'Connected';
                 statusElement.className = 'status connected';
-
-                username = usernameInput.value || 'Anonymous';
 
                 // Notify that user joined
                 stompClient.send("/app/chat.addUser", {}, JSON.stringify({
@@ -255,13 +300,8 @@
 
         function sendMessage() {
             const message = messageInput.value.trim();
-            const currentUsername = usernameInput.value.trim() || 'Anonymous';
 
             if (message && stompClient && stompClient.connected) {
-                if (currentUsername !== username) {
-                    username = currentUsername;
-                }
-
                 const chatMessage = {
                     sender: username,
                     content: message,
@@ -309,25 +349,13 @@
             }
         }
 
-        // Connect on page load
-        connect();
+        // Check authentication and connect on page load
+        checkAuth();
 
         // Send message on Enter key
         messageInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
                 sendMessage();
-            }
-        });
-
-        // Update username and reconnect if changed while connected
-        usernameInput.addEventListener('change', function () {
-            if (stompClient && stompClient.connected && usernameInput.value.trim()) {
-                const oldUsername = username;
-                username = usernameInput.value.trim();
-                if (oldUsername !== username) {
-                    disconnect();
-                    setTimeout(connect, 500);
-                }
             }
         });
     </script>
