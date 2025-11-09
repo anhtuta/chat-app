@@ -17,7 +17,6 @@ import java.util.Map;
  */
 public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
 
-    @SuppressWarnings({"OverlyComplexMethod", "D"})
     @Override
     public boolean beforeHandshake(@NonNull ServerHttpRequest request,
             @NonNull ServerHttpResponse response,

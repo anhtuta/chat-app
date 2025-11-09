@@ -47,17 +47,17 @@ public class AuthController {
             User user = authService.register(request.getUsername(), request.getPassword());
 
             return ResponseEntity.ok(AuthResponse.builder()
-                .success(true)
-                .message("Registration successful")
-                .username(user.getUsername())
-                .build());
+                    .success(true)
+                    .message("Registration successful")
+                    .username(user.getUsername())
+                    .build());
 
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
-                .body(AuthResponse.builder()
-                    .success(false)
-                    .message(e.getMessage())
-                    .build());
+                    .body(AuthResponse.builder()
+                            .success(false)
+                            .message(e.getMessage())
+                            .build());
         }
     }
 
@@ -76,17 +76,17 @@ public class AuthController {
             authenticateUser(user, session);
 
             return ResponseEntity.ok(AuthResponse.builder()
-                .success(true)
-                .message("Login successful")
-                .username(user.getUsername())
-                .build());
+                    .success(true)
+                    .message("Login successful")
+                    .username(user.getUsername())
+                    .build());
 
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(AuthResponse.builder()
-                    .success(false)
-                    .message(e.getMessage())
-                    .build());
+                    .body(AuthResponse.builder()
+                            .success(false)
+                            .message(e.getMessage())
+                            .build());
         }
     }
 
@@ -94,30 +94,30 @@ public class AuthController {
     public ResponseEntity<AuthResponse> logout(HttpSession session) {
         // Clear SecurityContext
         SecurityContextHolder.clearContext();
-        
+
         // Invalidate session
         session.invalidate();
 
         return ResponseEntity.ok(AuthResponse.builder()
-            .success(true)
-            .message("Logout successful")
-            .build());
+                .success(true)
+                .message("Logout successful")
+                .build());
     }
 
     @GetMapping("/check")
     public ResponseEntity<AuthCheckResponse> checkAuth() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        if (authentication != null && authentication.isAuthenticated() 
+        if (authentication != null && authentication.isAuthenticated()
                 && !authentication.getName().equals("anonymousUser")) {
             return ResponseEntity.ok(AuthCheckResponse.builder()
-                .authenticated(true)
-                .username(authentication.getName())
-                .build());
+                    .authenticated(true)
+                    .username(authentication.getName())
+                    .build());
         } else {
             return ResponseEntity.ok(AuthCheckResponse.builder()
-                .authenticated(false)
-                .build());
+                    .authenticated(false)
+                    .build());
         }
     }
 
@@ -128,18 +128,18 @@ public class AuthController {
     private ResponseEntity<AuthResponse> validateUserRequest(UserRequest request) {
         if (request.getUsername() == null || request.getUsername().trim().isEmpty()) {
             return ResponseEntity.badRequest()
-                .body(AuthResponse.builder()
-                    .success(false)
-                    .message("Username is required")
-                    .build());
+                    .body(AuthResponse.builder()
+                            .success(false)
+                            .message("Username is required")
+                            .build());
         }
 
         if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
             return ResponseEntity.badRequest()
-                .body(AuthResponse.builder()
-                    .success(false)
-                    .message("Password is required")
-                    .build());
+                    .body(AuthResponse.builder()
+                            .success(false)
+                            .message("Password is required")
+                            .build());
         }
 
         return null; // Validation passed
@@ -148,10 +148,9 @@ public class AuthController {
     private void authenticateUser(User user, HttpSession session) {
         // Create authentication token
         Authentication authentication = new UsernamePasswordAuthenticationToken(
-            user.getUsername(),
-            null,
-            Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER"))
-        );
+                user.getUsername(),
+                null,
+                Collections.singletonList(new SimpleGrantedAuthority("ROLE_USER")));
 
         // Set authentication in SecurityContext
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
@@ -160,7 +159,7 @@ public class AuthController {
 
         // Store SecurityContext in session
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
-        
+
         // Store user object in session
         session.setAttribute("user", user);
     }
