@@ -1,5 +1,6 @@
 package com.hello.chatapp.config;
 
+import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,7 +52,8 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
      */
     private void handleConnect(User user) {
         Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
-        messagingTemplate.convertAndSend("/topic/public", joinMessage);
+        MessageResponse response = MessageResponse.fromMessage(joinMessage);
+        messagingTemplate.convertAndSend("/topic/public", response);
     }
 
     /**

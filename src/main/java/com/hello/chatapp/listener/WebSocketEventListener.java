@@ -1,5 +1,6 @@
 package com.hello.chatapp.listener;
 
+import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import org.slf4j.Logger;
@@ -41,7 +42,8 @@ public class WebSocketEventListener {
                 logger.info("User Disconnected : {}", user.getUsername());
                 // Create disconnect notification (not saved to DB)
                 Message disconnectMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " disconnected");
-                messagingTemplate.convertAndSend("/topic/public", disconnectMessage);
+                MessageResponse response = MessageResponse.fromMessage(disconnectMessage);
+                messagingTemplate.convertAndSend("/topic/public", response);
             }
         } else {
             logger.warn("User disconnected but session attributes not available");

@@ -19,13 +19,15 @@ public class MessageController {
     }
 
     @GetMapping("/messages")
-    public List<Message> getAllMessages() {
+    public List<MessageResponse> getPublicMessages() {
         try {
             // Simulate a delay to test the loading indicator
             Thread.sleep(500);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return messageRepository.findAllByOrderByTimestampAsc();
+        return messageRepository.findAllPublicMessages().stream()
+                .map(MessageResponse::fromMessage)
+                .collect(Collectors.toList());
     }
 }
