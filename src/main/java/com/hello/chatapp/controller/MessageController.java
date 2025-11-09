@@ -2,10 +2,7 @@ package com.hello.chatapp.controller;
 
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.repository.MessageRepository;
-import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,11 +28,4 @@ public class MessageController {
         }
         return messageRepository.findAllByOrderByTimestampAsc();
     }
-
-    @PostMapping("/messages")
-    @NonNull
-    public Message createMessage(@RequestBody @NonNull Message message) {
-        return messageRepository.save(message);
-    }
 }
-

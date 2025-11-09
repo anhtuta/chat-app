@@ -35,6 +35,11 @@ public class WebSocketController {
         // Set user (prevent spoofing)
         message.setUser(user);
 
+        // If message is a system message, don't save to database
+        if (message.getContent().startsWith("[SYSTEM] ")) {
+            return message;
+        }
+
         // Save message to database
         return messageRepository.save(message);
     }

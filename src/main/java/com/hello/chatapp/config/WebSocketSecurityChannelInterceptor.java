@@ -2,7 +2,6 @@ package com.hello.chatapp.config;
 
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
-import com.hello.chatapp.repository.MessageRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
@@ -27,23 +26,19 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     @Lazy
     private SimpMessageSendingOperations messagingTemplate;
 
-    @Autowired
-    private MessageRepository messageRepository;
-
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
             @NonNull MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (accessor != null) {
-            // Handle CONNECT command - send join notification
-            if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-                handleConnect(accessor);
-                return message;
-            }
+            // Validate authentication for ALL commands
+            User user = validateAuthentication(accessor);
 
-            // For all other commands (SEND, SUBSCRIBE, etc.), validate authentication
-            validateAuthentication(accessor);
+            // For CONNECT command, also send join notification
+            if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                handleConnect(user);
+            }
         }
 
         return message;
@@ -51,25 +46,19 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
 
     /**
      * Handles STOMP CONNECT command by sending a join notification.
-     * Session attributes should be available at this point.
+     * User is already validated at this point.
+     * Note: System messages are not saved to database, only sent to clients.
      */
-    private void handleConnect(StompHeaderAccessor accessor) {
-        Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
-        if (sessionAttributes != null) {
-            User user = (User) sessionAttributes.get("user");
-            if (user != null) {
-                Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
-                Message savedMessage = messageRepository.save(joinMessage);
-                messagingTemplate.convertAndSend("/topic/public", savedMessage);
-            }
-        }
+    private void handleConnect(User user) {
+        Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
+        messagingTemplate.convertAndSend("/topic/public", joinMessage);
     }
 
     /**
      * Validates that the user is authenticated (user object exists in WebSocket session).
-     * Throws SecurityException if not authenticated.
+     * Returns the authenticated user if valid, throws SecurityException if not authenticated.
      */
-    private void validateAuthentication(StompHeaderAccessor accessor) {
+    private User validateAuthentication(StompHeaderAccessor accessor) {
         Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
 
         if (sessionAttributes == null) {
@@ -81,6 +70,8 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
         if (user == null) {
             throw new SecurityException("User is not authenticated. Please login and reconnect.");
         }
+
+        return user;
     }
 }
 
