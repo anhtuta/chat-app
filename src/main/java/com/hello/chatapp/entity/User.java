@@ -1,5 +1,6 @@
 package com.hello.chatapp.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -29,8 +30,12 @@ public class User {
     @Column(nullable = false, unique = true)
     private String username;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String password;
+
+    @Column(nullable = false)
+    private String fullname;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;
@@ -45,6 +50,14 @@ public class User {
     public User(String username, String password) {
         this.username = username;
         this.password = password;
+        this.fullname = username; // Default fullname to username
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public User(String username, String password, String fullname) {
+        this.username = username;
+        this.password = password;
+        this.fullname = fullname;
         this.createdAt = LocalDateTime.now();
     }
 }

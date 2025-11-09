@@ -336,12 +336,17 @@
                 messageDiv.appendChild(content);
             } else {
                 // Normal message
-                const isOwnMessage = message.sender === username;
+                // Get display name: use fullname if available, otherwise username
+                const displayName = (message.user && message.user.fullname) 
+                    ? message.user.fullname 
+                    : (message.user ? message.user.username : 'Unknown');
+                const messageUsername = message.user ? message.user.username : null;
+                const isOwnMessage = messageUsername === username;
                 messageDiv.className += isOwnMessage ? ' sent' : ' received';
 
                 const header = document.createElement('div');
                 header.className = 'message-header';
-                header.textContent = message.sender + ' • ' + new Date(message.timestamp).toLocaleTimeString();
+                header.textContent = displayName + ' • ' + new Date(message.timestamp).toLocaleTimeString();
 
                 const content = document.createElement('div');
                 content.className = 'message-content';

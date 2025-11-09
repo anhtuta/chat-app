@@ -1,6 +1,7 @@
 package com.hello.chatapp.config;
 
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.User;
 import com.hello.chatapp.repository.MessageRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -55,9 +56,9 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     private void handleConnect(StompHeaderAccessor accessor) {
         Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
         if (sessionAttributes != null) {
-            String username = (String) sessionAttributes.get("username");
-            if (username != null && !username.trim().isEmpty()) {
-                Message joinMessage = new Message(username, "[SYSTEM] " + username + " connected");
+            User user = (User) sessionAttributes.get("user");
+            if (user != null) {
+                Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
                 Message savedMessage = messageRepository.save(joinMessage);
                 messagingTemplate.convertAndSend("/topic/public", savedMessage);
             }
@@ -65,7 +66,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     }
 
     /**
-     * Validates that the user is authenticated (username exists in WebSocket session).
+     * Validates that the user is authenticated (user object exists in WebSocket session).
      * Throws SecurityException if not authenticated.
      */
     private void validateAuthentication(StompHeaderAccessor accessor) {
@@ -75,9 +76,9 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
             throw new SecurityException("Session attributes not found. Please reconnect.");
         }
 
-        String username = (String) sessionAttributes.get("username");
+        User user = (User) sessionAttributes.get("user");
 
-        if (username == null || username.trim().isEmpty()) {
+        if (user == null) {
             throw new SecurityException("User is not authenticated. Please login and reconnect.");
         }
     }

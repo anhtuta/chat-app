@@ -161,8 +161,7 @@ public class AuthController {
         // Store SecurityContext in session
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, securityContext);
         
-        // Also store user info for easy access
+        // Store user object in session
         session.setAttribute("user", user);
-        session.setAttribute("username", user.getUsername());
     }
 }

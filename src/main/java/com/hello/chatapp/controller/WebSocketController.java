@@ -1,6 +1,7 @@
 package com.hello.chatapp.controller;
 
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.User;
 import com.hello.chatapp.repository.MessageRepository;
 import org.springframework.lang.NonNull;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -24,29 +25,29 @@ public class WebSocketController {
     @SendTo("/topic/public")
     @NonNull
     public Message sendMessage(@Payload @NonNull Message message, SimpMessageHeaderAccessor headerAccessor) {
-        // Get username from WebSocket session attributes (stored during connection)
-        String authenticatedUsername = getUsernameFromSession(headerAccessor);
+        // Get user from WebSocket session attributes (stored during connection)
+        User user = getUserFromSession(headerAccessor);
 
-        if (authenticatedUsername == null) {
+        if (user == null) {
             throw new SecurityException("User is not authenticated. Please reconnect.");
         }
 
-        // Use authenticated username (prevent spoofing)
-        message.setSender(authenticatedUsername);
+        // Set user (prevent spoofing)
+        message.setUser(user);
 
         // Save message to database
         return messageRepository.save(message);
     }
 
     /**
-     * Gets username from WebSocket session attributes.
+     * Gets User from WebSocket session attributes.
      * This is set during WebSocket handshake by WebSocketHandshakeInterceptor
      * which extracts it from the HTTP session.
      */
-    private String getUsernameFromSession(SimpMessageHeaderAccessor headerAccessor) {
+    private User getUserFromSession(SimpMessageHeaderAccessor headerAccessor) {
         Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
         if (sessionAttributes != null) {
-            return (String) sessionAttributes.get("username");
+            return (User) sessionAttributes.get("user");
         }
         return null;
     }

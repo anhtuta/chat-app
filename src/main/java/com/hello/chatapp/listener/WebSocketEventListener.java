@@ -1,6 +1,7 @@
 package com.hello.chatapp.listener;
 
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,11 +36,11 @@ public class WebSocketEventListener {
 
         Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
         if (sessionAttributes != null) {
-            String username = (String) sessionAttributes.get("username");
-            if (username != null) {
-                logger.info("User Disconnected : {}", username);
+            User user = (User) sessionAttributes.get("user");
+            if (user != null) {
+                logger.info("User Disconnected : {}", user.getUsername());
                 // Create disconnect notification (not saved to DB)
-                Message disconnectMessage = new Message(username, "[SYSTEM] " + username + " disconnected");
+                Message disconnectMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " disconnected");
                 messagingTemplate.convertAndSend("/topic/public", disconnectMessage);
             }
         } else {
