@@ -4,11 +4,11 @@ import com.hello.chatapp.dto.AuthCheckResponse;
 import com.hello.chatapp.dto.AuthResponse;
 import com.hello.chatapp.dto.UserRequest;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.service.AuthService;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -37,57 +37,33 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody UserRequest request) {
-        try {
-            // Validate input
-            ResponseEntity<AuthResponse> validationError = validateUserRequest(request);
-            if (validationError != null) {
-                return validationError;
-            }
+        // Validate input
+        validateUserRequest(request);
 
-            User user = authService.register(request.getUsername(), request.getPassword());
+        User user = authService.register(request.getUsername(), request.getPassword());
 
-            return ResponseEntity.ok(AuthResponse.builder()
-                    .success(true)
-                    .message("Registration successful")
-                    .username(user.getUsername())
-                    .build());
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest()
-                    .body(AuthResponse.builder()
-                            .success(false)
-                            .message(e.getMessage())
-                            .build());
-        }
+        return ResponseEntity.ok(AuthResponse.builder()
+                .success(true)
+                .message("Registration successful")
+                .username(user.getUsername())
+                .build());
     }
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody UserRequest request, HttpSession session) {
-        try {
-            // Validate input
-            ResponseEntity<AuthResponse> validationError = validateUserRequest(request);
-            if (validationError != null) {
-                return validationError;
-            }
+        // Validate input
+        validateUserRequest(request);
 
-            User user = authService.login(request.getUsername(), request.getPassword());
+        User user = authService.login(request.getUsername(), request.getPassword());
 
-            // Authenticate user with Spring Security
-            authenticateUser(user, session);
+        // Authenticate user with Spring Security
+        authenticateUser(user, session);
 
-            return ResponseEntity.ok(AuthResponse.builder()
-                    .success(true)
-                    .message("Login successful")
-                    .username(user.getUsername())
-                    .build());
-
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(AuthResponse.builder()
-                            .success(false)
-                            .message(e.getMessage())
-                            .build());
-        }
+        return ResponseEntity.ok(AuthResponse.builder()
+                .success(true)
+                .message("Login successful")
+                .username(user.getUsername())
+                .build());
     }
 
     @PostMapping("/logout")
@@ -123,26 +99,16 @@ public class AuthController {
 
     /**
      * Validates UserRequest input.
-     * Returns ResponseEntity with error if validation fails, null if valid.
+     * Throws BadRequestException if validation fails.
      */
-    private ResponseEntity<AuthResponse> validateUserRequest(UserRequest request) {
+    private void validateUserRequest(UserRequest request) {
         if (request.getUsername() == null || request.getUsername().trim().isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(AuthResponse.builder()
-                            .success(false)
-                            .message("Username is required")
-                            .build());
+            throw new BadRequestException("Username is required");
         }
 
         if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(AuthResponse.builder()
-                            .success(false)
-                            .message("Password is required")
-                            .build());
+            throw new BadRequestException("Password is required");
         }
-
-        return null; // Validation passed
     }
 
     private void authenticateUser(User user, HttpSession session) {
