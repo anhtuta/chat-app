@@ -3,9 +3,6 @@ package com.hello.chatapp.entity;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -16,42 +13,43 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "messages")
+@Table(name = "group_participants", uniqueConstraints = {
+    @UniqueConstraint(columnNames = {"group_id", "user_id"})
+})
 @Getter
 @Setter
 @NoArgsConstructor
-public class Message {
+public class GroupParticipant {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id", nullable = false)
+    private Group group;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_id", nullable = true)
-    private Group group;
-
-    @Column(nullable = false, length = 1000)
-    private String content;
-
     @Column(nullable = false)
-    private LocalDateTime timestamp;
+    private LocalDateTime joinedAt;
 
     @PrePersist
     protected void onCreate() {
-        if (timestamp == null) {
-            timestamp = LocalDateTime.now();
+        if (joinedAt == null) {
+            joinedAt = LocalDateTime.now();
         }
     }
 
-    public Message(User user, String content) {
+    public GroupParticipant(Group group, User user) {
+        this.group = group;
         this.user = user;
-        this.content = content;
-        this.timestamp = LocalDateTime.now();
+        this.joinedAt = LocalDateTime.now();
     }
 }

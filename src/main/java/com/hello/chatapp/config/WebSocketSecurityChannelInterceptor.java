@@ -1,8 +1,11 @@
 package com.hello.chatapp.config;
 
 import com.hello.chatapp.dto.MessageResponse;
+import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.repository.GroupParticipantRepository;
+import com.hello.chatapp.repository.GroupRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
@@ -18,7 +21,7 @@ import java.util.Map;
 
 /**
  * Channel interceptor that validates WebSocket messages come from authenticated users.
- * Checks that username exists in WebSocket session (set during handshake from HTTP session).
+ * Also validates that users can only subscribe to groups they are members of.
  */
 @Component
 public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
@@ -26,6 +29,12 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     @Autowired
     @Lazy
     private SimpMessageSendingOperations messagingTemplate;
+
+    @Autowired
+    private GroupRepository groupRepository;
+
+    @Autowired
+    private GroupParticipantRepository groupParticipantRepository;
 
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
@@ -39,6 +48,11 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
             // For CONNECT command, also send join notification
             if (StompCommand.CONNECT.equals(accessor.getCommand())) {
                 handleConnect(user);
+            }
+
+            // For SUBSCRIBE command, validate group membership if subscribing to a group topic
+            if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+                validateSubscription(accessor, user);
             }
         }
 
@@ -74,6 +88,45 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
         }
 
         return user;
+    }
+
+    /**
+     * Validates that a user can only subscribe to groups they are members of.
+     * Allows subscription to /topic/public without restriction.
+     * Rejects subscription to group topics if user is not a member.
+     */
+    private void validateSubscription(StompHeaderAccessor accessor, User user) {
+        String destination = accessor.getDestination();
+
+        if (destination == null) {
+            return; // No destination, nothing to validate
+        }
+
+        // Allow subscription to public chat
+        if ("/topic/public".equals(destination)) {
+            return;
+        }
+
+        // Check if subscribing to a group topic (format: /topic/group.{groupId})
+        if (destination.startsWith("/topic/group.")) {
+            try {
+                // Extract group ID from destination (e.g., "/topic/group.1" -> "1")
+                String groupIdStr = destination.substring("/topic/group.".length());
+                Long groupId = Long.parseLong(groupIdStr);
+
+                // Find the group
+                Group group = groupRepository.findById(groupId)
+                        .orElseThrow(() -> new SecurityException("Group not found"));
+
+                // Verify user is a member of the group
+                if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
+                    throw new SecurityException("You are not a member of this group. Subscription denied.");
+                }
+            } catch (NumberFormatException e) {
+                throw new SecurityException("Invalid group topic format");
+            }
+        }
+        // Allow other topics (if any) - you can add more validation here if needed
     }
 }
 
