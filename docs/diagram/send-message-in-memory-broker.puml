@@ -1,0 +1,120 @@
+@startuml
+
+header "Send message flow with In-Memory Broker"
+footer "Author: Tuzaku"
+
+actor User
+participant "WebApp\n(Client)" as WebApp
+participant "WebSocket\nEndpoint\n(/ws)" as WSEndpoint
+participant "Handshake\nInterceptor" as HandshakeInterceptor
+participant "WebSocket\nSecurity\nChannel\nInterceptor" as SecurityInterceptor
+participant "In-Memory\nBroker\n(SimpleBroker)" as Broker
+participant "WebSocket\nController" as Controller
+database PostgreSQL
+
+== WebSocket Connection Setup ==
+
+note right of User
+  User has already logged in
+  and has a valid session.
+end note
+
+User -> WebApp: Open WebSocket connection
+WebApp -> WSEndpoint: WebSocket Handshake Request
+WSEndpoint -> HandshakeInterceptor: beforeHandshake()
+HandshakeInterceptor -> HandshakeInterceptor: Extract User from HTTP Session
+HandshakeInterceptor -> WSEndpoint: Store User in WebSocket session attributes
+WSEndpoint -> WebApp: WebSocket Connection Established
+
+== STOMP CONNECT ==
+
+WebApp -> WSEndpoint: STOMP CONNECT frame
+WSEndpoint -> SecurityInterceptor: preSend() - CONNECT command
+SecurityInterceptor -> SecurityInterceptor: validateAuthentication()
+SecurityInterceptor -> SecurityInterceptor: Check User in session attributes
+SecurityInterceptor -> SecurityInterceptor: handleConnect() - Create join message
+SecurityInterceptor -> Broker: Send join notification to /topic/public
+Broker -> WebApp: [SYSTEM] User connected (to all subscribers)
+SecurityInterceptor -> WSEndpoint: Allow CONNECT
+WSEndpoint -> WebApp: STOMP CONNECTED frame
+
+== STOMP SUBSCRIBE ==
+
+alt Subscribe to Public Topic
+    WebApp -> WSEndpoint: STOMP SUBSCRIBE to /topic/public
+    WSEndpoint -> SecurityInterceptor: preSend() - SUBSCRIBE command
+    SecurityInterceptor -> SecurityInterceptor: validateSubscription()
+    SecurityInterceptor -> SecurityInterceptor: Allow /topic/public (no restriction)
+    SecurityInterceptor -> WSEndpoint: Allow SUBSCRIBE
+    WSEndpoint -> Broker: Register subscription
+    Broker -> Broker: Add client to /topic/public subscribers
+else Subscribe to Group Topic
+    WebApp -> WSEndpoint: STOMP SUBSCRIBE to /topic/group.{id}
+    WSEndpoint -> SecurityInterceptor: preSend() - SUBSCRIBE command
+    SecurityInterceptor -> SecurityInterceptor: validateSubscription()
+    SecurityInterceptor -> PostgreSQL: Check group membership
+    PostgreSQL -> SecurityInterceptor: Membership status
+    alt User is member
+        SecurityInterceptor -> WSEndpoint: Allow SUBSCRIBE
+        WSEndpoint -> Broker: Register subscription
+        Broker -> Broker: Add client to /topic/group.{id} subscribers
+    else User is not member
+        SecurityInterceptor -> WSEndpoint: Reject SUBSCRIBE
+        WSEndpoint -> WebApp: Error: Subscription denied
+    end
+end
+
+== Send Public Message ==
+
+User -> WebApp: Type and send message
+WebApp -> WSEndpoint: STOMP SEND to /app/chat.send
+WSEndpoint -> SecurityInterceptor: preSend() - SEND command
+SecurityInterceptor -> SecurityInterceptor: validateAuthentication()
+SecurityInterceptor -> WSEndpoint: Allow SEND
+WSEndpoint -> Controller: @MessageMapping("/chat.send")
+Controller -> Controller: getUserFromSession()
+Controller -> Controller: Create Message entity\n(use user from session)
+alt System message
+    Controller -> Controller: Skip database save
+else Regular message
+    Controller -> PostgreSQL: Save message
+    PostgreSQL -> Controller: Saved message
+end
+Controller -> Controller: Create MessageResponse
+Controller -> Broker: @SendTo("/topic/public") - MessageResponse
+Broker -> Broker: Find all subscribers to /topic/public
+Broker -> WebApp: Broadcast MessageResponse (to all subscribers)
+
+== Send Group Message ==
+
+User -> WebApp: Type and send group message
+WebApp -> WSEndpoint: STOMP SEND to /app/group.send
+WSEndpoint -> SecurityInterceptor: preSend() - SEND command
+SecurityInterceptor -> SecurityInterceptor: validateAuthentication()
+SecurityInterceptor -> WSEndpoint: Allow SEND
+WSEndpoint -> Controller: @MessageMapping("/group.send")
+Controller -> Controller: getUserFromSession()
+Controller -> PostgreSQL: Fetch group by ID
+PostgreSQL -> Controller: Group entity
+Controller -> PostgreSQL: Verify user is group member
+PostgreSQL -> Controller: Membership confirmed
+Controller -> Controller: Create Message entity\n(use user from session)
+alt System message
+    Controller -> Controller: Skip database save
+else Regular message
+    Controller -> PostgreSQL: Save message
+    PostgreSQL -> Controller: Saved message
+end
+Controller -> Controller: Create MessageResponse
+Controller -> Broker: convertAndSend("/topic/group.{id}", MessageResponse)
+Broker -> Broker: Find all subscribers to /topic/group.{id}
+Broker -> WebApp: Broadcast MessageResponse (to group subscribers only)
+
+note right of Broker
+  In-Memory Broker maintains
+  subscription mappings in memory.
+  Messages are broadcast to all
+  clients subscribed to the topic.
+end note
+
+@enduml
