@@ -133,13 +133,15 @@ Subscription Registry:
 
 Step-by-step:
 
-1. User sends message:
+1. User (FE) sends message:
 
    ```javascript
    // Frontend sends to /app/group.send
    chatMessage.groupId = 1;
    stompClient.send("/app/group.send", {}, JSON.stringify(chatMessage));
    ```
+
+   - Note: FE send message, không hiển thị message đó luôn, mà phải chờ message được gửi tới BE, rồi BE gửi lại message đó thì FE mới hiển thị
 
 2. Backend receives and processes:
 

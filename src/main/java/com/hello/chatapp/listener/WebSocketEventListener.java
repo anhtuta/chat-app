@@ -28,7 +28,7 @@ public class WebSocketEventListener {
         // Join notification is handled in WebSocketSecurityChannelInterceptor when CONNECT command is received,
         // as session attributes are more reliably available there. At this point, we cannot get username from
         // session attributes (headerAccessor.getSessionAttributes = null)
-        logger.info("WebSocket session connected");
+        logger.debug("[handleWebSocketConnectListener] WebSocket session connected");
     }
 
     @EventListener

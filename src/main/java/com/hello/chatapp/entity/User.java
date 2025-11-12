@@ -60,5 +60,10 @@ public class User {
         this.fullname = fullname;
         this.createdAt = LocalDateTime.now();
     }
+
+    @Override
+    public String toString() {
+        return String.format("User(%d, %s, %s)", id, username, fullname);
+    }
 }
 

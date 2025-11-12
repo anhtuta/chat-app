@@ -2,6 +2,8 @@ package com.hello.chatapp.config;
 
 import com.hello.chatapp.entity.User;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -17,6 +19,8 @@ import java.util.Map;
  */
 public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
 
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketHandshakeInterceptor.class);
+
     @Override
     public boolean beforeHandshake(@NonNull ServerHttpRequest request,
             @NonNull ServerHttpResponse response,
@@ -24,6 +28,7 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
             @NonNull Map<String, Object> attributes) {
         if (request instanceof ServletServerHttpRequest servletRequest) {
             HttpSession httpSession = servletRequest.getServletRequest().getSession(false);
+            logger.debug("[Start beforeHandshake] HTTP session: {}", httpSession != null ? httpSession.getId() : "null");
 
             if (httpSession != null) {
                 // Get user object from HTTP session (stored during login)
@@ -48,5 +53,11 @@ public class WebSocketHandshakeInterceptor implements HandshakeInterceptor {
             @NonNull WebSocketHandler wsHandler,
             @org.springframework.lang.Nullable Exception exception) {
         // Nothing to do after handshake
+        if (request instanceof ServletServerHttpRequest servletRequest) {
+            HttpSession httpSession = servletRequest.getServletRequest().getSession(false);
+            logger.debug("[Start afterHandshake] HTTP session: {}", httpSession != null ? httpSession.getId() : "null");
+        } else {
+            logger.debug("[Start afterHandshake] HTTP session: null");
+        }
     }
 }

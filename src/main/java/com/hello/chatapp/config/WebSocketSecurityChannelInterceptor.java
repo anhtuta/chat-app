@@ -6,6 +6,8 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
@@ -26,6 +28,8 @@ import java.util.Map;
 @Component
 public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
 
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketSecurityChannelInterceptor.class);
+
     @Autowired
     @Lazy
     private SimpMessageSendingOperations messagingTemplate;
@@ -39,6 +43,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
             @NonNull MessageChannel channel) {
+        logger.debug("[Start preSend] Message: {}", new String((byte[]) message.getPayload()));
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (accessor != null) {
@@ -75,6 +80,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
      * Returns the authenticated user if valid, throws SecurityException if not authenticated.
      */
     private User validateAuthentication(StompHeaderAccessor accessor) {
+        logger.debug("[Start validateAuthentication] Session attributes: {}", accessor.getSessionAttributes());
         Map<String, Object> sessionAttributes = accessor.getSessionAttributes();
 
         if (sessionAttributes == null) {
@@ -96,6 +102,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
      * Rejects subscription to group topics if user is not a member.
      */
     private void validateSubscription(StompHeaderAccessor accessor, User user) {
+        logger.debug("[Start validateSubscription] User: {}", user);
         String destination = accessor.getDestination();
 
         if (destination == null) {
