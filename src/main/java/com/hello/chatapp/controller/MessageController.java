@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/chat")
+@RequestMapping("/api/messages")
 public class MessageController {
 
     private final MessageRepository messageRepository;
@@ -36,7 +36,7 @@ public class MessageController {
         this.groupParticipantRepository = groupParticipantRepository;
     }
 
-    @GetMapping("/messages")
+    @GetMapping("/public")
     public List<MessageResponse> getPublicMessages() {
         fakeDelay();
         return messageRepository.findAllPublicMessages().stream()
@@ -44,7 +44,7 @@ public class MessageController {
                 .collect(Collectors.toList());
     }
 
-    @GetMapping("/groups/{groupId}/messages")
+    @GetMapping("/groups/{groupId}")
     public ResponseEntity<List<MessageResponse>> getGroupMessages(@PathVariable @NonNull Long groupId, HttpSession session) {
         fakeDelay();
 

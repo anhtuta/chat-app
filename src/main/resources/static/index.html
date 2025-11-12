@@ -704,7 +704,7 @@
         async function loadPreviousMessages() {
             loadingIndicator.classList.add('show');
             try {
-                const response = await fetch('/api/chat/messages');
+                const response = await fetch('/api/messages/public');
                 const messages = await response.json();
                 messages.forEach(message => showMessage(message));
             } catch (error) {
@@ -717,7 +717,7 @@
         async function loadGroupMessages(groupId) {
             loadingIndicator.classList.add('show');
             try {
-                const response = await fetch(`/api/chat/groups/${groupId}/messages`);
+                const response = await fetch(`/api/messages/groups/${groupId}`);
                 if (response.ok) {
                     const messages = await response.json();
                     messages.forEach(message => showMessage(message));
