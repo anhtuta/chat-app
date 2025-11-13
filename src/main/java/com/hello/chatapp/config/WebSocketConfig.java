@@ -1,6 +1,7 @@
 package com.hello.chatapp.config;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -9,9 +10,11 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import java.util.Objects;
+
 /**
- * Enable a simple in-memory message broker. But we can use any other full-featured message broker like RabbitMQ or ActiveMQ.
- * TODO use RabbitMQ, or Redis pub/sub in the future.
+ * Configure WebSocket with RabbitMQ as the STOMP message broker.
+ * RabbitMQ provides a full-featured message broker with persistence and clustering support.
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -20,6 +23,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Autowired
     private WebSocketSecurityChannelInterceptor securityChannelInterceptor;
 
+    @Value("${spring.stomp.relay.host:localhost}")
+    private String relayHost;
+
+    @Value("${spring.stomp.relay.port:61613}")
+    private int relayPort;
+
+    @Value("${spring.stomp.relay.username:guest}")
+    private String relayUsername;
+
+    @Value("${spring.stomp.relay.password:guest}")
+    private String relayPassword;
+
     @Override
     public void configureClientInboundChannel(@NonNull ChannelRegistration registration) {
         registration.interceptors(securityChannelInterceptor);
@@ -27,11 +42,27 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(@NonNull MessageBrokerRegistry config) {
+        // Configure RabbitMQ as the STOMP broker relay
+        // The messages whose destination starts with "/topic" will be routed to RabbitMQ.
+        // RabbitMQ will broadcast messages to all connected clients subscribed to a particular topic.
+        String host = Objects.requireNonNull(relayHost, "STOMP relay host must be configured");
+        String username = Objects.requireNonNull(relayUsername, "STOMP relay username must be configured");
+        String password = Objects.requireNonNull(relayPassword, "STOMP relay password must be configured");
+        config.enableStompBrokerRelay("/topic")
+                .setRelayHost(host)
+                .setRelayPort(relayPort) // STOMP port for RabbitMQ (requires STOMP plugin)
+                .setClientLogin(username)
+                .setClientPasscode(password)
+                .setSystemLogin(username)
+                .setSystemPasscode(password);
+
+        // Configure in-memory broker
         // The messages whose destination starts with “/topic” should be routed to the message broker.
         // Message broker broadcasts messages to all the connected clients who are subscribed to a particular topic.
         // enableSimpleBroker --> org.springframework.messaging.simp.broker.SimpleBrokerMessageHandler is used to
         // maintain the subscription mapping.
-        config.enableSimpleBroker("/topic");
+        // config.enableSimpleBroker("/topic");
+
         // The messages whose destination starts with “/app” should be routed to message-handling methods (check WebSocketController).
         // E.g. a message with destination /app/chat.send will be routed to a method that has @MessageMapping("/chat.send")
         config.setApplicationDestinationPrefixes("/app");

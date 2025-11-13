@@ -1,0 +1,69 @@
+@startuml
+
+header "Send message flow with RabbitMQ Broker"
+footer "Author: Tuzaku"
+
+actor User
+participant "WebApp\n(Client)" as WebApp
+participant "Spring Boot\nApp Instance 1" as App1
+participant "STOMP Broker\nRelay" as Relay
+participant "RabbitMQ\nBroker" as RabbitMQ
+participant "Spring Boot\nApp Instance 2" as App2
+participant "WebApp 2\n(Client)" as WebApp2
+
+== STOMP SUBSCRIBE (Key Difference) ==
+
+note over WebApp, RabbitMQ
+  Subscription is forwarded to RabbitMQ
+  instead of stored in memory
+end note
+
+WebApp -> App1: STOMP SUBSCRIBE to /topic/public
+App1 -> Relay: Forward SUBSCRIBE command
+Relay -> RabbitMQ: STOMP SUBSCRIBE (via TCP port 61613)
+RabbitMQ -> RabbitMQ: Store subscription in RabbitMQ registry
+RabbitMQ -> Relay: SUBSCRIBE ACK
+Relay -> App1: Subscription registered
+App1 -> WebApp: Subscription confirmed
+
+== Send Public Message (Key Difference) ==
+
+User -> WebApp: Type and send message
+WebApp -> App1: STOMP SEND to /app/chat.send
+App1 -> App1: Process message (save to DB, create response)
+App1 -> Relay: Send MessageResponse to /topic/public
+Relay -> RabbitMQ: STOMP SEND (via TCP port 61613)
+RabbitMQ -> RabbitMQ: Look up subscribers in RabbitMQ registry
+RabbitMQ -> Relay: Forward to all subscribed instances
+Relay -> App1: Deliver to local subscribers
+Relay -> App2: Deliver to local subscribers
+App1 -> WebApp: Broadcast MessageResponse
+App2 -> WebApp2: Broadcast MessageResponse
+
+== Multiple Instances (Key Benefit) ==
+
+note over App1, App2
+  Multiple Spring Boot instances
+  share the same RabbitMQ broker
+end note
+
+User -> WebApp: Send message
+WebApp -> App1: STOMP SEND to /app/chat.send
+App1 -> Relay: MessageResponse to /topic/public
+Relay -> RabbitMQ: STOMP SEND
+RabbitMQ -> RabbitMQ: Find all subscribers\n(across all instances)
+RabbitMQ -> Relay: Distribute to all instances
+Relay -> App1: Deliver to Instance 1 subscribers
+Relay -> App2: Deliver to Instance 2 subscribers
+App1 -> WebApp: Message (Instance 1 clients)
+App2 -> WebApp2: Message (Instance 2 clients)
+
+note right of RabbitMQ
+  RabbitMQ maintains subscription
+  registry externally. All instances
+  share the same registry, enabling
+  horizontal scaling.
+end note
+
+@enduml
+

@@ -9,6 +9,18 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+  # STOMP broker relay configuration for WebSocket
+  stomp:
+    relay:
+      host: localhost
+      port: 61613  # STOMP port (requires RabbitMQ STOMP plugin: rabbitmq-plugins enable rabbitmq_stomp)
+      username: guest
+      password: guest
 
 server:
   port: 9010

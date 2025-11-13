@@ -151,6 +151,9 @@ Step-by-step:
    // - Fetches group from database
    // - Saves message to database
    // - Sends to topic: "/topic/group.1"
+   // Controller chỉ save message vào DB, còn broadcast nó cho user khác là việc của broker.
+   // Do đó controller sẽ gửi message tới broker để nó forward message tới người nhận.
+   // Với lệnh sau, controller sẽ gửi message tới broker (nếu dùng in-memory broker thì nó chính là STOMP broker đó)
    messagingTemplate.convertAndSend("/topic/group.1", response);
    ```
 
@@ -226,3 +229,32 @@ User A (member of group 1) sends message:
 │Client A │  │Client D │  (both subscribed to /topic/group.1)
 └─────────┘  └─────────┘
 ```
+
+## STOMP protocol
+
+STOMP is a simple text-oriented messaging protocol used by our UI Client (browser) to connect to enterprise message brokers.
+
+Clients can use the `SEND` or `SUBSCRIBE` commands to **send or subscribe for messages** along with a **"destination" header** that describes what the message is about and who should receive it.
+
+It defines **a protocol for clients and servers to communicate with messaging semantics**. It does not define any implementation details, but rather addresses an easy-to-implement wire protocol for messaging integrations.
+
+The protocol is **similar to HTTP**, and **works over TCP using the following commands**:
+
+```
+CONNECT
+SEND
+SUBSCRIBE
+UNSUBSCRIBE
+BEGIN
+COMMIT
+ABORT
+ACK
+NACK
+DISCONNECT
+```
+
+When using **Spring's STOMP support**, the Spring WebSocket application acts as the **STOMP broker** to clients. Messages are routed to `@Controller` message-handling methods or to a simple, in-memory broker that keeps track of subscriptions and broadcasts messages to subscribed users.
+
+You can also configure Spring to work with a dedicated STOMP broker (e.g. RabbitMQ, ActiveMQ, etc.) for the actual broadcasting of messages. In that case, Spring maintains TCP connections to the broker, relays messages to it, and also passes messages from it down to connected WebSocket clients.
+
+Ref: https://dzone.com/articles/build-a-chat-application-using-spring-boot-websock
