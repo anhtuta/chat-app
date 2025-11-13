@@ -3,7 +3,9 @@
     "cSpell.words": [
         "chatapp",
         "Configurer",
-        "springframework"
+        "springframework",
+        "startuml",
+        "Tuzaku"
     ],
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "automatic"

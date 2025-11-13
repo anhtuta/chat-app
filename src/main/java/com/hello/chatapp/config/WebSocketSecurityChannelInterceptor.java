@@ -43,20 +43,31 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
             @NonNull MessageChannel channel) {
-        logger.debug("[Start preSend] Message: {}", new String((byte[]) message.getPayload()));
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (accessor != null) {
-            // Validate authentication for ALL commands
+            StompCommand command = accessor.getCommand();
+
+            // Skip processing for:
+            // 1. Null commands (heartbeat messages are often empty frames without commands)
+            // 2. MESSAGE commands (outbound messages from server to clients)
+            if (command == null || StompCommand.MESSAGE.equals(command)) {
+                return message;
+            }
+
+            // Log meaningful STOMP commands (skip heartbeats which have null command)
+            logger.debug("[preSend] message: {}, STOMP command: {}, destination: {}", new String((byte[]) message.getPayload()), command, accessor.getDestination());
+
+            // Validate authentication for inbound client commands (CONNECT, SUBSCRIBE, SEND, etc.)
             User user = validateAuthentication(accessor);
 
             // For CONNECT command, also send join notification
-            if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+            if (StompCommand.CONNECT.equals(command)) {
                 handleConnect(user);
             }
 
             // For SUBSCRIBE command, validate group membership if subscribing to a group topic
-            if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            if (StompCommand.SUBSCRIBE.equals(command)) {
                 validateSubscription(accessor, user);
             }
         }
