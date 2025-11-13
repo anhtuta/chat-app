@@ -43,24 +43,15 @@ public class WebSocketController {
     @NonNull
     public MessageResponse sendPublicMessage(@Payload @NonNull MessageRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
-        // Get user from WebSocket session attributes (stored during connection)
         User user = getUserFromSession(headerAccessor);
-
-        if (user == null) {
-            throw new SecurityException("User is not authenticated. Please reconnect.");
-        }
-
-        // Create message entity
         Message message = new Message(user, request.getContent());
-        // Ensure group is null for public messages
-        message.setGroup(null);
+        message.setGroup(null); // Ensure group is null for public messages
 
         // If message is a system message, don't save to database
         if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
             return MessageResponse.fromMessage(message);
         }
 
-        // Save message to database
         Message savedMessage = messageRepository.save(message);
         return MessageResponse.fromMessage(savedMessage);
     }
@@ -69,48 +60,20 @@ public class WebSocketController {
     @NonNull
     public MessageResponse sendGroupMessage(@Payload @NonNull MessageRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
-        // Get user from WebSocket session attributes
         User user = getUserFromSession(headerAccessor);
-
-        if (user == null) {
-            throw new SecurityException("User is not authenticated. Please reconnect.");
-        }
-
-        if (request.getGroupId() == null) {
-            throw new IllegalArgumentException("Group ID is required for group messages");
-        }
-
-        // Fetch group from database
-        // groupId is guaranteed to be non-null after the check above
-        Long groupId = request.getGroupId();
-        if (groupId == null) {
-            throw new IllegalArgumentException("Group ID is required for group messages");
-        }
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-
-        // Verify user is a member of the group
-        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-            throw new ForbiddenException("You are not a member of this group");
-        }
-
-        // Create message entity
+        Group group = validateGroup(request.getGroupId(), user);
         Message message = new Message(user, request.getContent());
         message.setGroup(group);
 
         // If message is a system message, don't save to database
         if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
-            // Send to group topic
             MessageResponse response = MessageResponse.fromMessage(message);
             messagingTemplate.convertAndSend("/topic/group." + group.getId(), response);
             return response;
         }
 
-        // Save message to database
         Message savedMessage = messageRepository.save(message);
         MessageResponse response = MessageResponse.fromMessage(savedMessage);
-
-        // Send to group topic
         messagingTemplate.convertAndSend("/topic/group." + group.getId(), response);
 
         return response;
@@ -120,13 +83,34 @@ public class WebSocketController {
      * Gets User from WebSocket session attributes.
      * This is set during WebSocket handshake by WebSocketHandshakeInterceptor
      * which extracts it from the HTTP session.
+     * @throws SecurityException if user is not found in session attributes
      */
-    private User getUserFromSession(SimpMessageHeaderAccessor headerAccessor) {
+    private User getUserFromSession(SimpMessageHeaderAccessor headerAccessor) throws SecurityException {
         Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
         if (sessionAttributes != null) {
-            return (User) sessionAttributes.get("user");
+            User user = (User) sessionAttributes.get("user");
+            if (user != null) {
+                return user;
+            }
         }
-        return null;
+        throw new SecurityException("User is not authenticated. Please reconnect.");
     }
 
+    /**
+     * Validates that a group exists and that the user is a member of the group.
+     * @throws IllegalArgumentException if the group ID is null
+     * @throws NotFoundException if the group is not found
+     * @throws ForbiddenException if the user is not a member of the group
+     */
+    private Group validateGroup(Long groupId, User user) throws NotFoundException, ForbiddenException {
+        if (groupId == null) {
+            throw new IllegalArgumentException("Group ID is required for group messages");
+        }
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
+        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
+            throw new ForbiddenException("You are not a member of this group");
+        }
+        return group;
+    }
 }
