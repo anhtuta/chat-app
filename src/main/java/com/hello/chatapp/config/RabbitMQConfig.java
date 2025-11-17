@@ -89,8 +89,6 @@ public class RabbitMQConfig {
     }
 
     /**
-     * Note: publicTopicQueue, publicTopicExchange, and publicTopicBinding are removed.
-     * 
      * With DirectExchange approach:
      * - Each subscription (both public and group) creates its own queue: "ws.instance-id.session-id.destination"
      * - Each destination gets its own exchange (e.g., "topic.public", "topic.group.1")

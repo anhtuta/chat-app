@@ -681,3 +681,950 @@ If you want to use RabbitMQ without STOMP:
   - Spring's WebSocket support is built around STOMP
   - The subscription registry is already in RabbitMQ
   - The STOMP broker relay is just the connection mechanism
+
+# Implement a custom subscription registry in RabbitMQ without Spring's STOMP broker relay
+
+## Approach 1: Hybrid - Simple Broker + Manual RabbitMQ Sync
+
+Use Spring's simple broker for WebSocket handling, and manually sync subscriptions to RabbitMQ for cross-instance messaging.
+
+### Architecture
+
+```
+Client → Spring WebSocket (Simple Broker) → Custom Handler → RabbitMQ (AMQP)
+```
+
+### Implementation Steps
+
+**1. Create a Custom Message Broker Handler:**
+
+```java
+@Component
+public class CustomRabbitMQBrokerHandler implements SimpMessagingTemplate.CustomBrokerMessageHandler {
+
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    // Track subscriptions: topic -> Set<sessionId>
+    private final Map<String, Set<String>> subscriptions = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    public void init() {
+        // Set up RabbitMQ listener for incoming messages
+        setupRabbitMQListener();
+    }
+
+    // Called when client subscribes
+    public void handleSubscribe(String sessionId, String destination) {
+        subscriptions.computeIfAbsent(destination, k -> ConcurrentHashMap.newKeySet())
+                     .add(sessionId);
+
+        // Sync subscription to RabbitMQ
+        syncSubscriptionToRabbitMQ(destination, sessionId, true);
+    }
+
+    // Called when client unsubscribes
+    public void handleUnsubscribe(String sessionId, String destination) {
+        Set<String> subs = subscriptions.get(destination);
+        if (subs != null) {
+            subs.remove(sessionId);
+        }
+
+        // Sync unsubscription to RabbitMQ
+        syncSubscriptionToRabbitMQ(destination, sessionId, false);
+    }
+
+    private void syncSubscriptionToRabbitMQ(String destination, String sessionId, boolean subscribe) {
+        // Convert STOMP destination to RabbitMQ exchange/queue
+        String exchange = convertDestinationToExchange(destination);
+        String queue = "sub-" + sessionId + "-" + destination.replace("/", "-");
+
+        if (subscribe) {
+            // Declare exchange and queue, bind them
+            rabbitTemplate.execute(channel -> {
+                channel.exchangeDeclare(exchange, "topic", true);
+                channel.queueDeclare(queue, false, false, false, null);
+                channel.queueBind(queue, exchange, getRoutingKey(destination));
+                return null;
+            });
+        } else {
+            // Unbind and delete queue
+            rabbitTemplate.execute(channel -> {
+                channel.queueUnbind(queue, exchange, getRoutingKey(destination));
+                channel.queueDelete(queue);
+                return null;
+            });
+        }
+    }
+
+    // Publish message to RabbitMQ when sending to topic
+    public void publishToRabbitMQ(String destination, Object payload) {
+        String exchange = convertDestinationToExchange(destination);
+        String routingKey = getRoutingKey(destination);
+
+        rabbitTemplate.convertAndSend(exchange, routingKey, payload);
+    }
+
+    // Listen to RabbitMQ and forward to WebSocket clients
+    private void setupRabbitMQListener() {
+        // Create a listener for each topic exchange
+        // When message arrives from RabbitMQ, forward to local subscribers
+    }
+
+    private String convertDestinationToExchange(String destination) {
+        // "/topic/public" -> "topic.public"
+        return destination.replace("/", ".").substring(1);
+    }
+
+    private String getRoutingKey(String destination) {
+        return "#"; // Match all routing keys for topic
+    }
+}
+```
+
+**2. Create a Channel Interceptor to Track Subscriptions:**
+
+```java
+@Component
+public class CustomSubscriptionInterceptor implements ChannelInterceptor {
+
+    @Autowired
+    private CustomRabbitMQBrokerHandler brokerHandler;
+
+    @Override
+    public Message<?> preSend(Message<?> message, MessageChannel channel) {
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor != null) {
+            StompCommand command = accessor.getCommand();
+            String sessionId = accessor.getSessionId();
+            String destination = accessor.getDestination();
+
+            if (StompCommand.SUBSCRIBE.equals(command) && destination != null) {
+                brokerHandler.handleSubscribe(sessionId, destination);
+            } else if (StompCommand.UNSUBSCRIBE.equals(command) && destination != null) {
+                brokerHandler.handleUnsubscribe(sessionId, destination);
+            }
+        }
+
+        return message;
+    }
+}
+```
+
+**3. Modify WebSocketConfig to use Simple Broker:**
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Autowired
+    private CustomSubscriptionInterceptor subscriptionInterceptor;
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // Use simple broker (in-memory)
+        config.enableSimpleBroker("/topic");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(subscriptionInterceptor);
+    }
+}
+```
+
+**4. Modify Controller to Publish to RabbitMQ:**
+
+```java
+@Controller
+public class WebSocketController {
+
+    @Autowired
+    private CustomRabbitMQBrokerHandler brokerHandler;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    @MessageMapping("/chat.send")
+    public void sendMessage(@Payload MessageRequest request) {
+        // Process message
+        MessageResponse response = processMessage(request);
+
+        // Send to local subscribers (via simple broker)
+        messagingTemplate.convertAndSend("/topic/public", response);
+
+        // Also publish to RabbitMQ for other instances
+        brokerHandler.publishToRabbitMQ("/topic/public", response);
+    }
+}
+```
+
+## Approach 2: Fully Custom - Direct AMQP Integration
+
+Implement a custom message broker handler that directly uses RabbitMQ AMQP without Spring's STOMP support.
+
+### Architecture:
+
+```
+Client → Custom WebSocket Handler → RabbitMQ (AMQP) → Custom Message Router
+```
+
+### Implementation:
+
+**1. Create Custom Message Broker Handler:**
+
+```java
+@Component
+public class CustomRabbitMQMessageBroker implements MessageHandler {
+
+    private final ConnectionFactory connectionFactory;
+    private Connection connection;
+    private Channel channel;
+
+    // Subscription registry: destination -> Set<WebSocketSession>
+    private final Map<String, Set<WebSocketSession>> subscriptions = new ConcurrentHashMap<>();
+
+    @PostConstruct
+    public void init() throws IOException {
+        connectionFactory = new CachingConnectionFactory("localhost");
+        connection = connectionFactory.createConnection();
+        channel = connection.createChannel(false);
+
+        // Set up consumer for each topic
+        setupConsumers();
+    }
+
+    public void subscribe(WebSocketSession session, String destination) {
+        subscriptions.computeIfAbsent(destination, k -> ConcurrentHashMap.newKeySet())
+                     .add(session);
+
+        // Create RabbitMQ queue for this subscription
+        String queueName = createQueueForSubscription(session, destination);
+
+        // Set up consumer
+        setupConsumer(queueName, destination);
+    }
+
+    public void unsubscribe(WebSocketSession session, String destination) {
+        Set<WebSocketSession> subs = subscriptions.get(destination);
+        if (subs != null) {
+            subs.remove(session);
+        }
+
+        // Delete RabbitMQ queue
+        deleteQueueForSubscription(session, destination);
+    }
+
+    public void publish(String destination, Object message) throws IOException {
+        String exchange = convertDestinationToExchange(destination);
+        String routingKey = getRoutingKey(destination);
+
+        // Declare exchange
+        channel.exchangeDeclare(exchange, "topic", true);
+
+        // Publish message
+        byte[] body = objectMapper.writeValueAsBytes(message);
+        channel.basicPublish(exchange, routingKey, null, body);
+    }
+
+    private void setupConsumers() {
+        // For each active subscription, create a consumer
+        subscriptions.forEach((destination, sessions) -> {
+            sessions.forEach(session -> {
+                String queueName = createQueueForSubscription(session, destination);
+                setupConsumer(queueName, destination);
+            });
+        });
+    }
+
+    private void setupConsumer(String queueName, String destination) {
+        try {
+            channel.basicConsume(queueName, true, (consumerTag, delivery) -> {
+                // When message arrives from RabbitMQ, forward to WebSocket
+                byte[] body = delivery.getBody();
+                Object message = objectMapper.readValue(body, Object.class);
+
+                // Send to all local subscribers of this destination
+                Set<WebSocketSession> localSubs = subscriptions.get(destination);
+                if (localSubs != null) {
+                    localSubs.forEach(session -> {
+                        try {
+                            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+                        } catch (IOException e) {
+                            // Handle error
+                        }
+                    });
+                }
+            }, consumerTag -> {});
+        } catch (IOException e) {
+            // Handle error
+        }
+    }
+
+    private String createQueueForSubscription(WebSocketSession session, String destination) {
+        String queueName = "ws-" + session.getId() + "-" + destination.replace("/", "-");
+        String exchange = convertDestinationToExchange(destination);
+
+        try {
+            channel.queueDeclare(queueName, false, false, false, null);
+            channel.queueBind(queueName, exchange, getRoutingKey(destination));
+        } catch (IOException e) {
+            // Handle error
+        }
+
+        return queueName;
+    }
+}
+```
+
+**2. Create Custom WebSocket Handler:**
+
+```java
+@Component
+public class CustomWebSocketHandler extends TextWebSocketHandler {
+
+    @Autowired
+    private CustomRabbitMQMessageBroker messageBroker;
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        // Handle connection
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+        // Parse STOMP frame manually
+        StompFrame frame = parseStompFrame(message.getPayload());
+
+        if (frame.getCommand().equals("SUBSCRIBE")) {
+            String destination = frame.getHeader("destination");
+            messageBroker.subscribe(session, destination);
+        } else if (frame.getCommand().equals("UNSUBSCRIBE")) {
+            String destination = frame.getHeader("destination");
+            messageBroker.unsubscribe(session, destination);
+        } else if (frame.getCommand().equals("SEND")) {
+            // Handle message sending
+            handleSendMessage(session, frame);
+        }
+    }
+
+    private void handleSendMessage(WebSocketSession session, StompFrame frame) {
+        String destination = frame.getHeader("destination");
+        String body = frame.getBody();
+
+        // Process message
+        Object response = processMessage(body);
+
+        // Publish to RabbitMQ
+        messageBroker.publish(destination, response);
+    }
+}
+```
+
+## Key Differences:
+
+| Aspect                      | Spring STOMP Relay | Custom Implementation    |
+| --------------------------- | ------------------ | ------------------------ |
+| **Protocol**                | STOMP over TCP     | AMQP (or STOMP manually) |
+| **Subscription Management** | Automatic          | Manual tracking          |
+| **Message Routing**         | Automatic          | Manual routing logic     |
+| **Complexity**              | Low                | High                     |
+| **Control**                 | Limited            | Full control             |
+| **Maintenance**             | Spring handles     | You handle               |
+
+## When to Use Custom Implementation:
+
+- Need AMQP instead of STOMP
+- Require custom subscription logic (e.g., time-based, conditional)
+- Need message transformation before routing
+- Want to integrate with non-STOMP systems
+- Require fine-grained control over queue/exchange management
+
+## Should we use DirectExchange or TopicExchange for this app
+
+### Implementation with DirectExchange
+
+How it works:
+
+- One exchange per destination:
+  - `/topic/public` → `topic.public` exchange
+  - `/topic/group.1` → `topic.group.1` exchange
+  - `/topic/group.2` → `topic.group.2` exchange
+- Routing: Empty routing key (`""`). All queues bound to an exchange receive all messages from that exchange.
+- Bindings: Queue → Exchange with `""` routing key
+- (Destination: a destination of the STOMP broker. FE can subscribe to it and receive message (via WebSocket))
+
+Pros:
+
+- Simple: no routing key logic
+- Clear separation: **each destination has its own exchange**
+- Easy to debug: one exchange per destination
+- No wildcards needed
+
+Cons:
+
+- More exchanges: one per destination (can be many for many groups)
+- Less flexible: cannot route based on patterns
+
+### Alternative: TopicExchange
+
+How it would work:
+
+- One or a few exchanges for all destinations:
+  - Single `topic.exchange` for all topics
+  - Or separate `topic.public` and `topic.groups` exchanges
+- Routing: Uses routing keys with wildcards:
+  - `"public"` → `/topic/public`
+  - `"group.1"` → `/topic/group.1`
+  - `"group.*"` → all groups (wildcard)
+- Bindings: Queue → Exchange with routing key pattern (e.g., `"public"`, `"group.1"`, `"group.*"`)
+
+Pros:
+
+- Fewer exchanges: can use **one exchange for all destinations**
+- Flexible routing: wildcards (`*`, `#`) for pattern matching
+- Can subscribe to multiple destinations with one binding (e.g., `"group.*"`)
+
+Cons:
+
+- More complex: routing key logic and pattern matching
+- Harder to debug: routing depends on key patterns
+- Potential mistakes: incorrect routing keys can cause missed messages
+
+### Recommendation: DirectExchange
+
+Reasons:
+
+1. Simplicity: no routing key patterns to manage
+2. Clarity: one exchange per destination is easy to understand
+3. Fewer bugs: no wildcard matching errors
+4. Sufficient for this use case: you don’t need pattern-based routing
+5. Exchange overhead is low: RabbitMQ handles many exchanges efficiently
+
+When to use TopicExchange:
+
+- You need pattern-based subscriptions (e.g., subscribe to all groups with `"group.*"`)
+- You want fewer exchanges (though this is a minor benefit)
+- You need complex routing rules
+
+### Visual comparison
+
+- DirectExchange (current):
+
+```
+/topic/public → topic.public (DirectExchange) → [queue1, queue2, queue3]
+/topic/group.1 → topic.group.1 (DirectExchange) → [queue4, queue5]
+/topic/group.2 → topic.group.2 (DirectExchange) → [queue6, queue7]
+```
+
+- TopicExchange (alternative):
+
+```
+All destinations → topic.exchange (TopicExchange)
+  - Routing key "public" → [queues bound with "public"]
+  - Routing key "group.1" → [queues bound with "group.1" or "group.*"]
+  - Routing key "group.2" → [queues bound with "group.2" or "group.*"]
+```
+
+## Cleanup queue when users disconnect from Websocket
+
+### Problem
+
+- Queues are durable (survive RabbitMQ restarts) and not auto-deleted
+- Queues are only deleted on explicit UNSUBSCRIBE
+- If the app crashes or restarts, queues accumulate in RabbitMQ
+- Each restart can create new queues while old ones remain
+
+### Solution Implemented
+
+1. Queue tracking: Added `sessionQueues` map to track all queues created per session
+
+   ```java
+   private final ConcurrentHashMap<String, Set<String>> sessionQueues = new ConcurrentHashMap<>();
+   ```
+
+2. Cleanup on WebSocket disconnect: When a client disconnects, all queues for that session are deleted
+
+   - Added `cleanupSessionQueues()` method
+   - Called from `WebSocketEventListener.handleWebSocketDisconnectListener()`
+
+3. Cleanup on app shutdown: When the app shuts down gracefully, all queues created by this instance are deleted
+
+   - Enhanced `@PreDestroy cleanup()` method
+   - Added `cleanupAllQueues()` private method
+
+4. Queue tracking: When a queue is created, it's added to `sessionQueues`; when deleted, it's removed from tracking
+
+### How It Works Now
+
+- Normal disconnect: Client disconnects → `SessionDisconnectEvent` → queues cleaned up
+- Graceful shutdown: App shuts down → `@PreDestroy` → all queues cleaned up
+- Crash/abrupt termination: Queues remain (limitation), but:
+  - On next restart with same `instanceId`, old queues won't be reused (new sessionIds)
+  - You can manually clean up old queues via RabbitMQ management UI
+  - Or add a startup cleanup to remove queues with old instanceIds
+
+### Note
+
+If the app crashes (kill -9, system crash), `@PreDestroy` won't run, so queues remain. For production, consider:
+
+- Using auto-delete queues (but they disappear on consumer disconnect)
+- Adding TTL to queues
+- Periodic cleanup job to remove orphaned queues
+- Using a fixed `instanceId` and cleaning up on startup
+
+The current solution handles normal disconnects and graceful shutdowns.
+
+# Implement a custom subscription registry and use Redis pub/sub
+
+## Important clarifications
+
+1. Redis does not support STOMP — it uses its own pub/sub commands (PUBLISH/SUBSCRIBE).
+2. Redis does not support AMQP — AMQP is RabbitMQ's protocol.
+3. Redis pub/sub is fire-and-forget — it does not maintain persistent subscriptions like RabbitMQ, you must track it yourself (e.g., in Redis Sets).
+4. You need a custom implementation because Spring's STOMP broker relay only works with STOMP-compatible brokers.
+5. Use Spring's simple broker for local WebSocket connections and Redis pub/sub for cross-instance messaging.
+
+## Can Redis store subscription registry?
+
+Redis pub/sub does not maintain a subscription registry like RabbitMQ. Differences:
+
+| Feature                    | RabbitMQ               | Redis Pub/Sub                      |
+| -------------------------- | ---------------------- | ---------------------------------- |
+| Subscription persistence   | Yes (stored in broker) | No (fire-and-forget)               |
+| Protocol                   | STOMP or AMQP          | Redis commands (PUBLISH/SUBSCRIBE) |
+| Message delivery guarantee | At-least-once          | Best-effort (no guarantee)         |
+| Subscription tracking      | Automatic              | Manual (you must track)            |
+
+## How Redis pub/sub works
+
+```
+Publisher → Redis Channel → All active subscribers receive message
+```
+
+- If no subscribers are listening, the message is lost
+- Subscriptions are not persisted
+- You must manually track who is subscribed
+
+## Implementation: Redis pub/sub with Spring WebSocket (hybrid)
+
+Since Spring's STOMP broker relay only works with STOMP-compatible brokers, you need a custom implementation.
+
+### Architecture:
+
+```
+Client → Spring WebSocket (Simple Broker) → Custom Handler → Redis Pub/Sub
+                                                              ↓
+                                                    (Manual subscription tracking)
+```
+
+Note: this is a hybrid approach
+
+- `config.enableSimpleBroker("/topic");`: This creates in-memory subscription registry!
+- `SimpleBrokerMessageHandler` maintains subscriptions in a `ConcurrentHashMap` in memory
+- Each instance has its own in-memory registry (which makes server stateful)
+- Redis is only used for **cross-instance message distribution**, not subscription management
+
+### Step 1: Add Redis Dependency: `spring-boot-starter-data-redis`
+
+### Step 2: Create Redis Subscription Registry
+
+```java
+@Component
+public class RedisSubscriptionRegistry {
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
+
+    private static final String SUBSCRIPTION_KEY_PREFIX = "ws:subscriptions:";
+    private static final String INSTANCE_SUBSCRIPTIONS_KEY = "ws:instance:";
+
+    // Track subscriptions in Redis: topic -> Set<instanceId:sessionId>
+    public void subscribe(String instanceId, String sessionId, String destination) {
+        String key = SUBSCRIPTION_KEY_PREFIX + destination;
+        String value = instanceId + ":" + sessionId;
+
+        // Add to Redis set
+        redisTemplate.opsForSet().add(key, value);
+
+        // Also track per instance
+        String instanceKey = INSTANCE_SUBSCRIPTIONS_KEY + instanceId;
+        redisTemplate.opsForSet().add(instanceKey, destination);
+    }
+
+    public void unsubscribe(String instanceId, String sessionId, String destination) {
+        String key = SUBSCRIPTION_KEY_PREFIX + destination;
+        String value = instanceId + ":" + sessionId;
+
+        // Remove from Redis set
+        redisTemplate.opsForSet().remove(key, value);
+    }
+
+    public Set<String> getSubscribers(String destination) {
+        String key = SUBSCRIPTION_KEY_PREFIX + destination;
+        return redisTemplate.opsForSet().members(key);
+    }
+
+    // Get all topics this instance is subscribed to
+    public Set<String> getInstanceSubscriptions(String instanceId) {
+        String instanceKey = INSTANCE_SUBSCRIPTIONS_KEY + instanceId;
+        return redisTemplate.opsForSet().members(instanceKey);
+    }
+}
+```
+
+### Step 3: Create Redis Message Publisher
+
+```java
+@Component
+public class RedisMessagePublisher {
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    private static final String CHANNEL_PREFIX = "ws:channel:";
+
+    public void publish(String destination, Object message) {
+        String channel = CHANNEL_PREFIX + destination;
+        redisTemplate.convertAndSend(channel, message);
+    }
+}
+```
+
+### Step 4: Create Redis Message Subscriber
+
+```java
+@Component
+public class RedisMessageSubscriber implements MessageListener {
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    @Autowired
+    private RedisSubscriptionRegistry subscriptionRegistry;
+
+    @Value("${spring.application.instance-id:${random.uuid}}")
+    private String instanceId;
+
+    @Override
+    public void onMessage(Message message, byte[] pattern) {
+        String channel = new String(pattern);
+        String destination = extractDestination(channel);
+
+        // Check if this instance has subscribers for this destination
+        Set<String> subscribers = subscriptionRegistry.getSubscribers(destination);
+        boolean hasLocalSubscribers = subscribers.stream()
+            .anyMatch(sub -> sub.startsWith(instanceId + ":"));
+
+        if (hasLocalSubscribers) {
+            // Deserialize message
+            Object payload = deserializeMessage(message);
+
+            // Forward to local WebSocket subscribers via simple broker
+            messagingTemplate.convertAndSend(destination, payload);
+        }
+    }
+
+    private String extractDestination(String channel) {
+        // "ws:channel:/topic/public" -> "/topic/public"
+        return channel.replace("ws:channel:", "");
+    }
+
+    private Object deserializeMessage(Message message) {
+        // Deserialize Redis message to your message object
+        // Implementation depends on your serialization strategy
+        return new String(message.getBody());
+    }
+}
+```
+
+### Step 5: Configure Redis Message Listener
+
+```java
+@Configuration
+public class RedisConfig {
+
+    @Autowired
+    private RedisConnectionFactory connectionFactory;
+
+    @Autowired
+    private RedisMessageSubscriber messageSubscriber;
+
+    @Bean
+    public RedisMessageListenerContainer redisMessageListenerContainer() {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+
+        // Subscribe to all WebSocket channels
+        // You'll need to dynamically add channels as subscriptions occur
+        container.addMessageListener(messageSubscriber,
+            new PatternTopic("ws:channel:*"));
+
+        return container;
+    }
+
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        template.setDefaultSerializer(new GenericJackson2JsonRedisSerializer());
+        template.setKeySerializer(new StringRedisSerializer());
+        return template;
+    }
+}
+```
+
+### Step 6: Create Subscription Interceptor
+
+```java
+@Component
+public class RedisSubscriptionInterceptor implements ChannelInterceptor {
+
+    @Autowired
+    private RedisSubscriptionRegistry subscriptionRegistry;
+
+    @Value("${spring.application.instance-id:${random.uuid}}")
+    private String instanceId;
+
+    @Override
+    public Message<?> preSend(Message<?> message, MessageChannel channel) {
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor != null) {
+            StompCommand command = accessor.getCommand();
+            String sessionId = accessor.getSessionId();
+            String destination = accessor.getDestination();
+
+            if (StompCommand.SUBSCRIBE.equals(command) && destination != null) {
+                // Register subscription in Redis
+                subscriptionRegistry.subscribe(instanceId, sessionId, destination);
+            } else if (StompCommand.UNSUBSCRIBE.equals(command) && destination != null) {
+                // Unregister subscription from Redis
+                subscriptionRegistry.unsubscribe(instanceId, sessionId, destination);
+            }
+        }
+
+        return message;
+    }
+}
+```
+
+### Step 7: Modify WebSocketConfig
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Autowired
+    private RedisSubscriptionInterceptor subscriptionInterceptor;
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // Use simple broker for local WebSocket connections
+        config.enableSimpleBroker("/topic");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(subscriptionInterceptor);
+    }
+}
+```
+
+### Step 8: Modify Controller to Publish to Redis
+
+```java
+@Controller
+public class WebSocketController {
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    @Autowired
+    private RedisMessagePublisher redisPublisher;
+
+    @MessageMapping("/chat.send")
+    public void sendMessage(@Payload MessageRequest request) {
+        // Process message
+        MessageResponse response = processMessage(request);
+
+        // Send to local subscribers (via simple broker)
+        messagingTemplate.convertAndSend("/topic/public", response);
+
+        // Publish to Redis for other instances
+        redisPublisher.publish("/topic/public", response);
+    }
+}
+```
+
+### Key differences: Redis vs RabbitMQ
+
+| Aspect                | RabbitMQ (STOMP)      | Redis Pub/Sub                  |
+| --------------------- | --------------------- | ------------------------------ |
+| Subscription registry | Automatic (in broker) | Manual (you track in Redis)    |
+| Protocol              | STOMP/AMQP            | Redis commands                 |
+| Message persistence   | Optional              | No (fire-and-forget)           |
+| Delivery guarantee    | At-least-once         | Best-effort                    |
+| Spring support        | Built-in STOMP relay  | Custom implementation required |
+| Complexity            | Low (with Spring)     | High (custom code)             |
+
+## Stateless Redis Implementation
+
+To make it stateless, you need to:
+
+1. Not use `enableSimpleBroker()`
+2. Store all subscriptions in Redis
+3. Implement a custom message handler that reads from Redis
+
+Here's how to make it truly stateless:
+
+### Step 1: Don't Use Simple Broker
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // DON'T use enableSimpleBroker() - that's stateful!
+        // Only set application destination prefix
+        config.setApplicationDestinationPrefixes("/app");
+        // No broker configured - we'll handle it manually
+    }
+}
+```
+
+### Step 2: Custom Message Handler (Stateless)
+
+```java
+@Component
+public class StatelessRedisMessageHandler implements MessageHandler {
+
+    @Autowired
+    private RedisSubscriptionRegistry subscriptionRegistry;
+
+    @Autowired
+    private RedisMessagePublisher redisPublisher;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
+
+    @Value("${spring.application.instance-id}")
+    private String instanceId;
+
+    // This replaces SimpleBrokerMessageHandler
+    @Override
+    public void handleMessage(Message<?> message) throws MessagingException {
+        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        String destination = accessor.getDestination();
+
+        if (destination != null && destination.startsWith("/topic/")) {
+            // Check Redis for subscribers (stateless - no local HashMap)
+            Set<String> allSubscribers = subscriptionRegistry.getSubscribers(destination);
+
+            // Filter local subscribers for this instance
+            Set<String> localSubscribers = allSubscribers.stream()
+                .filter(sub -> sub.startsWith(instanceId + ":"))
+                .collect(Collectors.toSet());
+
+            if (!localSubscribers.isEmpty()) {
+                // Forward to local WebSocket clients
+                Object payload = message.getPayload();
+                messagingTemplate.convertAndSend(destination, payload);
+            }
+
+            // Always publish to Redis for other instances
+            redisPublisher.publish(destination, message.getPayload());
+        }
+    }
+}
+```
+
+### Step 3: Register Custom Handler
+
+```java
+@Configuration
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Autowired
+    private StatelessRedisMessageHandler customMessageHandler;
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        // No simple broker - we use custom handler
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        // Register custom message handler
+        registry.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Bean
+    public BrokerMessageHandler brokerMessageHandler() {
+        return customMessageHandler;
+    }
+}
+```
+
+### Step 4: Subscription Tracking (All in Redis)
+
+```java
+@Component
+public class RedisSubscriptionRegistry {
+
+    @Autowired
+    private RedisTemplate<String, String> redisTemplate;
+
+    private static final String SUBSCRIPTION_KEY = "ws:subs:";
+
+    // All subscriptions stored in Redis (stateless)
+    public void subscribe(String instanceId, String sessionId, String destination) {
+        String key = SUBSCRIPTION_KEY + destination;
+        String value = instanceId + ":" + sessionId;
+        redisTemplate.opsForSet().add(key, value);
+    }
+
+    public void unsubscribe(String instanceId, String sessionId, String destination) {
+        String key = SUBSCRIPTION_KEY + destination;
+        String value = instanceId + ":" + sessionId;
+        redisTemplate.opsForSet().remove(key, value);
+    }
+
+    // Read from Redis (no local state)
+    public Set<String> getSubscribers(String destination) {
+        String key = SUBSCRIPTION_KEY + destination;
+        return redisTemplate.opsForSet().members(key);
+    }
+}
+```
+
+### Comparison Table
+
+| Aspect                   | Stateful Solution                | Stateless Solution           |
+| ------------------------ | -------------------------------- | ---------------------------- |
+| **Simple Broker**        | ✅ Used (`enableSimpleBroker()`) | ❌ Not used                  |
+| **Subscription Storage** | In-memory HashMap + Redis        | Redis only                   |
+| **Server State**         | Stateful (per-instance HashMap)  | Stateless (all in Redis)     |
+| **Complexity**           | Lower (uses Spring's broker)     | Higher (custom handler)      |
+| **Scalability**          | Limited (per-instance state)     | Full (shared state in Redis) |
+
+### Why We use Simple Broker in Previous Solution
+
+For simplicity:
+
+- Spring's simple broker handles WebSocket message delivery automatically
+- Redis was only for cross-instance message distribution
+- Easier to implement
+
+But this makes it stateful.

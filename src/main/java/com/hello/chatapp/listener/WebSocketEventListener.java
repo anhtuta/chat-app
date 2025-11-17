@@ -1,11 +1,11 @@
 package com.hello.chatapp.listener;
 
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessageSendingOperations;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
@@ -20,8 +20,14 @@ public class WebSocketEventListener {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketEventListener.class);
 
-    @Autowired
-    private SimpMessageSendingOperations messagingTemplate;
+    private final SimpMessageSendingOperations messagingTemplate;
+    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+
+    public WebSocketEventListener(SimpMessageSendingOperations messagingTemplate,
+            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+        this.messagingTemplate = messagingTemplate;
+        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+    }
 
     @EventListener
     public void handleWebSocketConnectListener(SessionConnectedEvent event) {
@@ -34,6 +40,7 @@ public class WebSocketEventListener {
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
+        String sessionId = headerAccessor.getSessionId(); // websocket session id
 
         Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
         if (sessionAttributes != null) {
@@ -47,6 +54,12 @@ public class WebSocketEventListener {
             }
         } else {
             logger.warn("User disconnected but session attributes not available");
+        }
+
+        // Clean up RabbitMQ queues for this session
+        if (sessionId != null) {
+            logger.debug("Cleaning up RabbitMQ queues for disconnected session: {}", sessionId);
+            rabbitMQBrokerHandler.cleanupSessionQueues(sessionId);
         }
     }
 }

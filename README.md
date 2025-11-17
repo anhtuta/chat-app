@@ -258,3 +258,55 @@ When using **Spring's STOMP support**, the Spring WebSocket application acts as 
 You can also configure Spring to work with a dedicated STOMP broker (e.g. RabbitMQ, ActiveMQ, etc.) for the actual broadcasting of messages. In that case, Spring maintains TCP connections to the broker, relays messages to it, and also passes messages from it down to connected WebSocket clients.
 
 Ref: https://dzone.com/articles/build-a-chat-application-using-spring-boot-websock
+
+## Run Multiple Instances
+
+Build the Application. This creates: target/chat-app-0.0.1-SNAPSHOT.jar
+
+```sh
+mvn clean package
+```
+
+Terminal 1 - Instance 1:
+
+```bash
+java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
+  --server.port=9010 \
+  --spring.application.instance-id=instance-1
+```
+
+Terminal 2 - Instance 2:
+
+```bash
+java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
+  --server.port=9011 \
+  --spring.application.instance-id=instance-2
+```
+
+Terminal 3 - Instance 3 (optional):
+
+```bash
+java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
+  --server.port=9012 \
+  --spring.application.instance-id=instance-3
+```
+
+## ~~Explaining `#{@publicTopicQueue}`~~
+
+It's Spring Expression Language (SpEL) used to reference a Spring bean.
+
+- `#{}` — SpEL expression delimiter
+- `@` — bean reference operator in SpEL
+- `publicTopicQueue` — bean name (from the `@Bean` method in [`RabbitMQConfig`](./src/main/java/com/hello/chatapp/config/RabbitMQConfig.java))
+
+Sao lại dùng nó?
+
+- Method `publicTopicQueue` sẽ return dynamic queue name, có thể là `ws.instance-1.public`, `ws.instance-123.public`, tuỳ theo giá trị của instance mỗi khi run app
+- Bên RabbitMQ listener, mỗi 1 instance khi run sẽ lắng nghe 1 queue riêng biệt, e.g. `ws.instance-1.public`, `ws.instance-123.public`
+- Ta không thể hardcode `@RabbitListener(queues = "ws.instance-1.public")` như này được, vì mỗi 1 instance sẽ có instanceId riêng.
+- Ta có thể dùng dynamic bean name: `@RabbitListener(queues = "#{@publicTopicQueue}")`
+
+Update: Cái này đã bị xoá bỏ, vì không dùng queue `ws.instance-id.public` nữa. Thay vào đó ta dùng queue `ws.instance-id.session-id.public`
+
+- `ws.instance-id.public`: chỉ dynamic với `instance-id`, sau khi instance start thì KHÔNG thay đổi nữa
+- `ws.instance-id.session-id.public`: dynamic với `instance-id` và websocket session của user, mỗi khi user connect/disconnect 1 websocket thì 1 queue sẽ được tạo/xoá
