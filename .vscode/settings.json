@@ -1,11 +1,13 @@
 {
     "editor.formatOnSave": false,
     "cSpell.words": [
+        "amqp",
         "chatapp",
         "Configurer",
         "springframework",
         "startuml",
-        "Tuzaku"
+        "Tuzaku",
+        "unsubscription"
     ],
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "automatic"
