@@ -77,7 +77,8 @@ public class RabbitMQConfig {
      * - Configures how messages are consumed from queues
      * - Sets up message conversion, error handling, etc.
      * 
-     * Referenced in: RabbitMQMessageListener.handlePublicTopicMessage() and handleGroupTopicMessage()
+     * Note: Currently not used since we use DynamicRabbitMQListener with SimpleMessageListenerContainer
+     * instead of @RabbitListener annotations. Kept for potential future use.
      */
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory) {
@@ -88,55 +89,15 @@ public class RabbitMQConfig {
     }
 
     /**
-     * Queue for public topic messages.
-     * Each instance has its own queue (e.g., "ws.instance-1.public", "ws.instance-2.public").
+     * Note: publicTopicQueue, publicTopicExchange, and publicTopicBinding are removed.
      * 
-     * Used by: RabbitMQMessageListener.handlePublicTopicMessage()
-     * - Referenced via @RabbitListener(queues = "#{@publicTopicQueue}")
-     * - Receives messages published to topic.public exchange
-     * - Bound to topic.public exchange with routing key "#" (matches all messages)
+     * With DirectExchange approach:
+     * - Each subscription (both public and group) creates its own queue: "ws.instance-id.session-id.destination"
+     * - Each destination gets its own exchange (e.g., "topic.public", "topic.group.1")
+     * - Exchanges are created dynamically by CustomRabbitMQBrokerHandler.ensureExchangeExists()
+     * - Per-subscription queues are consumed by DynamicRabbitMQListener
      * 
-     * Spring Framework: Automatically declared in RabbitMQ when bean is created
+     * This eliminates the need for a static publicTopicQueue per instance.
+     * All messages (public and group) are handled uniformly via per-subscription queues.
      */
-    @Bean
-    public Queue publicTopicQueue() {
-        String queueName = "ws." + instanceId + ".public";
-        return QueueBuilder.durable(queueName).build();
-    }
-
-    /**
-     * Exchange for public topic messages.
-     * 
-     * Note: With DirectExchange approach, this is created for backward compatibility.
-     * However, CustomRabbitMQBrokerHandler will create exchanges dynamically per destination.
-     * 
-     * Used by:
-     * - CustomRabbitMQBrokerHandler: Publishes messages to "topic.public" exchange
-     * - publicTopicBinding: Binds publicTopicQueue to this exchange
-     * 
-     * Spring Framework: Automatically declared in RabbitMQ when bean is created
-     * - durable=true: Exchange survives RabbitMQ server restarts
-     * - autoDelete=false: Exchange is not deleted when no queues are bound
-     */
-    @Bean
-    public DirectExchange publicTopicExchange() {
-        return new DirectExchange("topic.public", true, false);
-    }
-
-    /**
-     * Binding that connects publicTopicQueue to publicTopicExchange.
-     * 
-     * Used by: Spring Framework automatically
-     * - When the bean is created, Spring automatically declares this binding in RabbitMQ
-     * - With DirectExchange, empty routing key ("") means the queue receives all messages
-     *   published to topic.public exchange with empty routing key
-     * 
-     * This enables: Messages published to topic.public are delivered to all instances' publicTopicQueue
-     */
-    @Bean
-    public Binding publicTopicBinding() {
-        return BindingBuilder.bind(publicTopicQueue())
-                .to(publicTopicExchange())
-                .with(""); // Empty routing key for DirectExchange
-    }
 }
