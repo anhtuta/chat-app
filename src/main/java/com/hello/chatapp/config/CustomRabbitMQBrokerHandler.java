@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
-
+import com.hello.chatapp.listener.DynamicRabbitMQListener;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.util.Set;
@@ -40,11 +40,8 @@ public class CustomRabbitMQBrokerHandler {
 
     private final AmqpAdmin amqpAdmin;
 
-    @Autowired(required = false)
-    @Lazy
     private DynamicRabbitMQListener dynamicListener;
 
-    // Use setter injection to break circular dependency with SimpMessagingTemplate
     private SimpMessagingTemplate messagingTemplate;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
@@ -65,6 +62,12 @@ public class CustomRabbitMQBrokerHandler {
         this.messagingTemplate = messagingTemplate;
     }
 
+    @Autowired
+    @Lazy
+    public void setDynamicListener(DynamicRabbitMQListener dynamicListener) {
+        this.dynamicListener = dynamicListener;
+    }
+
     @PostConstruct
     public void init() {
         logger.info("CustomRabbitMQBrokerHandler initialized for instance: {}", instanceId);
@@ -83,8 +86,7 @@ public class CustomRabbitMQBrokerHandler {
     public void cleanupSessionQueues(String sessionId) {
         Set<String> queues = sessionQueues.remove(sessionId);
         if (queues != null && !queues.isEmpty()) {
-            logger.info("Cleaning up {} queues for session: {}, instanceId: {}",
-                    queues.size(), sessionId, instanceId);
+            logger.info("Cleaning up {} queues for session: {}, instanceId: {}", queues.size(), sessionId, instanceId);
             for (String queueName : queues) {
                 try {
                     // Stop listener if exists
@@ -142,8 +144,7 @@ public class CustomRabbitMQBrokerHandler {
         try {
             String exchange = convertDestinationToExchange(destination);
 
-            logger.debug("Publishing to RabbitMQ: exchange={}, instanceId={}",
-                    exchange, instanceId);
+            logger.debug("Publishing to RabbitMQ: exchange={}, instanceId={}", exchange, instanceId);
 
             // Ensure exchange exists (DirectExchange, one per destination)
             ensureExchangeExists(exchange);
@@ -173,10 +174,8 @@ public class CustomRabbitMQBrokerHandler {
      * Forwards message to local WebSocket subscribers.
      * 
      * This is REQUIRED for cross-instance messaging:
-     * - When a message comes from RabbitMQ (from another instance),
-     * DynamicRabbitMQListener calls this method
-     * - This method uses SimpMessagingTemplate to deliver to SimpleBroker,
-     * which then delivers to local WebSocket subscribers
+     * - When a message comes from RabbitMQ (from another instance), DynamicRabbitMQListener calls this method
+     * - This method uses SimpMessagingTemplate to deliver to SimpleBroker, which then delivers to local WebSocket subscribers
      * 
      * Without this, messages from other instances would be received from RabbitMQ
      * but never delivered to local WebSocket clients.

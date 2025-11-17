@@ -1,4 +1,4 @@
-package com.hello.chatapp.config;
+package com.hello.chatapp.listener;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6,9 +6,10 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListener;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import com.hello.chatapp.processor.RabbitMQMessageProcessor;
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -18,12 +19,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * With DirectExchange approach:
  * - Each subscription creates its own queue (e.g., "ws.instance-1.session-123.topic.group.1")
  * - This listener dynamically subscribes to those queues as they're created
- * - Messages are processed by RabbitMQMessageProcessor (separated to avoid circular dependency)
- * - Then in RabbitMQMessageProcessor, messages are forwarded to local WebSocket subscribers
+ * - Messages are processed and forwarded to local WebSocket subscribers
  * 
- * This class is responsible only for:
+ * This class is responsible for:
  * - Creating and managing SimpleMessageListenerContainer instances
- * - Delegating message processing to RabbitMQMessageProcessor
+ * - Processing messages (checking instance ID, deserializing, forwarding)
  */
 @Component
 public class DynamicRabbitMQListener {
@@ -31,7 +31,8 @@ public class DynamicRabbitMQListener {
     private static final Logger logger = LoggerFactory.getLogger(DynamicRabbitMQListener.class);
 
     private final ConnectionFactory connectionFactory;
-    private final RabbitMQMessageProcessor messageProcessor;
+    private final MessageConverter messageConverter;
+    private final CustomRabbitMQBrokerHandler brokerHandler;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
@@ -40,9 +41,10 @@ public class DynamicRabbitMQListener {
     private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory,
-            RabbitMQMessageProcessor messageProcessor) {
+            MessageConverter messageConverter, CustomRabbitMQBrokerHandler brokerHandler) {
         this.connectionFactory = connectionFactory;
-        this.messageProcessor = messageProcessor;
+        this.messageConverter = messageConverter;
+        this.brokerHandler = brokerHandler;
     }
 
     /**
@@ -56,8 +58,7 @@ public class DynamicRabbitMQListener {
             return;
         }
 
-        logger.debug("Starting listener for queue: {}, destination: {}, instanceId: {}",
-                queueName, destination, instanceId);
+        logger.debug("Starting listener for queue: {}, destination: {}, instanceId: {}", queueName, destination, instanceId);
 
         // Create a new listener/consumer for this queue
         SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
@@ -66,8 +67,24 @@ public class DynamicRabbitMQListener {
         container.setMessageListener(new MessageListener() {
             @Override
             public void onMessage(Message message) {
-                // Delegate message processing to RabbitMQMessageProcessor
-                messageProcessor.processMessage(message, destination, queueName);
+                try {
+                    // Check if message came from this instance (skip to avoid duplicate)
+                    String sourceInstanceId = (String) message.getMessageProperties().getHeaders().get("source-instance-id");
+                    if (instanceId.equals(sourceInstanceId)) {
+                        logger.debug("Skipping message from same instance: queue={}, instanceId={}", queueName, instanceId);
+                        return;
+                    }
+
+                    // Deserialize payload using the configured MessageConverter
+                    Object payload = messageConverter.fromMessage(message);
+
+                    logger.info("Received message from queue: {}, destination: {}, instanceId: {}",queueName, destination, instanceId);
+
+                    // Forward to local subscribers
+                    brokerHandler.forwardToLocalSubscribers(destination, payload);
+                } catch (Exception e) {
+                    logger.error("Error processing message from queue: {}", queueName, e);
+                }
             }
         });
 
