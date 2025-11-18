@@ -139,7 +139,7 @@ public class CustomRabbitMQBrokerHandler {
             String exchange = convertDestinationToExchange(destination);
 
             // Ensure exchange exists (FanoutExchange, one per destination)
-            ensureExchangeExists(exchange);
+            FanoutExchange fanoutExchange = ensureExchangeExists(exchange);
 
             if (subscribe) {
                 // Increment subscription count for this destination
@@ -152,7 +152,7 @@ public class CustomRabbitMQBrokerHandler {
                     // Create queue and bind to FanoutExchange (no routing key needed)
                     Queue queue = QueueBuilder.durable(queueName).build();
                     amqpAdmin.declareQueue(queue);
-                    amqpAdmin.declareBinding(BindingBuilder.bind(queue).to(new FanoutExchange(exchange)));
+                    amqpAdmin.declareBinding(BindingBuilder.bind(queue).to(fanoutExchange));
                     logger.debug("Created RabbitMQ queue and binding: queue={}, exchange={}", queueName, exchange);
 
                     // Track this queue
@@ -195,10 +195,12 @@ public class CustomRabbitMQBrokerHandler {
      * Each destination (e.g., "/topic/public", "/topic/group.1") gets its own exchange.
      * FanoutExchange broadcasts messages to all bound queues (no routing key needed).
      */
-    private void ensureExchangeExists(String exchange) {
+    private FanoutExchange ensureExchangeExists(String exchange) {
         try {
+            logger.debug("Creating a FanoutExchange if not exists: {}", exchange);
             FanoutExchange fanoutExchange = new FanoutExchange(exchange, true, false);
             amqpAdmin.declareExchange(fanoutExchange);
+            return fanoutExchange;
         } catch (Exception e) {
             // This can happen when we change the exchange type from DirectExchange to FanoutExchange in the code,
             // but in RabbitMQ, the exchange is still a DirectExchange.
