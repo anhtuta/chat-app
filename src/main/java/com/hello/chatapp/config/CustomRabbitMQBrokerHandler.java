@@ -8,7 +8,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import com.hello.chatapp.listener.DynamicRabbitMQListener;
 import jakarta.annotation.PostConstruct;
@@ -19,7 +18,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Custom RabbitMQ broker handler that syncs subscriptions to RabbitMQ
  * and handles cross-instance message distribution.
- * 
  * This works alongside Spring's SimpleBroker for local WebSocket connections.
  */
 @Component
@@ -46,8 +44,6 @@ public class CustomRabbitMQBrokerHandler {
 
     private DynamicRabbitMQListener dynamicListener;
 
-    private SimpMessagingTemplate messagingTemplate;
-
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
 
@@ -57,15 +53,9 @@ public class CustomRabbitMQBrokerHandler {
     }
 
     /**
-     * Setter injection for SimpMessagingTemplate to break circular dependency.
+     * Setter injection for DynamicRabbitMQListener to break circular dependency.
      * This is called after all beans are created, avoiding the circular dependency issue.
      */
-    @Autowired
-    @Lazy
-    public void setMessagingTemplate(SimpMessagingTemplate messagingTemplate) {
-        this.messagingTemplate = messagingTemplate;
-    }
-
     @Autowired
     @Lazy
     public void setDynamicListener(DynamicRabbitMQListener dynamicListener) {
@@ -148,23 +138,6 @@ public class CustomRabbitMQBrokerHandler {
     public boolean hasLocalSubscribers(String destination) {
         Set<String> subs = localSubscriptions.get(destination);
         return subs != null && !subs.isEmpty();
-    }
-
-    /**
-     * Forwards message to local WebSocket subscribers.
-     * 
-     * This is REQUIRED for cross-instance messaging:
-     * - When a message comes from RabbitMQ (from another instance), DynamicRabbitMQListener calls this method
-     * - This method uses SimpMessagingTemplate to deliver to SimpleBroker, which then delivers to local WebSocket subscribers
-     * 
-     * Without this, messages from other instances would be received from RabbitMQ
-     * but never delivered to local WebSocket clients.
-     */
-    public void forwardToLocalSubscribers(String destination, Object payload) {
-        if (hasLocalSubscribers(destination) && messagingTemplate != null) {
-            logger.debug("Forwarding to local subscribers: destination={}, instanceId={}", destination, instanceId);
-            messagingTemplate.convertAndSend(destination, payload);
-        }
     }
 
     /**

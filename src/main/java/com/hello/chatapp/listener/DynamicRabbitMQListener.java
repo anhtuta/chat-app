@@ -8,6 +8,7 @@ import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class DynamicRabbitMQListener {
     private final ConnectionFactory connectionFactory;
     private final MessageConverter messageConverter;
     private final CustomRabbitMQBrokerHandler brokerHandler;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
@@ -41,10 +43,12 @@ public class DynamicRabbitMQListener {
     private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory,
-            MessageConverter messageConverter, CustomRabbitMQBrokerHandler brokerHandler) {
+            MessageConverter messageConverter, CustomRabbitMQBrokerHandler brokerHandler,
+            SimpMessagingTemplate messagingTemplate) {
         this.connectionFactory = connectionFactory;
         this.messageConverter = messageConverter;
         this.brokerHandler = brokerHandler;
+        this.messagingTemplate = messagingTemplate;
     }
 
     /**
@@ -78,10 +82,11 @@ public class DynamicRabbitMQListener {
                     // Deserialize payload using the configured MessageConverter
                     Object payload = messageConverter.fromMessage(message);
 
-                    logger.info("Received message from queue: {}, destination: {}, instanceId: {}",queueName, destination, instanceId);
+                    logger.info("Received message from queue: {}, destination: {}, instanceId: {}",
+                            queueName, destination, instanceId);
 
                     // Forward to local subscribers
-                    brokerHandler.forwardToLocalSubscribers(destination, payload);
+                    forwardToLocalSubscribers(destination, payload);
                 } catch (Exception e) {
                     logger.error("Error processing message from queue: {}", queueName, e);
                 }
@@ -106,6 +111,23 @@ public class DynamicRabbitMQListener {
             // trying to consume from a non-existent queue
             container.stop();
             logger.debug("Stopped listener for queue: {}", queueName);
+        }
+    }
+
+    /**
+     * Forwards message to local WebSocket subscribers.
+     * 
+     * This is REQUIRED for cross-instance messaging:
+     * - When a message comes from RabbitMQ (from another instance), DynamicRabbitMQListener calls this method
+     * - This method uses SimpMessagingTemplate to deliver to SimpleBroker, which then delivers to local WebSocket subscribers
+     * 
+     * Without this, messages from other instances would be received from RabbitMQ
+     * but never delivered to local WebSocket clients.
+     */
+    private void forwardToLocalSubscribers(String destination, Object payload) {
+        if (brokerHandler.hasLocalSubscribers(destination) && messagingTemplate != null) {
+            logger.debug("Forwarding to local subscribers: destination={}, instanceId={}", destination, instanceId);
+            messagingTemplate.convertAndSend(destination, payload);
         }
     }
 }
