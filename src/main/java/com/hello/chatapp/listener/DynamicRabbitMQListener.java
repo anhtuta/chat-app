@@ -119,11 +119,8 @@ public class DynamicRabbitMQListener {
 
     /**
      * Forwards message to local WebSocket subscribers.
-     * 
-     * This is REQUIRED for cross-instance messaging:
-     * - When a message comes from RabbitMQ (from another instance), DynamicRabbitMQListener calls this method
-     * - This method uses SimpMessagingTemplate to deliver to SimpleBroker, which then delivers to local WebSocket subscribers
-     * 
+     * Without this, messages from other instances would be received from RabbitMQ
+     * but never delivered to local WebSocket clients.
      * Note: SimpMessagingTemplate.convertAndSend() is safe to call even when there are no subscribers.
      * It will simply publish to the destination, and if no one is subscribed, nothing happens.
      */
