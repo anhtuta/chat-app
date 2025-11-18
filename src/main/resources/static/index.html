@@ -575,6 +575,8 @@
             // Add Public Chat item
             const publicChatItem = document.createElement('div');
             publicChatItem.className = 'chat-item active';
+            publicChatItem.setAttribute('data-chat-type', 'public');
+            publicChatItem.setAttribute('data-chat-id', '');
             publicChatItem.onclick = () => switchToChat('public', null, 'Public Chat');
             publicChatItem.innerHTML = `
                 <div class="chat-item-name">Public Chat</div>
@@ -586,6 +588,8 @@
             groups.forEach(group => {
                 const groupItem = document.createElement('div');
                 groupItem.className = 'chat-item';
+                groupItem.setAttribute('data-chat-type', 'group');
+                groupItem.setAttribute('data-chat-id', group.id);
                 groupItem.onclick = () => switchToChat('group', group.id, group.name);
                 groupItem.innerHTML = `
                     <div class="chat-item-name">${group.name}</div>
@@ -599,7 +603,21 @@
             // Update active state
             const items = chatListElement.querySelectorAll('.chat-item');
             items.forEach(item => item.classList.remove('active'));
-            event.target.closest('.chat-item')?.classList.add('active');
+
+            // Find and activate the correct chat item
+            const targetItem = Array.from(items).find(item => {
+                const itemType = item.getAttribute('data-chat-type');
+                const itemId = item.getAttribute('data-chat-id');
+                if (type === 'public') {
+                    return itemType === 'public';
+                } else {
+                    return itemType === 'group' && itemId === String(chatId);
+                }
+            });
+
+            if (targetItem) {
+                targetItem.classList.add('active');
+            }
 
             // Unsubscribe from previous chat
             if (currentChatType === 'group' && currentChatId) {
@@ -844,7 +862,6 @@
                     alert('Error creating group: ' + error);
                 }
             } catch (error) {
-                // TODO investigate this error
                 console.error('Error creating group:', error);
                 alert('Error creating group');
             }
