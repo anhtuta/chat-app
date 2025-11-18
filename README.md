@@ -330,3 +330,17 @@ Keep the current approach (no exchange cleanup):
 2. Safe for multi-instance
 3. **Manual cleanup via RabbitMQ Management UI when needed**
 4. Exchanges are lightweight and don't cause issues
+
+## Queue per instance, WebSocket per user
+
+Flow đơn giản khi dùng RabbitMQ:
+
+- Các instance sẽ dùng chung exchange. Mỗi 1 destination sẽ có 1 exchange kiểu Fanout
+- Mỗi 1 instance sẽ chỉ có 1 queue và 1 listener cho 1 destination.
+- Việc tạo exchange/queue sẽ chỉ được thực hiện khi user đầu tiên connect đến server và join group. Các user khác đến sau sẽ không tạo mới nữa
+- Giả sử có 3 instance: 1,2,3. Chỉ có 1 exchange1 và 3 queue 1,2,3 cho mỗi instance
+- Khi user1 gửi 1 message tới instance1, nó sẽ push vào exchange1 RabbitMQ
+- exchange1 sẽ forward message tới cả 3 queue1, queue2, queue3
+- Các listener1, listener2, listener3 nhận được message
+- Các listener lại forward tới in-memory broker, trừ listener1 sẽ KHÔNG forward tới broker, vì listener1 check được message đó được gửi gửi instance1, nên nó sẽ skip
+- In-memory broker của instance2 và instance3 forward message tới các WebSocket connection (tới từng user)

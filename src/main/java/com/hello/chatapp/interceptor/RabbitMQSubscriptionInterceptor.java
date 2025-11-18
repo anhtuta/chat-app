@@ -44,12 +44,12 @@ public class RabbitMQSubscriptionInterceptor implements ChannelInterceptor {
             // Handle SUBSCRIBE command
             if (StompCommand.SUBSCRIBE.equals(command) && destination != null) {
                 logger.debug("Intercepting SUBSCRIBE: sessionId={}, destination={}", sessionId, destination);
-                brokerHandler.handleSubscribe(sessionId, destination);
+                brokerHandler.handleSubscribe(destination);
             }
             // Handle UNSUBSCRIBE command
             else if (StompCommand.UNSUBSCRIBE.equals(command) && destination != null) {
                 logger.debug("Intercepting UNSUBSCRIBE: sessionId={}, destination={}", sessionId, destination);
-                brokerHandler.handleUnsubscribe(sessionId, destination);
+                brokerHandler.handleUnsubscribe(destination);
             }
         }
 

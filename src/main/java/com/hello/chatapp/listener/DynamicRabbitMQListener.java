@@ -18,13 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Dynamic message listener that consumes from per-subscription queues.
  * 
- * With DirectExchange approach:
- * - Each subscription creates its own queue (e.g., "ws.instance-1.session-123.topic.group.1")
- * - This listener dynamically subscribes to those queues as they're created
- * - Messages are processed and forwarded to local WebSocket subscribers
- * 
  * This class is responsible for:
- * - Creating and managing SimpleMessageListenerContainer instances
+ * - Creating and managing RabbitMQ listeners (SimpleMessageListenerContainer objects)
  * - Processing messages (checking instance ID, deserializing, forwarding)
  */
 @Component

@@ -26,7 +26,7 @@ public class CustomRabbitMQBrokerHandler {
     // One queue per instance per destination (shared by all sessions)
     private final ConcurrentHashMap<String, String> destinationQueues = new ConcurrentHashMap<>();
 
-    // Track reference count for each destination: destination -> count
+    // Track reference count for each destination: destination -> count (total subscriptions/users to this destination)
     // Used to know when to delete the queue (when count reaches 0)
     private final ConcurrentHashMap<String, Integer> destinationSubscriptionCount = new ConcurrentHashMap<>();
 
@@ -61,22 +61,21 @@ public class CustomRabbitMQBrokerHandler {
     /**
      * Handles subscription - syncs to RabbitMQ
      */
-    public void handleSubscribe(String sessionId, String destination) {
-        logger.debug("Handling subscribe: sessionId={}, destination={}, instanceId={}", sessionId, destination, instanceId);
+    public void handleSubscribe(String destination) {
+        logger.debug("Handling subscribe: destination={}, instanceId={}", destination, instanceId);
 
         // Sync subscription to RabbitMQ
-        syncSubscriptionToRabbitMQ(destination, sessionId, true);
+        syncSubscriptionToRabbitMQ(destination, true);
     }
 
     /**
      * Handles unsubscription - removes from RabbitMQ
      */
-    public void handleUnsubscribe(String sessionId, String destination) {
-        logger.debug("Handling unsubscribe: sessionId={}, destination={}, instanceId={}",
-                sessionId, destination, instanceId);
+    public void handleUnsubscribe(String destination) {
+        logger.debug("Handling unsubscribe: destination={}, instanceId={}", destination, instanceId);
 
         // Sync unsubscription to RabbitMQ
-        syncSubscriptionToRabbitMQ(destination, sessionId, false);
+        syncSubscriptionToRabbitMQ(destination, false);
     }
 
     /**
@@ -86,8 +85,7 @@ public class CustomRabbitMQBrokerHandler {
     public void publishToRabbitMQ(String destination, Object payload) {
         try {
             String exchange = convertDestinationToExchange(destination);
-
-            logger.debug("Publishing to RabbitMQ: exchange={}, instanceId={}", exchange, instanceId);
+            logger.debug("Publishing to RabbitMQ: from instance={} to exchange={}", instanceId, exchange);
 
             // Ensure exchange exists (FanoutExchange, one per destination)
             ensureExchangeExists(exchange);
@@ -131,10 +129,10 @@ public class CustomRabbitMQBrokerHandler {
     /**
      * Syncs subscription to RabbitMQ by creating/removing queue bindings.
      * Uses FanoutExchange: one exchange per destination, one queue per instance per destination.
-     * 
      * Queue is created on first subscription and deleted when last subscription is removed.
+     * (This should be run only at the first subscription and the last unsubscribe.)
      */
-    private void syncSubscriptionToRabbitMQ(String destination, String sessionId, boolean subscribe) {
+    private void syncSubscriptionToRabbitMQ(String destination, boolean subscribe) {
         try {
             String exchange = convertDestinationToExchange(destination);
 
@@ -185,7 +183,7 @@ public class CustomRabbitMQBrokerHandler {
                 }
             }
         } catch (Exception e) {
-            logger.error("Error syncing subscription to RabbitMQ: destination={}, sessionId={}", destination, sessionId, e);
+            throw new RuntimeException("Error syncing subscription to RabbitMQ: destination=" + destination, e);
         }
     }
 
