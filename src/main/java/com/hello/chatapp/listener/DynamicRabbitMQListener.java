@@ -7,7 +7,9 @@ import org.springframework.amqp.core.MessageListener;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import java.util.Map;
@@ -32,7 +34,8 @@ public class DynamicRabbitMQListener {
 
     private final ConnectionFactory connectionFactory;
     private final MessageConverter messageConverter;
-    private final SimpMessagingTemplate messagingTemplate;
+
+    private SimpMessagingTemplate messagingTemplate;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
@@ -40,10 +43,14 @@ public class DynamicRabbitMQListener {
     // Track active listeners: queueName -> MessageListenerContainer
     private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
-    public DynamicRabbitMQListener(ConnectionFactory connectionFactory,
-            MessageConverter messageConverter, SimpMessagingTemplate messagingTemplate) {
+    public DynamicRabbitMQListener(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
         this.connectionFactory = connectionFactory;
         this.messageConverter = messageConverter;
+    }
+
+    @Autowired
+    @Lazy
+    public void setMessagingTemplate(SimpMessagingTemplate messagingTemplate) {
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -124,6 +131,8 @@ public class DynamicRabbitMQListener {
         if (messagingTemplate != null) {
             logger.debug("Forwarding to local subscribers: destination={}, instanceId={}", destination, instanceId);
             messagingTemplate.convertAndSend(destination, payload);
+        } else {
+            logger.warn("SimpMessagingTemplate is not set, cannot forward message to local subscribers");
         }
     }
 }
