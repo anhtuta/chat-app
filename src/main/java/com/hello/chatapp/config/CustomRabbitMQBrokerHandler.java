@@ -162,8 +162,6 @@ public class CustomRabbitMQBrokerHandler {
                     if (dynamicListener != null) {
                         dynamicListener.startListening(queueName, destination);
                     }
-                } else {
-                    logger.debug("Queue already exists for destination: {}, subscription count: {}", destination, count);
                 }
             } else {
                 // Decrement subscription count for this destination
@@ -184,8 +182,6 @@ public class CustomRabbitMQBrokerHandler {
                         amqpAdmin.deleteQueue(queueName);
                         logger.debug("Removed RabbitMQ queue and binding: queue={}, exchange={}", queueName, exchange);
                     }
-                } else {
-                    logger.debug("Queue still in use for destination: {}, remaining subscriptions: {}", destination, count);
                 }
             }
         } catch (Exception e) {
@@ -204,8 +200,9 @@ public class CustomRabbitMQBrokerHandler {
             FanoutExchange fanoutExchange = new FanoutExchange(exchange, true, false);
             amqpAdmin.declareExchange(fanoutExchange);
         } catch (Exception e) {
-            logger.warn("Error declaring exchange {} (may already exist with different properties): {}",
-                    exchange, e.getMessage());
+            // This can happen when we change the exchange type from DirectExchange to FanoutExchange in the code,
+            // but in RabbitMQ, the exchange is still a DirectExchange.
+            throw new RuntimeException("Error declaring exchange " + exchange, e);
         }
     }
 
