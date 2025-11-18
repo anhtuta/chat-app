@@ -1181,6 +1181,78 @@ If the app crashes (kill -9, system crash), `@PreDestroy` won't run, so queues r
 
 The current solution handles normal disconnects and graceful shutdowns.
 
+## Current (Redundant) Design: using each queue for each user/websocketSessionId
+
+```
+Exchange: topic.group.1
+├─ Queue: ws.instance-1.session-123.topic.group.1 (routing key: "")
+├─ Queue: ws.instance-1.session-456.topic.group.1 (routing key: "")
+└─ Queue: ws.instance-2.session-789.topic.group.1 (routing key: "")
+
+Message published to topic.group.1 → ALL queues receive it
+```
+
+Since all queues receive the same messages, per-session queues add no value.
+
+### Simplified Design (One Queue Per Instance Per Destination)
+
+```
+Exchange: topic.group.1
+├─ Queue: ws.instance-1.topic.group.1 (routing key: "")
+└─ Queue: ws.instance-2.topic.group.1 (routing key: "")
+
+Message published to topic.group.1 → Both queues receive it
+```
+
+Benefits:
+
+- Simpler: one queue per instance per destination
+- Less overhead: fewer queues to manage
+- Same functionality: all messages still delivered
+- Easier cleanup: one queue per destination instead of many
+
+We should create:
+
+- One queue per instance per destination: `ws.{instanceId}.{destination}`
+- Example: `ws.instance-1.topic.group.1`, `ws.instance-2.topic.group.1`
+- All sessions on the same instance subscribing to the same destination share one queue
+- When a message arrives, check `localSubscriptions` to see which sessions should receive it
+
+### Also: Use FanoutExchange Instead
+
+Since all queues receive all messages, FanoutExchange is more appropriate than DirectExchange with empty routing key:
+
+```java
+// Current (works but not ideal):
+DirectExchange + empty routing key = all queues get all messages
+
+// Better:
+FanoutExchange = designed for this exact use case (broadcast to all queues)
+```
+
+### Reference Counting for Queues
+
+- Added `destinationSubscriptionCount` to track how many sessions subscribe to each destination
+- Queue is created on first subscription
+- Queue is deleted when the last subscription is removed
+- Benefit: Queues are only created/deleted when needed
+
+### Simplified Cleanup
+
+- Removed per-session queue cleanup (queues are shared)
+- Cleanup happens automatically when subscription count reaches 0
+- Benefit: Less complex cleanup logic
+
+### Architecture Now
+
+```
+Exchange: topic.group.1 (FanoutExchange)
+├─ Queue: ws.instance-1.topic.group.1 (shared by all sessions on instance-1)
+└─ Queue: ws.instance-2.topic.group.1 (shared by all sessions on instance-2)
+
+Message published → Broadcast to all queues → Each instance receives once
+```
+
 # Implement a custom subscription registry and use Redis pub/sub
 
 ## Important clarifications

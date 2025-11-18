@@ -1,6 +1,5 @@
 package com.hello.chatapp.listener;
 
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
@@ -21,12 +20,9 @@ public class WebSocketEventListener {
     private static final Logger logger = LoggerFactory.getLogger(WebSocketEventListener.class);
 
     private final SimpMessageSendingOperations messagingTemplate;
-    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
-    public WebSocketEventListener(SimpMessageSendingOperations messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+    public WebSocketEventListener(SimpMessageSendingOperations messagingTemplate) {
         this.messagingTemplate = messagingTemplate;
-        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
     }
 
     @EventListener
@@ -54,12 +50,6 @@ public class WebSocketEventListener {
             }
         } else {
             logger.warn("User disconnected but session attributes not available");
-        }
-
-        // Clean up RabbitMQ queues for this session
-        if (sessionId != null) {
-            logger.debug("Cleaning up RabbitMQ queues for disconnected session: {}", sessionId);
-            rabbitMQBrokerHandler.cleanupSessionQueues(sessionId);
         }
     }
 }

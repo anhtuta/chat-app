@@ -4,6 +4,7 @@
         "amqp",
         "chatapp",
         "Configurer",
+        "Fanout",
         "springframework",
         "startuml",
         "Tuzaku",
