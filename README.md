@@ -344,3 +344,8 @@ Flow đơn giản khi dùng RabbitMQ:
 - Các listener1, listener2, listener3 nhận được message
 - Các listener lại forward tới in-memory broker, trừ listener1 sẽ KHÔNG forward tới broker, vì listener1 check được message đó được gửi gửi instance1, nên nó sẽ skip
 - In-memory broker của instance2 và instance3 forward message tới các WebSocket connection (tới từng user)
+
+Luôn phải send message tới 2 chỗ:
+
+- `messagingTemplate.convertAndSend(destination, response)`: gửi tới in-memory broker: các user khác kết nối tới cùng instance của sender sẽ nhận được message luôn
+- `rabbitMQBrokerHandler.publishToRabbitMQ(destination, response)`: gửi tới RabbitMQ cho các user kết nối tới instance khác. Message sẽ phải đi qua RabbitMQ nên sẽ chậm hơn xíu

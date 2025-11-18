@@ -40,6 +40,9 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     @Autowired
     private GroupParticipantRepository groupParticipantRepository;
 
+    @Autowired
+    private CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
             @NonNull MessageChannel channel) {
@@ -56,7 +59,8 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
             }
 
             // Log meaningful STOMP commands (skip heartbeats which have null command)
-            logger.debug("[preSend] message: {}, STOMP command: {}, destination: {}", new String((byte[]) message.getPayload()), command, accessor.getDestination());
+            logger.debug("[preSend] message: {}, STOMP command: {}, destination: {}", new String((byte[]) message.getPayload()),
+                    command, accessor.getDestination());
 
             // Validate authentication for inbound client commands (CONNECT, SUBSCRIBE, SEND, etc.)
             User user = validateAuthentication(accessor);
@@ -84,6 +88,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
         Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
         MessageResponse response = MessageResponse.fromMessage(joinMessage);
         messagingTemplate.convertAndSend("/topic/public", response);
+        rabbitMQBrokerHandler.publishToRabbitMQ("/topic/public", response);
     }
 
     /**

@@ -195,6 +195,22 @@
             font-size: 14px;
         }
 
+        .message.system.connected {
+            color: #4caf50;
+            font-weight: 500;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 8px;
+            padding: 8px 16px;
+        }
+
+        .message.system.disconnected {
+            color: #f44336;
+            font-weight: 500;
+            background: rgba(244, 67, 54, 0.1);
+            border-radius: 8px;
+            padding: 8px 16px;
+        }
+
         .message-header {
             font-size: 12px;
             opacity: 0.8;
@@ -279,7 +295,9 @@
         }
 
         @keyframes dots {
-            0%, 20% {
+
+            0%,
+            20% {
                 content: '.';
             }
 
@@ -287,7 +305,8 @@
                 content: '..';
             }
 
-            60%, 100% {
+            60%,
+            100% {
                 content: '...';
             }
         }
@@ -509,7 +528,7 @@
                     credentials: 'include'
                 });
                 const data = await response.json();
-                
+
                 if (data.authenticated) {
                     username = data.username;
                     await loadGroups();
@@ -552,7 +571,7 @@
 
         function renderChatList(groups) {
             chatListElement.innerHTML = '';
-            
+
             // Add Public Chat item
             const publicChatItem = document.createElement('div');
             publicChatItem.className = 'chat-item active';
@@ -669,17 +688,26 @@
 
             // Check if it's a system message
             const isSystemMessage = message.content && message.content.startsWith("[SYSTEM] ");
-            
+
             if (isSystemMessage) {
                 messageDiv.className += ' system';
+
+                // Check if it's a connection/disconnection message
+                const systemContent = message.content.replace("[SYSTEM] ", "").toLowerCase();
+                if (systemContent.includes('disconnected')) {
+                    messageDiv.className += ' disconnected';
+                } else if (systemContent.includes('connected')) {
+                    messageDiv.className += ' connected';
+                }
+
                 const content = document.createElement('div');
                 content.className = 'message-content';
                 content.textContent = message.content.replace("[SYSTEM] ", "");
                 messageDiv.appendChild(content);
             } else {
                 // Normal message
-                const displayName = (message.user && message.user.fullname) 
-                    ? message.user.fullname 
+                const displayName = (message.user && message.user.fullname)
+                    ? message.user.fullname
                     : (message.user ? message.user.username : 'Unknown');
                 const messageUsername = message.user ? message.user.username : null;
                 const isOwnMessage = messageUsername === username;
@@ -696,7 +724,7 @@
                 messageDiv.appendChild(header);
                 messageDiv.appendChild(content);
             }
-            
+
             messagesElement.appendChild(messageDiv);
             messagesElement.scrollTop = messagesElement.scrollHeight;
         }
@@ -732,7 +760,7 @@
         async function openCreateGroupModal() {
             createGroupModal.classList.add('show');
             selectedUserIds = [];
-            
+
             // Load users
             try {
                 const response = await fetch('/api/groups/users', {
@@ -779,9 +807,9 @@
 
         async function createGroup(event) {
             event.preventDefault();
-            
+
             const groupName = document.getElementById('groupName').value.trim();
-            
+
             if (!groupName) {
                 alert('Please enter a group name');
                 return;
@@ -816,6 +844,7 @@
                     alert('Error creating group: ' + error);
                 }
             } catch (error) {
+                // TODO investigate this error
                 console.error('Error creating group:', error);
                 alert('Error creating group');
             }
