@@ -10,7 +10,6 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,7 +32,6 @@ public class DynamicRabbitMQListener {
 
     private final ConnectionFactory connectionFactory;
     private final MessageConverter messageConverter;
-    private final CustomRabbitMQBrokerHandler brokerHandler;
     private final SimpMessagingTemplate messagingTemplate;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
@@ -43,11 +41,9 @@ public class DynamicRabbitMQListener {
     private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory,
-            MessageConverter messageConverter, CustomRabbitMQBrokerHandler brokerHandler,
-            SimpMessagingTemplate messagingTemplate) {
+            MessageConverter messageConverter, SimpMessagingTemplate messagingTemplate) {
         this.connectionFactory = connectionFactory;
         this.messageConverter = messageConverter;
-        this.brokerHandler = brokerHandler;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -121,11 +117,11 @@ public class DynamicRabbitMQListener {
      * - When a message comes from RabbitMQ (from another instance), DynamicRabbitMQListener calls this method
      * - This method uses SimpMessagingTemplate to deliver to SimpleBroker, which then delivers to local WebSocket subscribers
      * 
-     * Without this, messages from other instances would be received from RabbitMQ
-     * but never delivered to local WebSocket clients.
+     * Note: SimpMessagingTemplate.convertAndSend() is safe to call even when there are no subscribers.
+     * It will simply publish to the destination, and if no one is subscribed, nothing happens.
      */
     private void forwardToLocalSubscribers(String destination, Object payload) {
-        if (brokerHandler.hasLocalSubscribers(destination) && messagingTemplate != null) {
+        if (messagingTemplate != null) {
             logger.debug("Forwarding to local subscribers: destination={}, instanceId={}", destination, instanceId);
             messagingTemplate.convertAndSend(destination, payload);
         }

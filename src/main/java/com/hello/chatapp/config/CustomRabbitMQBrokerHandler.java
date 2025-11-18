@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 import com.hello.chatapp.listener.DynamicRabbitMQListener;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -24,11 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class CustomRabbitMQBrokerHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomRabbitMQBrokerHandler.class);
-
-    // Track local subscriptions: destination -> Set<sessionId>
-    // This is in addition to SimpleBroker's internal tracking
-    // (In-memory broker uses another ConcurrentHashMap for local WebSocket connections)
-    private final ConcurrentHashMap<String, Set<String>> localSubscriptions = new ConcurrentHashMap<>();
 
     // Track queues created by this instance: destination -> queueName
     // One queue per instance per destination (shared by all sessions)
@@ -42,23 +36,15 @@ public class CustomRabbitMQBrokerHandler {
 
     private final AmqpAdmin amqpAdmin;
 
-    private DynamicRabbitMQListener dynamicListener;
+    private final DynamicRabbitMQListener dynamicListener;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
 
-    public CustomRabbitMQBrokerHandler(RabbitTemplate rabbitTemplate, AmqpAdmin amqpAdmin) {
+    public CustomRabbitMQBrokerHandler(RabbitTemplate rabbitTemplate, AmqpAdmin amqpAdmin,
+            DynamicRabbitMQListener dynamicListener) {
         this.rabbitTemplate = rabbitTemplate;
         this.amqpAdmin = amqpAdmin;
-    }
-
-    /**
-     * Setter injection for DynamicRabbitMQListener to break circular dependency.
-     * This is called after all beans are created, avoiding the circular dependency issue.
-     */
-    @Autowired
-    @Lazy
-    public void setDynamicListener(DynamicRabbitMQListener dynamicListener) {
         this.dynamicListener = dynamicListener;
     }
 
@@ -75,33 +61,21 @@ public class CustomRabbitMQBrokerHandler {
     }
 
     /**
-     * Handles subscription - syncs to RabbitMQ and tracks locally
+     * Handles subscription - syncs to RabbitMQ
      */
     public void handleSubscribe(String sessionId, String destination) {
         logger.debug("Handling subscribe: sessionId={}, destination={}, instanceId={}", sessionId, destination, instanceId);
-
-        // Track locally
-        localSubscriptions.computeIfAbsent(destination, k -> ConcurrentHashMap.newKeySet()).add(sessionId);
 
         // Sync subscription to RabbitMQ
         syncSubscriptionToRabbitMQ(destination, sessionId, true);
     }
 
     /**
-     * Handles unsubscription - removes from RabbitMQ and local tracking
+     * Handles unsubscription - removes from RabbitMQ
      */
     public void handleUnsubscribe(String sessionId, String destination) {
         logger.debug("Handling unsubscribe: sessionId={}, destination={}, instanceId={}",
                 sessionId, destination, instanceId);
-
-        // Remove from local tracking
-        Set<String> subs = localSubscriptions.get(destination);
-        if (subs != null) {
-            subs.remove(sessionId);
-            if (subs.isEmpty()) {
-                localSubscriptions.remove(destination);
-            }
-        }
 
         // Sync unsubscription to RabbitMQ
         syncSubscriptionToRabbitMQ(destination, sessionId, false);
@@ -130,14 +104,6 @@ public class CustomRabbitMQBrokerHandler {
         } catch (Exception e) {
             logger.error("Error publishing to RabbitMQ for destination: {}", destination, e);
         }
-    }
-
-    /**
-     * Checks if this instance has local subscribers for a destination
-     */
-    public boolean hasLocalSubscribers(String destination) {
-        Set<String> subs = localSubscriptions.get(destination);
-        return subs != null && !subs.isEmpty();
     }
 
     /**
