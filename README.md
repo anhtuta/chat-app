@@ -333,11 +333,17 @@ Keep the current approach (no exchange cleanup):
 
 ## Queue per instance, WebSocket per user
 
-Flow đơn giản khi dùng RabbitMQ:
+Concepts:
 
 - Các instance sẽ dùng chung exchange. Mỗi 1 destination sẽ có 1 exchange kiểu Fanout
 - Mỗi 1 instance sẽ chỉ có 1 queue và 1 listener cho 1 destination.
+- Queue chỉ liên quan đến instance, còn user chỉ liên quan đến WebSocket connection.
+  - Do đó chỉ cần tạo queue khi user đầu tiên đến subscribe (gửi lệnh `StompCommand.SUBSCRIBE`) đến 1 destination nào đó
+  - Các destination khác cũng vậy, user nào đến subscribe đầu tiên sẽ tạo queue tương ứng
 - Việc tạo exchange/queue sẽ chỉ được thực hiện khi user đầu tiên connect đến server và join group. Các user khác đến sau sẽ không tạo mới nữa
+
+Flow đơn giản khi dùng RabbitMQ:
+
 - Giả sử có 3 instance: 1,2,3. Chỉ có 1 exchange1 và 3 queue 1,2,3 cho mỗi instance
 - Khi user1 gửi 1 message tới instance1, nó sẽ push vào exchange1 RabbitMQ
 - exchange1 sẽ forward message tới cả 3 queue1, queue2, queue3
@@ -349,3 +355,17 @@ Luôn phải send message tới 2 chỗ:
 
 - `messagingTemplate.convertAndSend(destination, response)`: gửi tới in-memory broker: các user khác kết nối tới cùng instance của sender sẽ nhận được message luôn
 - `rabbitMQBrokerHandler.publishToRabbitMQ(destination, response)`: gửi tới RabbitMQ cho các user kết nối tới instance khác. Message sẽ phải đi qua RabbitMQ nên sẽ chậm hơn xíu
+
+Phía Rabbit Lister sẽ phải gửi message tới in-memory broker để nó forward tới các user qua WebSocket:
+
+- `messagingTemplate.convertAndSend(destination, response)`
+
+Túm lại:
+
+- User gửi message đến server (instance1)
+- Nhảy vào controller của Spring boot
+- Controller gửi message đến in-memory broker và RabbitMQ
+- In-memory broker sẽ forward message tới các user đang connect tới instance1
+- RabbitMQ sẽ gửi message tới exchange --> queue --> listener của các instance khác
+- Listener sẽ gửi message đến in-memory broker
+- In-memory broker sẽ forward message tới các user đang connect tới instance đó
