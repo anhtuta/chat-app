@@ -1,0 +1,144 @@
+@startuml
+
+header "Send message flow with Hybrid Broker (In-Memory + RabbitMQ)"
+footer "Author: Tuzaku"
+
+actor User1
+participant "WebApp 1\n(Client)" as WebApp1
+participant "Spring Boot\nInstance 1" as App1
+participant "SimpleBroker\n(In-Memory)" as SimpleBroker
+participant "RabbitMQ\nSubscription\nInterceptor" as SubInterceptor
+participant "CustomRabbitMQ\nBrokerHandler" as RabbitHandler
+participant "RabbitMQ\nBroker" as RabbitMQ
+participant "DynamicRabbitMQ\nListener" as RabbitListener
+participant "Spring Boot\nInstance 2" as App2
+participant "DynamicRabbitMQ\nListener 2" as RabbitListener2
+participant "SimpleBroker 2\n(In-Memory)" as SimpleBroker2
+participant "WebApp 2\n(Client)" as WebApp2
+database PostgreSQL
+
+== STOMP SUBSCRIBE (Hybrid Approach) ==
+
+note over WebApp1, RabbitMQ
+  Subscription is registered in BOTH SimpleBroker (local) and RabbitMQ (cross-instance).
+  Local subscribers means users who are connected to the same instance as the sender.
+  Cross-instance subscribers means users who are connected to other instances.
+  When a user sends a message, it will be sent to both local and cross-instance subscribers.
+  Local subscribers will receive the message immediately.
+  Cross-instance subscribers will receive the message after it is forwarded from RabbitMQ.
+end note
+
+WebApp1 -> App1: STOMP SUBSCRIBE to /topic/public
+App1 -> SubInterceptor: preSend() - SUBSCRIBE command
+SubInterceptor -> RabbitHandler: handleSubscribe("/topic/public")
+RabbitHandler -> RabbitHandler: syncSubscriptionToRabbitMQ()
+RabbitHandler -> RabbitMQ: Create queue: ws.instance-1.topic.public
+RabbitHandler -> RabbitMQ: Bind queue to FanoutExchange: topic.public
+RabbitHandler -> RabbitListener: startListening(queueName, destination)
+RabbitListener -> RabbitMQ: Start consuming from queue
+RabbitMQ -> RabbitHandler: Queue created and bound
+SubInterceptor -> App1: Allow SUBSCRIBE
+App1 -> SimpleBroker: Register subscription (local)
+SimpleBroker -> SimpleBroker: Add client to /topic/public subscribers
+App1 -> WebApp1: Subscription confirmed
+
+== Send Public Message (Hybrid Approach) ==
+
+User1 -> WebApp1: Type and send message
+WebApp1 -> App1: STOMP SEND to /app/chat.send
+App1 -> App1: @MessageMapping("/chat.send")
+App1 -> PostgreSQL: Save message
+PostgreSQL -> App1: Saved message
+App1 -> App1: Create MessageResponse
+
+note over App1
+  Message is sent to BOTH:
+  1. SimpleBroker (for local subscribers)
+  2. RabbitMQ (for cross-instance)
+end note
+
+App1 -> SimpleBroker: @SendTo("/topic/public") - MessageResponse
+SimpleBroker -> SimpleBroker: Find local subscribers
+SimpleBroker -> WebApp1: Broadcast MessageResponse (local clients)
+
+App1 -> RabbitHandler: publishToRabbitMQ("/topic/public", MessageResponse)
+RabbitHandler -> RabbitHandler: Add source-instance-id header
+RabbitHandler -> RabbitMQ: Publish to FanoutExchange: topic.public
+RabbitMQ -> RabbitMQ: Broadcast to all bound queues
+
+note right of RabbitMQ
+  Cross-Instance Message Delivery
+end note
+
+RabbitMQ -> RabbitListener: Message from queue (instance-1 queue)
+RabbitListener -> RabbitListener: Check source-instance-id
+note right of RabbitListener
+  source-instance-id = instance-1
+  current instance = instance-1
+  Skip (same instance)
+end note
+RabbitListener -> RabbitListener: Skip message (same instance)
+
+RabbitMQ -> RabbitListener2: Message from queue (instance-2 queue)
+RabbitListener2 -> RabbitListener2: Check source-instance-id
+note right of RabbitListener2
+  source-instance-id = instance-1
+  current instance = instance-2
+  Forward to local subscribers
+end note
+RabbitListener2 -> RabbitListener2: Deserialize payload
+RabbitListener2 -> SimpleBroker2: convertAndSend("/topic/public", payload)
+SimpleBroker2 -> SimpleBroker2: Find local subscribers
+SimpleBroker2 -> WebApp2: Broadcast MessageResponse (Instance 2 clients)
+
+== Summary of Multiple Instances Scenario ==
+
+note over App1, App2
+  Instance 1: User1 sends message
+  Instance 2: User2 receives message
+  Both use SimpleBroker for local delivery
+  RabbitMQ handles cross-instance distribution
+  Below are simplified steps (similar to the above flow)
+end note
+
+User1 -> WebApp1: Send message
+WebApp1 -> App1: STOMP SEND
+App1 -> PostgreSQL: Save message
+App1 -> SimpleBroker: @SendTo (local delivery)
+SimpleBroker -> WebApp1: Message (Instance 1 clients)
+App1 -> RabbitHandler: publishToRabbitMQ()
+RabbitHandler -> RabbitMQ: Publish to exchange
+RabbitMQ -> RabbitListener2: Deliver to Instance 2 queue
+RabbitListener2 -> SimpleBroker2: Forward to local subscribers
+SimpleBroker2 -> WebApp2: Message (Instance 2 clients)
+
+== Key Points ==
+
+note right of SimpleBroker
+  SimpleBroker handles:
+  - Local WebSocket connections
+  - Fast local message delivery
+  - Per-instance subscription registry
+end note
+
+note right of RabbitMQ
+  RabbitMQ handles:
+  - Cross-instance message distribution
+  - One queue per instance per destination
+  - FanoutExchange broadcasts to all queues
+end note
+
+note over RabbitHandler, RabbitListener
+  CustomRabbitMQBrokerHandler:
+  - Syncs subscriptions to RabbitMQ
+  - Publishes messages to RabbitMQ
+  - Creates queues and bindings dynamically
+  
+  DynamicRabbitMQListener:
+  - Consumes from RabbitMQ queues
+  - Filters self-delivery (source-instance-id)
+  - Forwards to SimpleBroker for local delivery
+end note
+
+@enduml
+
