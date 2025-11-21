@@ -1104,7 +1104,7 @@ Reasons:
 1. Simplicity: no routing key patterns to manage
 2. Clarity: one exchange per destination is easy to understand
 3. Fewer bugs: no wildcard matching errors
-4. Sufficient for this use case: you don’t need pattern-based routing
+4. Sufficient for this use case: you don't need pattern-based routing
 5. Exchange overhead is low: RabbitMQ handles many exchanges efficiently
 
 When to use TopicExchange:
@@ -1252,6 +1252,258 @@ Exchange: topic.group.1 (FanoutExchange)
 
 Message published → Broadcast to all queues → Each instance receives once
 ```
+
+# Scalability Assessment for the Approach 1: Hybrid - Simple Broker + Manual RabbitMQ Sync
+
+- **Current fit**: Works well for a few thousand concurrent users on a handful of app instances.
+
+  - Auth is session-based
+  - WebSocket delivery rides the embedded SimpleBroker
+  - RabbitMQ mirrors subscriptions for cross-instance fan-out
+  - Persistence is single PostgreSQL instance with JPA.
+
+- **Major scaling limits**:
+  - SimpleBroker keeps all subscriptions and pending messages in each app node's memory; millions of connections would exhaust heap and CPU.
+  - RabbitMQ fan-out per destination per instance adds lots of queues/bindings; **managing millions of dynamic queues is operationally heavy**.
+  - HTTP session storage (with full `User` objects) doesn't scale or replicate efficiently for massive fleets.
+  - Single PostgreSQL database for chat history + auth becomes a bottleneck without sharding/partitioning.
+  - Lack of horizontal identity/session abstraction (no stateless tokens) makes global load balancing harder.
+
+## Recommended Evolution Path
+
+- **WebSocket layer**: Move to a dedicated STOMP-compatible broker (e.g., RabbitMQ STOMP plugin, ActiveMQ Artemis) or a managed WebSocket gateway. App servers would become stateless producers/consumers, offloading subscription tracking and message fan-out. For very high scale, consider protocols like MQTT or custom gRPC streams instead of STOMP.
+
+- **Session/auth**: Replace HTTP session coupling with stateless JWT or opaque tokens stored in Redis. For WebSockets, use token-based handshake validation (e.g., `Authorization` header on `/ws`). This removes the need to serialize entire `User` objects and lets you load-balance freely.
+
+- **Message flow**:
+
+  - Adopt CQRS-style services: an API gateway for REST/WebSocket auth, a chat service for message ingestion, and a notification service for broadcasting.
+  - Messages go onto a durable log (Kafka/Pulsar). Consumers handle persistence, fan-out, and delivery to connected clients (via a WebSocket backplane or push service). This ensures backpressure handling and replay.
+
+- **Persistence**:
+
+  - Partition chat history per group/user or use a scalable store (Cassandra, DynamoDB, Scylla) optimized for append-heavy workloads.
+  - Keep PostgreSQL (or another relational DB) for metadata (users, groups) but shard/replicate as needed.
+
+- **Cache & presence**: Introduce Redis or a purpose-built presence service to track online users, group memberships, throttling, etc., without hitting the DB.
+
+- **Ops & observability**:
+  - Containerize services and deploy on Kubernetes/nomad for auto-scaling.
+  - Instrument metrics/tracing (Prometheus/OpenTelemetry) to watch queue depth, WS connection counts, DB load.
+  - Plan for multi-region: replicate brokers, use geo routing, and ensure message ordering guarantees per group/room.
+
+In short, go from "application node manages everything" to "stateless application tiers + dedicated messaging infrastructure + scalable storage". That's the path to millions of users.
+
+## Will using Redis pub/sub solve this "millions of users" problem?
+
+Using Redis pub/sub instead of RabbitMQ won't magically unlock "millions of users." Both can relay plenty of messages, but they have different trade-offs:
+
+- **Redis pub/sub** is fire-and-forget: no persistence, no acknowledgements, no queueing. Messages go only to clients connected at that moment. Scaling comes from clustering and sharding, but a single Redis node can still become a bottleneck if you push high fan-out traffic through it. Operationally it's simpler, but you lose durability, routing features, dead-letter handling, etc.
+
+- **RabbitMQ** is a full broker: queues, persistent storage, back-pressure, routing options, acknowledgements, consumer groups. It's heavier but purpose-built for many producers/consumers. With clustering and mirrored queues, it already scales horizontally; the limiting factors are how you structure exchanges/queues and how many bindings you maintain.
+
+In your current architecture, switching to Redis pub/sub would mainly **reduce setup complexity** (no per-destination queues), but you'd still have:
+
+- App servers managing every WebSocket connection and memory footprint.
+- **No durable messaging**; if a consumer goes down, messages are lost.
+- Limited monitoring/tools compared to RabbitMQ plugins.
+
+For millions of users, the real bottlenecks are connection fan-out, state management, and persistence. Whether you use Redis pub/sub or RabbitMQ, you'll eventually need a dedicated WebSocket gateway or managed service, stateless auth, and a write-optimized message log (Kafka/Pulsar). So Redis pub/sub isn't inherently more scalable; it just changes the failure characteristics.
+
+## Redis Pub/Sub's Approach
+
+Redis pub/sub doesn’t have the same **queue management overhead**.
+
+RabbitMQ's Queue Management Issue
+
+- One queue per instance per destination
+- Example: 100 groups × 10 instances = 1,000 queues
+- Each queue needs: **creation, binding to exchange, tracking, cleanup** on unsubscribe
+- At scale (thousands of groups, hundreds of instances), this becomes hundreds of thousands of queues to manage.
+
+Redis Pub/Sub's Approach: uses channels, not queues
+
+- Channels are just string identifiers (e.g., `"/topic/public"`, `"/topic/group.1"`)
+- **No explicit creation** — channels exist when someone subscribes
+- **No bindings** — publishers send to channel names directly
+- **No cleanup** — channels disappear when no subscribers remain
+- **Ephemeral and lightweight** — no persistent state to track (Tạm thời và nhẹ)
+
+Math: with 1M users, each of them has 10 groups on average --> 10M active subscriptions
+
+- Memory: Each subscription consumes memory. Rough estimate: **~100–200 bytes per subscription**. 10M subscriptions ≈ 1–2 GB just for subscription tracking.
+- Network: Managing 10M subscriptions adds network overhead for subscribe/unsubscribe operations.
+- Sharding: You’ll need Redis Cluster with multiple nodes to distribute the load.
+
+For real-time chat where you want immediate delivery to online users and don't need offline queuing, **Redis pub/sub is simpler and avoids the queue management overhead**. For your use case, this is often a better fit than RabbitMQ's queue-per-instance-per-destination model.
+
+## Overhead Calculation
+
+Scenario Setup
+
+- 1M users online
+- Each user subscribes to 10 groups on average
+- Total: 10M subscriptions
+- 10M unique groups (destinations)
+- 10 application instances
+
+### RabbitMQ Overhead Calculation
+
+Queue Management
+
+- Queues created: 10M groups × 10 instances = 100M queues
+- Each queue overhead:
+  - Queue metadata: ~1–2 KB
+  - Binding to exchange: ~500 bytes
+  - Application tracking: ~200 bytes per queue
+  - Total per queue: ~2–3 KB
+- Total queue overhead: 100M × 2.5 KB ≈ 250 GB (just metadata)
+
+Subscription Tracking
+
+- Per-instance subscriptions: 1M users ÷ 10 instances × 10 groups = 1M subscriptions per instance
+- RabbitMQ tracks each subscription internally
+- Memory per subscription: ~100–200 bytes
+- Total subscription memory: 10M × 150 bytes ≈ 1.5 GB
+
+Exchange Management
+
+- Exchanges: 10M exchanges (one per group)
+- Exchange overhead: ~1–2 KB per exchange
+- Total exchange overhead: 10M × 1.5 KB ≈ 15 GB
+
+Binding Management
+
+- Bindings: 100M bindings (one per queue)
+- Binding overhead: ~500 bytes per binding
+- Total binding overhead: 100M × 500 bytes ≈ 50 GB
+
+Operational Overhead
+
+- Queue lifecycle: Create/delete 100M queues on startup/shutdown
+- Binding operations: 100M bindings to manage
+- Exchange management: 10M exchanges
+- Network overhead: Massive protocol overhead for 100M queues
+- Monitoring: Tracking 100M queues is impractical
+
+Total RabbitMQ Overhead
+
+- Queue metadata: ~250 GB
+- Subscription tracking: ~1.5 GB
+- Exchange overhead: ~15 GB
+- Binding overhead: ~50 GB
+- Total: ~316.5 GB + operational overhead
+
+### Redis Pub/Sub Overhead Calculation
+
+Channel Management
+
+- Channels: 10M unique channels (one per group)
+- Channel overhead: ~50–100 bytes per channel (just a string key)
+- Total channel overhead: 10M × 75 bytes ≈ 750 MB
+
+Subscription Tracking
+
+- 10M subscriptions total
+- Memory per subscription: ~100–150 bytes (subscriber reference)
+- Total subscription memory: 10M × 125 bytes ≈ 1.25 GB
+
+Operational Overhead
+
+- No queue creation/deletion needed
+- No bindings to manage
+- Channels are ephemeral (auto-cleanup when empty)
+- Simple subscribe/unsubscribe operations
+- Minimal monitoring overhead
+
+Total Redis Pub/Sub Overhead
+
+- Channel metadata: ~750 MB
+- Subscription tracking: ~1.25 GB
+- Operational complexity: Low (no queues to manage)
+- Total: ~2 GB + minimal operational overhead
+
+### Comparison Summary
+
+| Metric                 | RabbitMQ               | Redis Pub/Sub          | Difference          |
+| ---------------------- | ---------------------- | ---------------------- | ------------------- |
+| Memory (subscriptions) | ~1.5 GB                | ~1.25 GB               | Similar             |
+| Queue/Channel overhead | ~250 GB (100M queues)  | ~750 MB (10M channels) | RabbitMQ 333x more  |
+| Exchange overhead      | ~15 GB (10M exchanges) | N/A                    | RabbitMQ only       |
+| Binding overhead       | ~50 GB (100M bindings) | N/A                    | RabbitMQ only       |
+| Total infrastructure   | ~316.5 GB              | ~2 GB                  | RabbitMQ 158x more  |
+| Operational complexity | Extremely high         | Low                    | RabbitMQ much worse |
+| Setup/teardown time    | Hours (100M queues)    | Instant                | RabbitMQ much worse |
+
+### The Real Problem with RabbitMQ (10M Groups)
+
+At this scale, RabbitMQ becomes impractical:
+
+1. 100M queues to create, bind, monitor, and clean up
+
+   - Startup time: Hours to create 100M queues
+   - Shutdown time: Hours to delete 100M queues
+   - Memory: 250 GB just for queue metadata
+
+2. 10M exchanges to manage
+
+   - 15 GB memory overhead
+   - Complex routing table management
+
+3. 100M bindings to maintain
+
+   - 50 GB memory overhead
+   - Binding operations are expensive
+
+4. Operational impossibility
+
+   - Management UI can't handle 100M queues
+   - Monitoring tools will crash
+   - Cluster coordination becomes a bottleneck
+
+5. Network overhead
+   - Each queue creation requires network round-trip
+   - 100M operations = hours of setup time
+
+### Redis Pub/Sub Advantages (10M Groups)
+
+1. Channels are ephemeral
+
+   - No explicit creation needed
+   - Auto-cleanup when empty
+   - 750 MB vs 250 GB (333x less memory)
+
+2. No bindings
+
+   - Direct channel-based routing
+   - No 50 GB binding overhead
+
+3. No exchanges
+
+   - Simple string-based channels
+   - No 15 GB exchange overhead
+
+4. Instant operations
+   - Subscribe/unsubscribe is O(1)
+   - No queue lifecycle management
+
+### Conclusion
+
+With 10M unique groups, RabbitMQ is not suitable:
+
+- Memory overhead: 316.5 GB vs 2 GB (158x difference)
+- Operational complexity: Managing 100M queues is impractical
+- Performance: Hours to start up vs instant
+- Cost: Requires massive infrastructure
+
+Redis pub/sub is the clear winner:
+
+- 2 GB total overhead (vs 316.5 GB)
+- Simple, scalable architecture
+- No queue management needed
+- Suitable for millions of channels
+
+The math shows that RabbitMQ's queue-per-instance-per-destination model doesn't scale to millions of destinations. Redis pub/sub's channel-based model is far more efficient for this use case.
 
 # Implement a custom subscription registry and use Redis pub/sub
 
