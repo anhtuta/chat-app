@@ -58,40 +58,7 @@ When a message arrives at `@MessageMapping("/chat.send")`, Spring:
    - Uses the authenticated username from WebSocket session
    - Prevents spoofing (client can't fake the sender)
 
-**Result:**
-
-- Simple authentication validation
-- Prevents message spoofing
-- No complex session tracking
-- Minimal performance overhead (just a HashMap lookup)
-
-The solution now only validates that WebSocket messages come from authenticated users, without tracking cookie deletion.
-
-## Handles join notifications in BE
-
-1. **Backend now handles join notifications** (`WebSocketEventListener`):
-
-   - Updated `handleWebSocketConnectListener` to automatically send a join notification when a user connects
-   - Uses the same pattern as disconnect notifications for consistency
-
-2. **Removed frontend join notification** (`index.html`):
-
-   - Removed the manual `stompClient.send("/app/chat.addUser", ...)` call
-   - Added a comment explaining that the backend handles it automatically
-
-3. **Cleaned up unused code** (`WebSocketController`):
-   - Removed the `addUser` method since it's no longer needed
-
-## Benefits
-
-- Consistent behavior: both join and disconnect are handled by the backend
-- More secure: join notifications can't be faked by clients
-- Cleaner frontend: less code to maintain
-- Automatic: notifications happen when the WebSocket connection is established
-
-When a user connects, the backend automatically broadcasts "{username} joined the chat" to all clients, just like it does when they disconnect.
-
-## How the Message Broker Handles Group Messages
+## How the In-Memory Message Broker Handles Group Messages
 
 ### 1. Topic-based routing
 
@@ -146,11 +113,6 @@ Step-by-step:
 2. Backend receives and processes:
 
    ```java
-   // WebSocketController.sendGroupMessage()
-   // - Validates user
-   // - Fetches group from database
-   // - Saves message to database
-   // - Sends to topic: "/topic/group.1"
    // Controller chỉ save message vào DB, còn broadcast nó cho user khác là việc của broker.
    // Do đó controller sẽ gửi message tới broker để nó forward message tới người nhận.
    // Với lệnh sau, controller sẽ gửi message tới broker (nếu dùng in-memory broker thì nó chính là STOMP broker đó)
@@ -163,11 +125,6 @@ Step-by-step:
    - It looks up all subscribers to `/topic/group.1`
    - It forwards the message to all subscribed clients
 
-4. Only subscribed clients receive it:
-   - Only clients subscribed to `/topic/group.1` receive the message
-   - Clients subscribed to `/topic/group.2` do not receive it
-   - Clients only subscribed to `/topic/public` do not receive it
-
 ### 4. How the broker knows which users to forward to
 
 The broker does not know about users or groups. It only knows:
@@ -175,9 +132,9 @@ The broker does not know about users or groups. It only knows:
 - Topic destinations (e.g., `/topic/group.1`)
 - Which WebSocket sessions are subscribed to each topic
 
-The broker forwards messages to all subscribers of a topic. It does not:
+The broker forwards messages to all subscribers of a topic. It does NOT:
 
-- Check if a user is a member of the group
+- Check if a user is a member of the group: do đó khi 1 user subscribe 1 destination, ta phải check xem nó có là member của group đó không: [WebSocketSecurityChannelInterceptor.java::validateSubscription()](./src/main/java/com/hello/chatapp/config/WebSocketSecurityChannelInterceptor.java)
 - Query the database
 - Know about user relationships
 
@@ -331,7 +288,9 @@ Keep the current approach (no exchange cleanup):
 3. **Manual cleanup via RabbitMQ Management UI when needed**
 4. Exchanges are lightweight and don't cause issues
 
-## Queue per instance, WebSocket per user
+## Hybrid broker using RabbitMQ: Queue per instance, WebSocket per user
+
+Stack: Single Spring Boot app (ChatAppApplication) using MVC + STOMP-over-WebSocket
 
 Concepts:
 
