@@ -12,16 +12,19 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
-    @UniqueConstraint(columnNames = "username")
+        @UniqueConstraint(columnNames = "username")
 })
 @Getter
 @Setter
 @NoArgsConstructor
-public class User {
+public class User implements Serializable {
+
+    private static final long serialVersionUID = 1763724157088L;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
