@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/chatdb
     username: postgres
-    password: 
+    password: 5555
   jpa:
     hibernate:
       ddl-auto: update
