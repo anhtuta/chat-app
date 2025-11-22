@@ -1,7 +1,6 @@
 package com.hello.chatapp.config;
 
 import org.springframework.amqp.core.*;
-import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -80,13 +79,13 @@ public class RabbitMQConfig {
      * Note: Currently not used since we use DynamicRabbitMQListener with SimpleMessageListenerContainer
      * instead of @RabbitListener annotations. Kept for potential future use.
      */
-    @Bean
-    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory) {
-        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(connectionFactory);
-        factory.setMessageConverter(messageConverter());
-        return factory;
-    }
+    // @Bean
+    // public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory) {
+    // SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+    // factory.setConnectionFactory(connectionFactory);
+    // factory.setMessageConverter(messageConverter());
+    // return factory;
+    // }
 
     /**
      * With DirectExchange approach:
@@ -94,6 +93,8 @@ public class RabbitMQConfig {
      * - Each destination gets its own exchange (e.g., "topic.public", "topic.group.1")
      * - Exchanges are created dynamically by CustomRabbitMQBrokerHandler.ensureExchangeExists()
      * - Per-subscription queues are consumed by DynamicRabbitMQListener
+     * 
+     * Update: We now use FanoutExchange instead of DirectExchange
      * 
      * This eliminates the need for a static publicTopicQueue per instance.
      * All messages (public and group) are handled uniformly via per-subscription queues.
