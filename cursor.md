@@ -1271,18 +1271,26 @@ Message published → Broadcast to all queues → Each instance receives once
 
 ## Recommended Evolution Path
 
-- **WebSocket layer**: Move to a dedicated STOMP-compatible broker (e.g., RabbitMQ STOMP plugin, ActiveMQ Artemis) or a managed WebSocket gateway. App servers would become stateless producers/consumers, offloading subscription tracking and message fan-out. For very high scale, consider protocols like MQTT or custom gRPC streams instead of STOMP.
+- **WebSocket layer**: Move to a dedicated STOMP-compatible broker (e.g., RabbitMQ STOMP plugin, ActiveMQ Artemis) or a managed **WebSocket gateway**. App servers would become stateless producers/consumers, offloading subscription tracking and message fan-out. For very high scale, consider **protocols like MQTT or custom gRPC streams instead of STOMP**.
 
 - **Session/auth**: Replace HTTP session coupling with stateless JWT or opaque tokens stored in Redis. For WebSockets, use token-based handshake validation (e.g., `Authorization` header on `/ws`). This removes the need to serialize entire `User` objects and lets you load-balance freely.
 
 - **Message flow**:
 
   - Adopt CQRS-style services: an API gateway for REST/WebSocket auth, a chat service for message ingestion, and a notification service for broadcasting.
-  - Messages go onto a durable log (Kafka/Pulsar). Consumers handle persistence, fan-out, and delivery to connected clients (via a WebSocket backplane or push service). This ensures backpressure handling and replay.
+  - ~~Messages go onto a durable log (Kafka/Pulsar). Consumers handle persistence, fan-out, and delivery to connected clients (via a WebSocket backplane or push service). This ensures backpressure handling and replay~~.
+    - Nếu dùng kafka, thì KHÔNG tạo 1 topic cho mỗi group, như vậy sẽ là 10M groups, kafka KHÔNG thể handle được
+    - Cũng không thể tạo 1 topic với 10M partition được
+    - Kafka doesn't scale to millions of partitions per topic
+    - Nếu chọn Kafka thì có thể nhiều group dùng chung 1 partition
+    - Nhưng Kafka sẽ KHÔNG cần thiết cho case này. If you only need:
+      - Simple message storage → DB is sufficient
+      - Real-time delivery → Redis pub/sub is sufficient
+      - No event streaming needs → Kafka adds complexity
 
 - **Persistence**:
 
-  - Partition chat history per group/user or use a scalable store (Cassandra, DynamoDB, Scylla) optimized for append-heavy workloads.
+  - Partition chat history per group/user or use a scalable store (Cassandra, DynamoDB, Scylla) **optimized for append-heavy workloads**.
   - Keep PostgreSQL (or another relational DB) for metadata (users, groups) but shard/replicate as needed.
 
 - **Cache & presence**: Introduce Redis or a purpose-built presence service to track online users, group memberships, throttling, etc., without hitting the DB.
@@ -1294,21 +1302,15 @@ Message published → Broadcast to all queues → Each instance receives once
 
 In short, go from "application node manages everything" to "stateless application tiers + dedicated messaging infrastructure + scalable storage". That's the path to millions of users.
 
-## Will using Redis pub/sub solve this "millions of users" problem?
+## Will using Redis pub/sub unlock "millions of users" problem?
 
-Using Redis pub/sub instead of RabbitMQ won't magically unlock "millions of users." Both can relay plenty of messages, but they have different trade-offs:
+Maybe (see below). Both can relay plenty of messages, but they have different trade-offs:
 
 - **Redis pub/sub** is fire-and-forget: no persistence, no acknowledgements, no queueing. Messages go only to clients connected at that moment. Scaling comes from clustering and sharding, but a single Redis node can still become a bottleneck if you push high fan-out traffic through it. Operationally it's simpler, but you lose durability, routing features, dead-letter handling, etc.
 
 - **RabbitMQ** is a full broker: queues, persistent storage, back-pressure, routing options, acknowledgements, consumer groups. It's heavier but purpose-built for many producers/consumers. With clustering and mirrored queues, it already scales horizontally; the limiting factors are how you structure exchanges/queues and how many bindings you maintain.
 
-In your current architecture, switching to Redis pub/sub would mainly **reduce setup complexity** (no per-destination queues), but you'd still have:
-
-- App servers managing every WebSocket connection and memory footprint.
-- **No durable messaging**; if a consumer goes down, messages are lost.
-- Limited monitoring/tools compared to RabbitMQ plugins.
-
-For millions of users, the real bottlenecks are connection fan-out, state management, and persistence. Whether you use Redis pub/sub or RabbitMQ, you'll eventually need a dedicated WebSocket gateway or managed service, stateless auth, and a write-optimized message log (Kafka/Pulsar). So Redis pub/sub isn't inherently more scalable; it just changes the failure characteristics.
+For millions of users, the real bottlenecks are connection fan-out, state management, and persistence. Whether you use Redis pub/sub or RabbitMQ, you'll eventually need a dedicated WebSocket gateway or managed service, stateless auth, and a write-optimized message log (Kafka/Pulsar). Nhưng nếu chỉ tầm 1M user thì Redis pub/sub vẫn handle được
 
 ## Redis Pub/Sub's Approach
 
