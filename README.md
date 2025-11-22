@@ -328,3 +328,11 @@ Túm lại:
 - RabbitMQ sẽ gửi message tới exchange --> queue --> listener của các instance khác
 - Listener sẽ gửi message đến in-memory broker
 - In-memory broker sẽ forward message tới các user đang connect tới instance đó
+
+## TODO
+
+Fix issue:
+
+- Running 2 instance
+- Open 2 tab in the same browser, each tab accesses each instance
+- Login one tab, then the other will be logged out. Why?

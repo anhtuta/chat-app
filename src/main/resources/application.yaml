@@ -18,9 +18,21 @@ spring:
     port: 5672
     username: guest
     password: guest
+  data:
+    redis:
+      host: localhost
+      password:
+      port: 6379
+  session:
+    redis:
+      flush-mode: on_save
+      namespace: chatapp
 
 server:
   port: 9010
+  servlet:
+    session:
+      timeout: 1800 # If a duration suffix is not specified, seconds is used.
 
 logging:
   level:

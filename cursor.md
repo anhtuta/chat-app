@@ -1313,7 +1313,7 @@ For millions of users, the real bottlenecks are connection fan-out, state manage
 
 ## Redis Pub/Sub's Approach
 
-Redis pub/sub doesn’t have the same **queue management overhead**.
+Redis pub/sub doesn't have the same **queue management overhead**.
 
 RabbitMQ's Queue Management Issue
 
@@ -1334,7 +1334,7 @@ Math: with 1M users, each of them has 10 groups on average --> 10M active subscr
 
 - Memory: Each subscription consumes memory. Rough estimate: **~100–200 bytes per subscription**. 10M subscriptions ≈ 1–2 GB just for subscription tracking.
 - Network: Managing 10M subscriptions adds network overhead for subscribe/unsubscribe operations.
-- Sharding: You’ll need Redis Cluster with multiple nodes to distribute the load.
+- Sharding: You'll need Redis Cluster with multiple nodes to distribute the load.
 
 For real-time chat where you want immediate delivery to online users and don't need offline queuing, **Redis pub/sub is simpler and avoids the queue management overhead**. For your use case, this is often a better fit than RabbitMQ's queue-per-instance-per-destination model.
 
@@ -1741,7 +1741,7 @@ public class RedisConfig {
 
 Redis pub/sub is the right choice:
 
-- Memory: ~3 GB vs RabbitMQ’s ~316.5 GB (105x less)
+- Memory: ~3 GB vs RabbitMQ's ~316.5 GB (105x less)
 - Operational: simple vs very complex
 - Performance: instant operations vs hours of setup
 - Cost: much lower infrastructure requirements
@@ -1750,8 +1750,8 @@ Redis pub/sub is the right choice:
 Kafka is not needed because:
 
 - You already persist to DB
-- You don’t need event streaming
-- You don’t need multiple consumers
+- You don't need event streaming
+- You don't need multiple consumers
 - It adds unnecessary complexity and latency
 
 Final architecture:
@@ -1902,13 +1902,20 @@ This architecture scales to millions of users efficiently.
 - Simple to implement (just add dependency)
 - No code changes needed (Spring handles it)
 
-**Implementation:** Add `spring-session-data-redis` to pom.xml, then only need to config this:
+**Implementation:** Add `spring-session-data-redis` to pom.xml. Thanks to first-class auto-configuration support, just by adding the dependency Spring Boot will set up Spring Session backed by Redis for us.
 
-```yaml
-spring:
-  session:
-    store-type: redis
-```
+Under the hood, Spring Boot applies configuration that is equivalent to manually adding `@EnableRedisHttpSession` annotation. This creates a Spring bean with the name of `springSessionRepositoryFilter` that implements `Filter` (for every request). **The filter is in charge of replacing the `HttpSession` implementation to be backed by Spring Session**.
+
+Tức là chỉ cần thêm dependency, rồi add redis config ở file app.yml, thế spring boot tự động implement session = Redis, không cần thêm annotation nào nữa!
+
+How Does It Work?
+
+- Instead of using Tomcat's `HttpSession`, we persist the values in Redis.
+- Spring Session replaces the `HttpSession` with an implementation that is backed by Redis.
+- When Spring Security's `SecurityContextPersistenceFilter` saves the SecurityContext to the `HttpSession`, it is then persisted into Redis.
+- When a new `HttpSession` is created, Spring Session creates a cookie named `SESSION` in your browser. That cookie contains the ID of your session (encoded in Base64). You can view the cookies (with Chrome or Firefox).
+
+Ref: https://docs.spring.io/spring-session/reference/guides/boot-redis.html
 
 ## 4. Cache layer: what to cache?
 
