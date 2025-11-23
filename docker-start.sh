@@ -14,7 +14,7 @@ fi
 
 # Build and start services
 echo "🔨 Building and starting services..."
-docker-compose up -d --build
+docker-compose --profile multi-instance up -d --build
 
 # Wait for services to be healthy
 echo "⏳ Waiting for services to start..."

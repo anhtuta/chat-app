@@ -6,6 +6,6 @@ set -e
 
 echo "� Stopping Chat App with Docker..."
 
-docker-compose down
+docker-compose stop
 
 echo "✅ Services stopped!"
