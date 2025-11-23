@@ -103,6 +103,44 @@ Key environment variables (can be set in `.env` file):
 | `LOG_LEVEL`         | Logging level       | `INFO`       |
 | `JPA_SHOW_SQL`      | Show SQL queries    | `false`      |
 
+## How Spring Boot Maps Environment Variables
+
+Spring Boot automatically converts environment variable names to property paths using these rules:
+
+1. Convert to lowercase
+2. Replace underscores (`_`) with dots (`.`)
+3. Map to the corresponding YAML property
+
+### Example: `SPRING_APPLICATION_INSTANCE_ID`
+
+```
+Environment Variable:  SPRING_APPLICATION_INSTANCE_ID
+                          ↓
+Spring Boot converts:  spring.application.instance-id
+                          ↓
+Maps to YAML:          spring:
+                         application:
+                           instance-id: <value>
+```
+
+More Examples
+
+| Environment Variable             | Spring Property                  | YAML Path                        |
+| -------------------------------- | -------------------------------- | -------------------------------- |
+| `SPRING_DATASOURCE_URL`          | `spring.datasource.url`          | `spring.datasource.url`          |
+| `SPRING_DATA_REDIS_HOST`         | `spring.data.redis.host`         | `spring.data.redis.host`         |
+| `SERVER_PORT`                    | `server.port`                    | `server.port`                    |
+| `SPRING_APPLICATION_INSTANCE_ID` | `spring.application.instance-id` | `spring.application.instance-id` |
+
+### Priority Order
+
+Spring Boot reads configuration in this order (highest to lowest priority):
+
+1. Environment variables (highest) ← Docker sets these
+2. Command-line arguments
+3. `application-{profile}.yaml`
+4. `application.yaml` (lowest)
+
 ## Useful Commands
 
 ### View logs
