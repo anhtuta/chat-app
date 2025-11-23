@@ -344,3 +344,36 @@ Recommendations
 
 - If you want the easiest reliable improvement: run `mvn spring-boot:build-image` (Option 1). It usually produces the best size with minimal changes and works well with Spring Boot projects.
 - If you prefer a Dockerfile change I can apply now: implement Option 3 (slim base) — low-risk — or Option 2 (distroless+jlink) — higher-reward but I’ll need to adjust build (and possibly pom.xml) and test.
+
+## Layered Jars in Docker
+
+Make sure the project is packaged as a layered jar
+
+- Inspect the jar file: `jar tf ./target/chat-app-0.0.1-SNAPSHOT.jar`
+- Result: we can see the layer file: `BOOT-INF/layers.idx`
+- List the layers inside the artifact: `java -Djarmode=layertools -jar target/chat-app-0.0.1-SNAPSHOT.jar list`
+
+Why use layered jars
+
+- Docker images are built as a stack of layers. When the application JAR is exported as a layered jar, Spring Boot exposes separate layers for the loader, dependencies, snapshot-dependencies, and application code.
+- By extracting and copying these folders into separate Docker COPY steps, Docker can cache unchanged layers (usually the dependencies) between builds. This makes rebuilds much faster and keeps incremental image sizes smaller.
+
+How this repository uses layered jars
+
+- The `Dockerfile` in this repo now uses a multi-stage build that:
+  - Builds the application with Maven (`mvn clean package -DskipTests`).
+  - Runs `java -Djarmode=layertools -jar target/*.jar extract` in a temporary stage to extract the layered layout.
+  - Copies the `spring-boot-loader/`, `dependencies/`, `snapshot-dependencies/` and `application/` folders into the final runtime image as separate Docker layers.
+
+You should see Docker reusing cached layers for `dependencies/` and `spring-boot-loader/` and only rebuilding the `application/` layer, which is much faster.
+
+Notes
+
+- If `java -Djarmode=layertools` reports `BOOT-INF/layers.idx` missing, the jar is not built as a layered jar. Ensure your Spring Boot Maven plugin is recent and not configured to disable layering.
+- Layered jars give the most benefit when your dependency set changes infrequently relative to application code.
+
+Ref:
+
+- Copilot
+- https://viblo.asia/p/build-optimized-docker-images-for-spring-boot-application-38X4EPqoVN2
+- https://www.baeldung.com/docker-layers-spring-boot
