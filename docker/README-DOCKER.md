@@ -19,7 +19,10 @@ chmod +x docker-start.sh
 # Or manually:
 docker-compose up -d
 
-# Or manually using multi-instance
+# Or manually using multi-instance.
+# This starts two app instances
+# Instance 1: http://localhost:9010
+# Instance 2: http://localhost:9011
 docker-compose --profile multi-instance up -d --build
 ```
 
@@ -29,17 +32,6 @@ docker-compose --profile multi-instance up -d --build
 - **PostgreSQL**: localhost:5432
 - **Redis**: localhost:6379
 - **RabbitMQ Management**: http://localhost:15672 (guest/guest)
-
-## Multi-Instance Setup
-
-```bash
-docker-compose --profile multi-instance up -d
-```
-
-This starts two app instances:
-
-- Instance 1: http://localhost:9010
-- Instance 2: http://localhost:9011
 
 ## Environment Variables
 

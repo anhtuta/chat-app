@@ -33,6 +33,7 @@ Thumbs.db
 Dockerfile
 docker-compose.yml
 .dockerignore
+docker/
 
 # Other
 cursor.md
