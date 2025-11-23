@@ -12,6 +12,23 @@ I will mainly use Cursor editor to help me to code, my main responsibilities are
 - Prompt
 - Review code
 
+## Local setup
+
+### Not using docker
+
+Requirements:
+
+- Install Java 25
+- Install PostgreSQL 18, start it, then create a new database `chatdb`
+- Install Redis and start it
+
+Start app: use one of these methods. I usually use both: first for instance1, and second for instance2:
+
+1. Build and run spring app: `mvn spring-boot:run`
+2. Build and run jar file:
+   - Build jar first: `mvn clean package`
+   - Then start multiple instance: [run-multiple-instances](#run-multiple-instances)
+
 ## How Spring converts JSON to Message
 
 Here is a method in a controller:

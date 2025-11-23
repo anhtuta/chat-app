@@ -1,0 +1,280 @@
+# Docker Setup Guide
+
+This guide explains how to run the chat application using Docker.
+
+Ref: Cursor AI
+
+## Prerequisites
+
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+
+## Quick Start
+
+Run following commands in the root folder
+
+1. **Copy environment file (optional):**
+
+   ```bash
+   cp .env.example .env
+   # Edit .env if you want to customize passwords/ports
+   ```
+
+2. **Build and start all services:**
+
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **View logs:**
+
+   ```bash
+   docker-compose logs -f app
+   ```
+
+4. **Stop all services:**
+   ```bash
+   docker-compose down
+   ```
+
+## Services
+
+The Docker Compose setup includes:
+
+- **postgres**: PostgreSQL 18 database (port 5432)
+- **redis**: Redis 7 for sessions and cache (port 6379)
+- **rabbitmq**: RabbitMQ with management UI (ports 5672, 15672)
+- **app-1**: Spring Boot application (port 9010)
+- **app-2**: Second app instance for multi-instance testing (port 9011, optional)
+
+## Accessing Services
+
+### Application
+
+- Main app: http://localhost:9010
+- Second instance: http://localhost:9011 (if enabled)
+
+### RabbitMQ Management UI
+
+- URL: http://localhost:15672
+- Username: `guest` (default)
+- Password: `guest` (default)
+
+### Database
+
+```bash
+# Connect to PostgreSQL
+docker exec -it chat-app-postgres psql -U postgres -d chatdb
+```
+
+### Redis CLI
+
+```bash
+# Connect to Redis
+docker exec -it chat-app-redis redis-cli -a redis123
+```
+
+## Multi-Instance Setup
+
+To run multiple app instances:
+
+```bash
+docker-compose --profile multi-instance up -d
+```
+
+This starts:
+
+- `app-1` on port 9010
+- `app-2` on port 9011
+
+Both instances share the same database, Redis, and RabbitMQ.
+
+## Environment Variables
+
+Key environment variables (can be set in `.env` file):
+
+| Variable            | Description         | Default      |
+| ------------------- | ------------------- | ------------ |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `5555`       |
+| `REDIS_PASSWORD`    | Redis password      | `redis123`   |
+| `RABBITMQ_USER`     | RabbitMQ username   | `guest`      |
+| `RABBITMQ_PASSWORD` | RabbitMQ password   | `guest`      |
+| `INSTANCE_ID`       | App instance ID     | `instance-1` |
+| `LOG_LEVEL`         | Logging level       | `INFO`       |
+| `JPA_SHOW_SQL`      | Show SQL queries    | `false`      |
+
+## Useful Commands
+
+### View logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f app
+docker-compose logs -f postgres
+```
+
+### Restart a service
+
+```bash
+docker-compose restart app
+```
+
+### Rebuild and restart
+
+```bash
+docker-compose up -d --build app
+```
+
+### Stop and remove volumes (clean slate)
+
+```bash
+docker-compose down -v
+```
+
+### Check service health
+
+```bash
+docker-compose ps
+```
+
+### Execute commands in container
+
+```bash
+# Shell access
+docker exec -it chat-app sh
+
+# Run Maven command
+docker exec -it chat-app mvn clean package
+```
+
+## Development
+
+### Hot Reload (Optional)
+
+For development with hot reload, you can mount the source code:
+
+1. Create `docker-compose.override.yml`:
+
+   ```yaml
+   version: "3.8"
+   services:
+     app:
+       volumes:
+         - ./src:/app/src:ro
+   ```
+
+2. Use Spring Boot DevTools (add to `pom.xml`):
+   ```xml
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-devtools</artifactId>
+       <optional>true</optional>
+   </dependency>
+   ```
+
+### Debugging
+
+To enable remote debugging:
+
+1. Update `Dockerfile` to add debug port:
+
+   ```dockerfile
+   EXPOSE 9010 5005
+   ENTRYPOINT ["java", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005", "-jar", "app.jar"]
+   ```
+
+2. Update `docker-compose.yml`:
+
+   ```yaml
+   app:
+     ports:
+       - "9010:9010"
+       - "5005:5005"
+   ```
+
+3. Connect your IDE to `localhost:5005`
+
+## Production Considerations
+
+For production deployment:
+
+1. **Use environment-specific configs:**
+
+   - Create `application-prod.yaml`
+   - Set `SPRING_PROFILES_ACTIVE=prod`
+
+2. **Use secrets management:**
+
+   - Don't commit `.env` file
+   - Use Docker secrets or external secret management
+
+3. **Resource limits:**
+
+   ```yaml
+   app:
+     deploy:
+       resources:
+         limits:
+           cpus: "2"
+           memory: 2G
+         reservations:
+           cpus: "1"
+           memory: 1G
+   ```
+
+4. **Health checks:**
+
+   - Add Spring Boot Actuator for health endpoints
+   - Configure proper health check intervals
+
+5. **Logging:**
+   - Use centralized logging (ELK, Loki, etc.)
+   - Configure log rotation
+
+## Troubleshooting
+
+### Application won't start
+
+- Check logs: `docker-compose logs app`
+- Verify database is ready: `docker-compose ps postgres`
+- Check environment variables: `docker-compose config`
+
+### Database connection errors
+
+- Ensure PostgreSQL is healthy: `docker-compose ps postgres`
+- Check connection string in environment variables
+- Verify network connectivity: `docker network inspect chat-app_chat-network`
+
+### Redis connection errors
+
+- Check Redis password matches in both services
+- Verify Redis is healthy: `docker-compose ps redis`
+- Test connection: `docker exec -it chat-app-redis redis-cli -a redis123 ping`
+
+### Port conflicts
+
+- Change ports in `docker-compose.yml`
+- Check what's using the port: `netstat -an | grep 9010`
+
+## Cleanup
+
+### Remove everything
+
+```bash
+docker-compose down -v --remove-orphans
+```
+
+### Remove images
+
+```bash
+docker rmi chat-app-app
+```
+
+### Prune unused resources
+
+```bash
+docker system prune -a
+```

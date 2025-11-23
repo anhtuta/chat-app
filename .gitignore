@@ -31,3 +31,20 @@ build/
 
 ### PlantUML ###
 out/
+
+# Environment
+.env
+
+# Docker
+docker-compose.override.yml
+
+# Data directories (database, cache, etc.)
+# Ignore all contents of data/ directory
+docker/data/*
+# But allow the directory structure and specific files
+!docker/data/.gitkeep
+!docker/data/README.md
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,145 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:18-alpine
+    container_name: chat-app-postgres
+    environment:
+      POSTGRES_DB: chatdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-5555}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  # Redis (for sessions, cache, and pub/sub)
+  redis:
+    image: redis:7-alpine
+    container_name: chat-app-redis
+    # Use config file + command for password (password must be set via command line)
+    command: redis-server /etc/redis/redis.conf --requirepass ${REDIS_PASSWORD:-redis123}
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./docker/data/redis:/data
+      - ./docker/config/redis/redis.conf:/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a redis123 ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - chat-network
+
+  # RabbitMQ (currently used, can be removed when migrating to Redis pub/sub)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: chat-app-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672" # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - ./docker/data/rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  # Spring Boot Application
+  app-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-app-1
+    environment:
+      SPRING_APPLICATION_NAME: chat-app
+      SPRING_APPLICATION_INSTANCE_ID: ${INSTANCE_ID:-instance-1}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chatdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-5555}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: ${JPA_SHOW_SQL:-false}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      SPRING_SESSION_STORE_TYPE: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SERVER_PORT: 9010
+      LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
+    ports:
+      - "9010:9010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chat-network
+    restart: unless-stopped
+
+  # Optional: Second app instance for testing multi-instance setup
+  app-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-app-2
+    environment:
+      SPRING_APPLICATION_NAME: chat-app
+      SPRING_APPLICATION_INSTANCE_ID: ${INSTANCE_ID_2:-instance-2}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chatdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-5555}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: ${JPA_SHOW_SQL:-false}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      SPRING_SESSION_STORE_TYPE: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SERVER_PORT: 9010
+      LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
+    ports:
+      - "9011:9010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chat-network
+    restart: unless-stopped
+    profiles:
+      - multi-instance
+
+# volumes:
+# All services now use bind mounts in ./docker/data/ directory
+# No named volumes needed
+
+networks:
+  chat-network:
+    driver: bridge
