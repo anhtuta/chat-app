@@ -12,6 +12,11 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Runtime stage
+# Use a slim JRE base to reduce image size. If this specific slim tag
+# isn't available in your registry, we can switch to a distroless or
+# buildpack-based image as a fallback.
+# Currently not available:
+# FROM eclipse-temurin:25-jre-jammy-slim
 FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app

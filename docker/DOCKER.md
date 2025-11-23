@@ -310,3 +310,37 @@ docker-compose down -v --remove-orphans
 ```bash
 docker system prune -a
 ```
+
+## Optimize Docker image size
+
+Currently the image's size for the chat-app is 700MB
+
+Why the image is large
+
+- Most of the 700MB comes from the runtime base image (Debian/JRE layers) and the full JDK dependencies embedded in the fat JAR.
+- We can reduce size by changing the runtime base or by creating a smaller custom runtime.
+
+Three practical options (tradeoffs included)
+
+1. Use Spring Boot buildpacks (`spring-boot:build-image`)
+
+   - Pros: Produces small, production-ready images (Paketo builders / distroless), minimal manual Dockerfile work.
+   - Cons: Requires Docker + Buildpacks (pack) and may change image format; but usually simplest and effective.
+   - Command: `mvn spring-boot:build-image -Dspring-boot.build-image.imageName=chat-app:slim`
+   - Typical size: 100–250 MB depending on builder.
+
+2. Multi-stage build with a distroless runtime and optional `jlink`
+
+   - Pros: Produces very small image (distroless + custom JRE), deterministic.
+   - Cons: More complex; `jlink` step requires careful module selection; may need Java 17+ features and module path support.
+   - Implementation: Add a `jlink` stage (or use `jlink` tool in build stage) and copy the custom runtime into a distroless image.
+
+3. Use a slim JRE base image (quick win)
+   - Pros: Simple change — replace `eclipse-temurin:25-jre-jammy` with a `-slim` or `-alpine` tag (if available) or with `openjdk:17-jre-slim`.
+   - Cons: Must ensure Java runtime version compatibility with the compiled app.
+   - Typical size reduction: from ~700MB → ~200–300MB if JRE slim/distroless used.
+
+Recommendations
+
+- If you want the easiest reliable improvement: run `mvn spring-boot:build-image` (Option 1). It usually produces the best size with minimal changes and works well with Spring Boot projects.
+- If you prefer a Dockerfile change I can apply now: implement Option 3 (slim base) — low-risk — or Option 2 (distroless+jlink) — higher-reward but I’ll need to adjust build (and possibly pom.xml) and test.

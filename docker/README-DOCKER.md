@@ -18,6 +18,9 @@ chmod +x docker-start.sh
 
 # Or manually:
 docker-compose up -d
+
+# Or manually using multi-instance
+docker-compose --profile multi-instance up -d --build
 ```
 
 ## Services
