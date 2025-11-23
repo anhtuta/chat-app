@@ -4,14 +4,14 @@ This guide explains how to run the chat application using Docker.
 
 Ref: Cursor AI
 
+All commands should be run in the root folder
+
 ## Prerequisites
 
 - Docker Engine 20.10+
 - Docker Compose 2.0+
 
 ## Quick Start
-
-Run following commands in the root folder
 
 1. **Copy environment file (optional):**
 
@@ -265,12 +265,6 @@ For production deployment:
 
 ```bash
 docker-compose down -v --remove-orphans
-```
-
-### Remove images
-
-```bash
-docker rmi chat-app-app
 ```
 
 ### Prune unused resources

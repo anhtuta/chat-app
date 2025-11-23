@@ -1,6 +1,9 @@
 # Docker Quick Start
 
+All commands should be run in the root folder
+
 ## Prerequisites
+
 - Docker Engine 20.10+
 - Docker Compose 2.0+
 
@@ -31,6 +34,7 @@ docker-compose --profile multi-instance up -d
 ```
 
 This starts two app instances:
+
 - Instance 1: http://localhost:9010
 - Instance 2: http://localhost:9011
 
@@ -64,4 +68,3 @@ docker-compose up -d --build app
 ```
 
 For more details, see [DOCKER.md](./DOCKER.md).
-
