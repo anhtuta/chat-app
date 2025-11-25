@@ -316,6 +316,8 @@ Concepts:
 - Queue chỉ liên quan đến instance, còn user chỉ liên quan đến WebSocket connection.
   - Do đó chỉ cần tạo queue khi user đầu tiên đến subscribe (gửi lệnh `StompCommand.SUBSCRIBE`) đến 1 destination nào đó
   - Các destination khác cũng vậy, user nào đến subscribe đầu tiên sẽ tạo queue tương ứng
+  - Listener của queue KHÔNG quan tâm đến users, nó chỉ quan tâm đến destination của broker. Nó chỉ forward message tới destination đó, KHÔNG quan tâm ai có quyền xem message
+  - Khi user subscribe 1 destination của broker, thì broker phải check user có trong nhóm không rồi mới cho phép subscribe (xem [phần 4 ở trên](#4-how-the-broker-knows-which-users-to-forward-to))
 - Việc tạo exchange/queue sẽ chỉ được thực hiện khi user đầu tiên connect đến server và join group. Các user khác đến sau sẽ không tạo mới nữa
 
 Flow đơn giản khi dùng RabbitMQ:
@@ -345,6 +347,24 @@ Túm lại:
 - RabbitMQ sẽ gửi message tới exchange --> queue --> listener của các instance khác
 - Listener sẽ gửi message đến in-memory broker
 - In-memory broker sẽ forward message tới các user đang connect tới instance đó
+
+### Test in local
+
+- Run 3 instance ở 3 port 9010, 9011, 9012
+- Dùng 3 account login vào từng instance: http://localhost:9010, http://localhost:9011, http://localhost:9012
+- Sau đó mỗi account vào tất cả các group để nhắn tin. Hiện tại có 4 group
+- 4 exchange được tạo như sau:
+
+  ![](./docs/photo/exchange-list.png)
+
+- Với mỗi instance, ta sẽ tạo 4 queue tương ứng cho từng exchange
+
+  ![](./docs/photo/queue-list.png)
+
+- Ở hình trên, riêng user ở instance 3 mới vào 2 nhóm (public và group1, do đó nó mới chỉ tạo 2 queue)
+- Dù có thêm bao nhiêu user thì số lượng exchange vào queue vẫn chỉ có vậy. Tối đa
+  - `Số exchange = số group`
+  - `Số queue = số group * số instance`
 
 ## TODO
 
