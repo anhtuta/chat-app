@@ -71,7 +71,7 @@ services:
     container_name: chat-app-instance-1
     environment:
       SPRING_APPLICATION_NAME: chat-app
-      SPRING_APPLICATION_INSTANCE_ID: ${INSTANCE_ID:-instance-1}
+      SPRING_APPLICATION_INSTANCE_ID: ${INSTANCE_ID_1:-instance-1}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chatdb
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-5555}
@@ -126,6 +126,45 @@ services:
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
       - "9011:9010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chat-network
+    restart: unless-stopped
+    profiles:
+      - multi-instance
+
+  # Optional: Third app instance for testing multi-instance setup
+  instance-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-app-instance-3
+    environment:
+      SPRING_APPLICATION_NAME: chat-app
+      SPRING_APPLICATION_INSTANCE_ID: ${INSTANCE_ID_3:-instance-3}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/chatdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-5555}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: ${JPA_SHOW_SQL:-false}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      SPRING_SESSION_STORE_TYPE: redis
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      SERVER_PORT: 9010
+      LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
+    ports:
+      - "9012:9010"
     depends_on:
       postgres:
         condition: service_healthy
