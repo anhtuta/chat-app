@@ -22,13 +22,18 @@ public class CustomRabbitMQBrokerHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(CustomRabbitMQBrokerHandler.class);
 
-    // Track queues created by this instance: destination -> queueName
-    // One queue per instance per destination (shared by all sessions)
-    private final ConcurrentHashMap<String, String> destinationQueues = new ConcurrentHashMap<>();
+    // Single exchange name for all destinations
+    private static final String SINGLE_EXCHANGE_NAME = "chat.exchange";
 
-    // Track reference count for each destination: destination -> count (total subscriptions/users to this destination)
-    // Used to know when to delete the queue (when count reaches 0)
+    // Single queue name for this instance (shared by all destinations)
+    private String instanceQueueName;
+
+    // Track which destinations this instance is subscribed to
+    // destination -> subscription count (number of users subscribed to this destination)
     private final ConcurrentHashMap<String, Integer> destinationSubscriptionCount = new ConcurrentHashMap<>();
+
+    // Track if the queue has been created and listener started
+    private boolean queueInitialized = false;
 
     private final RabbitTemplate rabbitTemplate;
 
@@ -49,6 +54,9 @@ public class CustomRabbitMQBrokerHandler {
     @PostConstruct
     public void init() {
         logger.info("CustomRabbitMQBrokerHandler initialized for instance: {}", instanceId);
+        // Create single queue for this instance
+        instanceQueueName = "ws." + instanceId;
+        ensureQueueAndExchangeExist();
     }
 
     @PreDestroy
@@ -79,107 +87,85 @@ public class CustomRabbitMQBrokerHandler {
     }
 
     /**
+     * Checks if this instance is subscribed to a destination.
+     * Used by the listener to filter messages.
+     */
+    public boolean isSubscribedToDestination(String destination) {
+        Integer count = destinationSubscriptionCount.get(destination);
+        return count != null && count > 0;
+    }
+
+    /**
      * Publishes message to RabbitMQ for cross-instance distribution.
-     * Uses FanoutExchange: one exchange per destination, broadcasts to all bound queues.
+     * Uses single FanoutExchange: all messages go to one exchange, broadcasts to all instance queues.
+     * Destination is included in message headers for filtering on consumer side.
      */
     public void publishToRabbitMQ(String destination, Object payload) {
         try {
-            String exchange = convertDestinationToExchange(destination);
-            logger.debug("Publishing to RabbitMQ: from instance={} to exchange={}", instanceId, exchange);
+            logger.debug("Publishing to RabbitMQ: from instance={} to exchange={}, destination={}",
+                    instanceId, SINGLE_EXCHANGE_NAME, destination);
 
-            // Ensure exchange exists (FanoutExchange, one per destination)
-            ensureExchangeExists(exchange);
+            // Ensure single exchange and queue exist
+            ensureQueueAndExchangeExist();
 
-            // Convert payload to message and add instance ID header
+            // Convert payload to message and add headers
             Message message = rabbitTemplate.getMessageConverter().toMessage(payload, new MessageProperties());
             message.getMessageProperties().setHeader("source-instance-id", instanceId);
+            message.getMessageProperties().setHeader("destination", destination); // Include destination for filtering
 
-            // Publish to FanoutExchange (routing key is ignored for FanoutExchange)
-            // FanoutExchange broadcasts messages to all bound queues
-            rabbitTemplate.send(exchange, "", message);
+            // Publish to single FanoutExchange (routing key is ignored for FanoutExchange)
+            // FanoutExchange broadcasts messages to all bound instance queues
+            rabbitTemplate.send(SINGLE_EXCHANGE_NAME, "", message);
         } catch (Exception e) {
             logger.error("Error publishing to RabbitMQ for destination: {}", destination, e);
         }
     }
 
     /**
-     * Cleans up all queues created by this instance (called on shutdown)
+     * Cleans up the single queue created by this instance (called on shutdown)
      */
     private void cleanupAllQueues() {
-        if (!destinationQueues.isEmpty()) {
-            logger.info("Cleaning up {} queues for instance: {}", destinationQueues.size(), instanceId);
-            for (String queueName : destinationQueues.values()) {
-                try {
-                    // Stop listener if exists
-                    if (dynamicListener != null) {
-                        dynamicListener.stopListening(queueName);
-                    }
-                    // Delete queue (bindings are automatically removed)
-                    amqpAdmin.deleteQueue(queueName);
-                    logger.debug("Deleted queue: {}", queueName);
-                } catch (Exception e) {
-                    logger.warn("Error deleting queue {}: {}", queueName, e.getMessage());
+        if (queueInitialized && instanceQueueName != null) {
+            logger.info("Cleaning up queue for instance: {}", instanceId);
+            try {
+                // Stop listener if exists
+                if (dynamicListener != null) {
+                    dynamicListener.stopListening(instanceQueueName);
                 }
+                // Delete queue (bindings are automatically removed)
+                amqpAdmin.deleteQueue(instanceQueueName);
+                logger.debug("Deleted queue: {}", instanceQueueName);
+            } catch (Exception e) {
+                logger.warn("Error deleting queue {}: {}", instanceQueueName, e.getMessage());
             }
-            destinationQueues.clear();
+            queueInitialized = false;
             destinationSubscriptionCount.clear();
         }
     }
 
     /**
-     * Syncs subscription to RabbitMQ by creating/removing queue bindings.
-     * Uses FanoutExchange: one exchange per destination, one queue per instance per destination.
-     * Queue is created on first subscription and deleted when last subscription is removed.
-     * (This should be run only at the first subscription and the last unsubscribe.)
+     * Syncs subscription to RabbitMQ.
+     * Uses single FanoutExchange: one exchange for all destinations, one queue per instance.
+     * Queue is created once on first subscription and reused for all destinations.
+     * We only track which destinations this instance is subscribed to (for filtering).
      */
     private void syncSubscriptionToRabbitMQ(String destination, boolean subscribe) {
         try {
-            String exchange = convertDestinationToExchange(destination);
-
-            // Ensure exchange exists (FanoutExchange, one per destination)
-            FanoutExchange fanoutExchange = ensureExchangeExists(exchange);
+            // Ensure single exchange and queue exist
+            ensureQueueAndExchangeExist();
 
             if (subscribe) {
                 // Increment subscription count for this destination
                 int count = destinationSubscriptionCount.compute(destination, (k, v) -> (v == null) ? 1 : v + 1);
-
-                // Create queue only if this is the first subscription to this destination
-                if (count == 1) {
-                    String queueName = createQueueName(instanceId, destination);
-
-                    // Create queue and bind to FanoutExchange (no routing key needed)
-                    Queue queue = QueueBuilder.durable(queueName).build();
-                    amqpAdmin.declareQueue(queue);
-                    amqpAdmin.declareBinding(BindingBuilder.bind(queue).to(fanoutExchange));
-                    logger.debug("Created RabbitMQ queue and binding: queue={}, exchange={}", queueName, exchange);
-
-                    // Track this queue
-                    destinationQueues.put(destination, queueName);
-
-                    // Start listening to this queue dynamically
-                    if (dynamicListener != null) {
-                        dynamicListener.startListening(queueName, destination);
-                    }
-                }
+                logger.debug("Subscribed to destination: {}, count: {}", destination, count);
             } else {
                 // Decrement subscription count for this destination
                 int count = destinationSubscriptionCount.compute(destination, (k, v) -> (v == null || v <= 1) ? 0 : v - 1);
+                logger.debug("Unsubscribed from destination: {}, count: {}", destination, count);
 
-                // Delete queue only if this was the last subscription to this destination
+                // Remove from tracking if no more subscriptions
                 if (count == 0) {
-                    String queueName = destinationQueues.remove(destination);
                     destinationSubscriptionCount.remove(destination);
-
-                    if (queueName != null) {
-                        // Stop listening to this queue
-                        if (dynamicListener != null) {
-                            dynamicListener.stopListening(queueName);
-                        }
-
-                        // Unbind and delete queue (bindings are automatically removed when queue is deleted)
-                        amqpAdmin.deleteQueue(queueName);
-                        logger.debug("Removed RabbitMQ queue and binding: queue={}, exchange={}", queueName, exchange);
-                    }
                 }
             }
         } catch (Exception e) {
@@ -188,54 +174,38 @@ public class CustomRabbitMQBrokerHandler {
     }
 
     /**
-     * Ensures exchange exists in RabbitMQ.
-     * Uses FanoutExchange: one exchange per destination.
-     * Each destination (e.g., "/topic/public", "/topic/group.1") gets its own exchange.
-     * FanoutExchange broadcasts messages to all bound queues (no routing key needed).
+     * Ensures the single exchange and instance queue exist in RabbitMQ.
+     * Creates them once and reuses for all destinations.
      */
-    private FanoutExchange ensureExchangeExists(String exchange) {
+    private void ensureQueueAndExchangeExist() {
+        if (queueInitialized) {
+            return; // Already initialized
+        }
+
         try {
-            logger.debug("Creating a FanoutExchange if not exists: {}", exchange);
-            FanoutExchange fanoutExchange = new FanoutExchange(exchange, true, false);
+            // Create single FanoutExchange for all destinations
+            logger.debug("Creating single FanoutExchange: {}", SINGLE_EXCHANGE_NAME);
+            FanoutExchange fanoutExchange = new FanoutExchange(SINGLE_EXCHANGE_NAME, true, false);
             amqpAdmin.declareExchange(fanoutExchange);
-            return fanoutExchange;
+
+            // Create single queue for this instance
+            logger.debug("Creating single queue for instance: {}", instanceQueueName);
+            Queue queue = QueueBuilder.durable(instanceQueueName).build();
+            amqpAdmin.declareQueue(queue);
+
+            // Bind queue to exchange (no routing key needed for FanoutExchange)
+            amqpAdmin.declareBinding(BindingBuilder.bind(queue).to(fanoutExchange));
+            logger.debug("Bound queue {} to exchange {}", instanceQueueName, SINGLE_EXCHANGE_NAME);
+
+            // Start listening to this queue (single listener for all destinations)
+            if (dynamicListener != null) {
+                dynamicListener.startListening(instanceQueueName, null); // destination=null means filter by header
+            }
+
+            queueInitialized = true;
+            logger.info("Initialized single queue and exchange for instance: {}", instanceId);
         } catch (Exception e) {
-            // This can happen when we change the exchange type from DirectExchange to FanoutExchange in the code,
-            // but in RabbitMQ, the exchange is still a DirectExchange.
-            throw new RuntimeException("Error declaring exchange " + exchange, e);
+            throw new RuntimeException("Error creating queue and exchange for instance: " + instanceId, e);
         }
-    }
-
-    /**
-     * Converts STOMP destination to RabbitMQ exchange name.
-     * Each destination gets its own FanoutExchange.
-     * 
-     * Example: "/topic/public" -> "topic.public"
-     * Example: "/topic/group.1" -> "topic.group.1"
-     * 
-     * With FanoutExchange, messages are broadcast to all bound queues (no routing key needed).
-     */
-    private String convertDestinationToExchange(String destination) {
-        if (destination == null) {
-            return "topic.default";
-        }
-        // Remove leading slash and replace remaining slashes with dots
-        // This creates a unique exchange name for each destination
-        return destination.replaceFirst("^/", "").replace("/", ".");
-    }
-
-    /**
-     * Creates queue name for a destination.
-     * One queue per instance per destination (shared by all sessions on that instance).
-     * 
-     * Example: instanceId="instance-1", destination="/topic/group.1"
-     * -> "ws.instance-1.topic.group.1"
-     */
-    private String createQueueName(String instanceId, String destination) {
-        // Sanitize destination for queue name
-        String sanitized = destination.replace("/", ".").replaceFirst("^\\.", "");
-        String queueName = "ws." + instanceId + "." + sanitized;
-        logger.debug("[createQueueName] Creating queue name: queueName={}", queueName);
-        return queueName;
     }
 }

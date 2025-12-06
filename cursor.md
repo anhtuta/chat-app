@@ -2346,6 +2346,47 @@ Why this works
 
 This balances performance and efficiency.
 
+# Use a single exchange and a single queue per instance
+
+### Changes
+
+1. **Single Exchange**: All messages go through one `chat.exchange` (FanoutExchange) instead of one exchange per destination.
+
+2. **Single Queue Per Instance**: Each instance has one queue (`ws.{instanceId}`) instead of one queue per destination.
+
+3. **Message Filtering**: Each instance receives all messages from the exchange but filters by destination before forwarding to WebSocket subscribers.
+
+4. **Destination in Headers**: The destination is included in message headers so the listener can filter messages.
+
+### Architecture Flow
+
+**Before:**
+
+- Multiple exchanges: `topic.public`, `topic.group.1`, `topic.group.2`, etc.
+- Multiple queues per instance: `ws.instance-1.topic.public`, `ws.instance-1.topic.group.1`, etc.
+
+**After:**
+
+- Single exchange: `chat.exchange`
+- Single queue per instance: `ws.instance-1`, `ws.instance-2`, etc.
+- Messages include destination in headers for filtering
+
+### Benefits
+
+- Simpler: fewer exchanges and queues to manage
+- Easier to monitor: one exchange and one queue per instance
+- Less RabbitMQ overhead: fewer resources
+
+### Trade-offs
+
+- Each instance receives all messages (even for destinations it doesn't subscribe to)
+- More network traffic: instances receive messages they may not need
+- More processing: instances filter messages by destination
+
+For a chat app with a reasonable number of groups, this is acceptable and simpler to manage.
+
+The code is ready to test. Rebuild and run your application to verify it works correctly.
+
 # Implement a custom subscription registry and use Redis pub/sub
 
 ## Important clarifications

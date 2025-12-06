@@ -12,15 +12,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Dynamic message listener that consumes from per-subscription queues.
+ * Dynamic message listener that consumes from the single instance queue.
  * 
  * This class is responsible for:
- * - Creating and managing RabbitMQ listeners (SimpleMessageListenerContainer objects)
- * - Processing messages (checking instance ID, deserializing, forwarding)
+ * - Creating and managing RabbitMQ listener for the single instance queue
+ * - Processing messages (checking instance ID, filtering by destination, deserializing, forwarding)
  */
 @Component
 public class DynamicRabbitMQListener {
@@ -31,11 +32,13 @@ public class DynamicRabbitMQListener {
     private final MessageConverter messageConverter;
 
     private SimpMessagingTemplate messagingTemplate;
+    private CustomRabbitMQBrokerHandler brokerHandler;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
 
-    // Track active listeners: queueName -> MessageListenerContainer
+    // Track active listener: queueName -> MessageListenerContainer
+    // With single queue architecture, there should only be one listener
     private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
@@ -49,18 +52,28 @@ public class DynamicRabbitMQListener {
         this.messagingTemplate = messagingTemplate;
     }
 
+    @Autowired
+    @Lazy
+    public void setBrokerHandler(CustomRabbitMQBrokerHandler brokerHandler) {
+        this.brokerHandler = brokerHandler;
+    }
+
     /**
-     * Starts listening to a queue for a specific destination.
-     * Called when a subscription is created.
+     * Starts listening to the single instance queue.
+     * With single queue architecture, this is called once during initialization.
+     * The listener filters messages by destination before forwarding.
+     * 
+     * @param queueName the queue name to listen to
+     * @param destination ignored (kept for backward compatibility), destination is extracted from message headers
      */
-    public void startListening(String queueName, String destination) {
+    public void startListening(String queueName, @SuppressWarnings("unused") String destination) {
         // Don't create duplicate listeners
         if (activeListeners.containsKey(queueName)) {
             logger.debug("Listener already exists for queue: {}", queueName);
             return;
         }
 
-        logger.debug("Starting listener for queue: {}, destination: {}, instanceId: {}", queueName, destination, instanceId);
+        logger.debug("Starting listener for single queue: {}, instanceId: {}", queueName, instanceId);
 
         // Create a new listener/consumer for this queue
         SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
@@ -77,10 +90,24 @@ public class DynamicRabbitMQListener {
                         return;
                     }
 
+                    // Get destination from message headers (set by publisher)
+                    String destination = (String) message.getMessageProperties().getHeaders().get("destination");
+                    if (destination == null) {
+                        logger.warn("Received message without destination header, skipping");
+                        return;
+                    }
+
+                    // Check if this instance is subscribed to this destination
+                    if (brokerHandler != null && !brokerHandler.isSubscribedToDestination(destination)) {
+                        logger.debug("Skipping message for destination we're not subscribed to: destination={}, instanceId={}",
+                                destination, instanceId);
+                        return;
+                    }
+
                     // Deserialize payload using the configured MessageConverter
                     Object payload = messageConverter.fromMessage(message);
 
-                    logger.info("Received message from queue: {}, destination: {}, instanceId: {}",
+                    logger.debug("Received message from queue: {}, destination: {}, instanceId: {}",
                             queueName, destination, instanceId);
 
                     // Forward to local subscribers
@@ -94,7 +121,7 @@ public class DynamicRabbitMQListener {
         container.start();
         activeListeners.put(queueName, container);
 
-        logger.debug("Started listener for queue: {}", queueName);
+        logger.info("Started listener for single queue: {}", queueName);
     }
 
     /**
