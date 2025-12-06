@@ -13,15 +13,8 @@ RUN mvn dependency:go-offline -B
 COPY src ./src
 RUN mvn clean package -DskipTests
 
-# Extract stage: extract the layered jar produced by Spring Boot
-FROM eclipse-temurin:25-jre-jammy AS extract
-WORKDIR /workspace
-COPY --from=build /app/target/*.jar app.jar
-
-# Use Spring Boot layertools to extract layers into separate folders
-RUN java -Djarmode=layertools -jar app.jar extract
-
-# Runtime stage: copy extracted layers into the final image (cacheable layers)
+# Runtime stage: use the original JAR file
+# Docker will cache this layer when dependencies don't change, providing similar benefits to layered extraction
 FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app
@@ -29,11 +22,9 @@ WORKDIR /app
 # Create non-root user
 RUN groupadd -r spring && useradd -r -g spring spring
 
-# Copy layered parts (each will become a separate Docker layer)
-COPY --from=extract /workspace/spring-boot-loader/ ./spring-boot-loader/
-COPY --from=extract /workspace/dependencies/ ./dependencies/
-COPY --from=extract /workspace/snapshot-dependencies/ ./snapshot-dependencies/
-COPY --from=extract /workspace/application/ ./application/
+# Copy the JAR file from build stage
+# This is a separate layer, so Docker can cache it when dependencies don't change
+COPY --from=build /app/target/*.jar app.jar
 
 # Fix ownership and switch to non-root user
 RUN chown -R spring:spring /app
@@ -47,6 +38,6 @@ EXPOSE 9010
 # HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
 #   CMD java -jar app.jar --spring.actuator.health.enabled=true || exit 1
 
-# Run using the Spring Boot JarLauncher with a classpath including the extracted layers
-ENTRYPOINT ["java", "-cp", "/app/spring-boot-loader/*:/app/dependencies/*:/app/snapshot-dependencies/*:/app/application/*", "org.springframework.boot.loader.JarLauncher"]
+# Run the Spring Boot application using the JAR file
+ENTRYPOINT ["java", "-jar", "app.jar"]
 

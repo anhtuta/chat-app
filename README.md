@@ -29,6 +29,10 @@ Start app: use one of these methods. I usually use both: first for instance1, an
    - Build jar first: `mvn clean package`
    - Then start multiple instance: [run-multiple-instances](#run-multiple-instances)
 
+### Using docker
+
+Check [](./docker/README-DOCKER.md)
+
 ## How Spring converts JSON to Message
 
 Here is a method in a controller:

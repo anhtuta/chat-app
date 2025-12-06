@@ -9,6 +9,8 @@ All commands should be run in the root folder
 
 ## Quick Start
 
+Use bash scripts
+
 ```bash
 # Make script executable (Linux/Mac)
 chmod +x docker-start.sh
@@ -16,13 +18,17 @@ chmod +x docker-start.sh
 # Start all services
 ./docker-start.sh
 
-# Or manually:
+# Stop all services
+./docker-stop.sh
+```
+
+Or manually
+
+```bash
+# Single instance
 docker-compose up -d
 
-# Or manually using multi-instance.
-# This starts two app instances
-# Instance 1: http://localhost:9010
-# Instance 2: http://localhost:9011
+# Multi-instance
 docker-compose --profile multi-instance up -d --build
 ```
 
