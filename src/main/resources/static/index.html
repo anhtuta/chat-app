@@ -733,7 +733,7 @@
 
                 const header = document.createElement('div');
                 header.className = 'message-header';
-                header.textContent = displayName + ' • ' + new Date(message.timestamp).toLocaleTimeString();
+                header.textContent = displayName + ' • ' + new Date(message.timestamp).toLocaleTimeString() + ' ' + new Date(message.timestamp).toLocaleDateString();
 
                 const content = document.createElement('div');
                 content.className = 'message-content';

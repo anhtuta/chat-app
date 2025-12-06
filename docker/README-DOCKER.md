@@ -30,6 +30,17 @@ docker-compose up -d
 
 # Multi-instance
 docker-compose --profile multi-instance up -d --build
+
+# Restart services after modifying code
+docker compose up -d --build instance-1
+docker compose up -d --build instance-2
+docker compose up -d --build instance-3
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes
+docker-compose down -v
 ```
 
 ## Services
@@ -50,22 +61,6 @@ RABBITMQ_USER=guest
 RABBITMQ_PASSWORD=guest
 INSTANCE_ID=instance-1
 LOG_LEVEL=INFO
-```
-
-## Useful Commands
-
-```bash
-# View logs
-docker-compose logs -f app
-
-# Stop services
-docker-compose down
-
-# Stop and remove volumes
-docker-compose down -v
-
-# Rebuild app
-docker-compose up -d --build app
 ```
 
 For more details, see [DOCKER.md](./DOCKER.md).
