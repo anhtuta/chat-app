@@ -21,28 +21,24 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf
-                .ignoringRequestMatchers("/api/**", "/ws/**") // Disable CSRF for API and WebSocket
-            )
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/login.html", "/register.html").permitAll()
-                .requestMatchers("/", "/index.html", "/api/messages/**", "/api/groups/**", "/ws/**").authenticated()
-                .anyRequest().permitAll()
-            )
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-            )
-            .formLogin(form -> form
-                .loginPage("/login.html")
-                .permitAll()
-            )
-            .logout(logout -> logout
-                .logoutUrl("/api/auth/logout")
-                .logoutSuccessUrl("/login.html")
-                .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID")
-                .permitAll()
-            );
+                .csrf(csrf -> csrf
+                        .ignoringRequestMatchers("/api/**", "/ws/**") // Disable CSRF for API and WebSocket
+                )
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/**", "/login.html", "/register.html").permitAll()
+                        .requestMatchers("/", "/index.html", "/api/messages/**", "/api/groups/**", "/ws/**").authenticated()
+                        .anyRequest().permitAll())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .formLogin(form -> form
+                        .loginPage("/login.html")
+                        .permitAll())
+                .logout(logout -> logout
+                        .logoutUrl("/api/auth/logout")
+                        .logoutSuccessUrl("/login.html")
+                        .invalidateHttpSession(true)
+                        .deleteCookies("JSESSIONID")
+                        .permitAll());
 
         return http.build();
     }
