@@ -41,6 +41,7 @@ docker-compose.override.yml
 # Data directories (database, cache, etc.)
 # Ignore all contents of data/ directory
 docker/data/*
+docker/logs/*
 # But allow the directory structure and specific files
 !docker/data/.gitkeep
 !docker/data/README.md
@@ -48,3 +49,10 @@ docker/data/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend build
+src/main/resources/static/*
+!src/main/resources/static/login.html
+!src/main/resources/static/register.html
+!src/main/resources/static/index.html
+!src/main/resources/static/classic.html

@@ -37,3 +37,15 @@ server:
 logging:
   level:
     com.hello.chatapp: DEBUG
+  file:
+    path: ./docker/logs
+    max-history: 30
+    max-size: 100MB
+    file-size-threshold: 10MB
+    file-rolling-policy:
+      type: size
+      size-threshold: 10MB
+      max-history: 30
+      file-name-pattern: chat-app-%d{yyyy-MM-dd}.log
+      strategy:
+        type: time

@@ -26,6 +26,11 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/login.html", "/register.html").permitAll()
+                        // Allow React app static resources (JS, CSS, images, etc.)
+                        .requestMatchers("/static/**", "/*.js", "/*.css", "/*.json", "/*.ico", "/*.png",
+                                "/*.svg", "/*.jpg",
+                                "/*.jpeg", "/*.gif", "/*.woff", "/*.woff2", "/*.ttf", "/*.eot")
+                        .permitAll()
                         .requestMatchers("/", "/index.html", "/api/messages/**", "/api/groups/**", "/ws/**").authenticated()
                         .anyRequest().permitAll())
                 .sessionManagement(session -> session
