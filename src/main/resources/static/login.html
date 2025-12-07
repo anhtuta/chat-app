@@ -224,7 +224,7 @@
                 if (data.success) {
                     showSuccess('Login successful! Redirecting...');
                     setTimeout(() => {
-                        window.location.href = '/index.html';
+                        window.location.href = '/';
                     }, 1000);
                 } else {
                     showError(data.message || 'Login failed');
@@ -241,4 +241,3 @@
 </body>
 
 </html>
-
