@@ -7,7 +7,7 @@ Ref:
 - https://www.callicoder.com/spring-boot-websocket-chat-example/
 - Cursor AI
 
-I will mainly use Cursor editor to help me to code, my main responsibilities are:
+I will mainly use Cursor editor (before 11/12/2025) or Github Copilot (after 11/12/2025) to help me to code, my main responsibilities are:
 
 - Prompt
 - Review code
@@ -21,6 +21,7 @@ Requirements:
 - Install Java 25
 - Install PostgreSQL 18, start it, then create a new database `chatdb`
 - Install Redis and start it
+- Install RabbitMQ and start it
 
 Start app: use one of these methods. I usually use both: first for instance1, and second for instance2:
 
@@ -31,7 +32,8 @@ Start app: use one of these methods. I usually use both: first for instance1, an
 
 ### Using docker
 
-Check [](./docker/README-DOCKER.md)
+- Start all services (Postgres, Redis, RabbitMQ, Chat App): `make start`
+- Start only infra services (Postgres, Redis, RabbitMQ) for IDE debugging: `make start.deps`, then run Chat App from IDE for debugging
 
 ## How Spring converts JSON to Message
 

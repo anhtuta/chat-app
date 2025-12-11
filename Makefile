@@ -1,0 +1,68 @@
+.PHONY: help start start.all start.deps stop restart logs clean status
+
+help:
+	@echo "Chat App Docker Commands"
+	@echo "======================="
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make start       - Build and start all services (alias of start.all)"
+	@echo "  make start.all   - Build and start all services"
+	@echo "  make start.deps  - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
+	@echo "  make stop        - Stop all running services"
+	@echo "  make restart     - Restart all services"
+	@echo "  make logs        - View application logs (follow mode)"
+	@echo "  make status      - Show service status"
+	@echo "  make clean       - Remove stopped containers and volumes"
+	@echo "  make help        - Show this help message"
+
+start: start.all
+
+start.all:
+	@echo "🚀 Starting Chat App with Docker..."
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file from example..."; \
+		cp .env.example .env 2>/dev/null || echo "⚠️  .env.example not found, using defaults"; \
+	fi
+	@echo "🔨 Building and starting services..."
+	docker-compose --profile multi-instance up -d --build
+# 	@echo "⏳ Waiting for services to start..."
+# 	@sleep 10
+# 	@echo "📊 Service status:"
+# 	@docker-compose ps
+# 	@echo ""
+	@echo "✅ Services started!"
+
+start.deps:
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
+	@if [ ! -f .env ]; then \
+		echo "Creating .env file from example..."; \
+		cp .env.example .env 2>/dev/null || echo "Warning: .env.example not found, using defaults"; \
+	fi
+	@echo "Bringing up infrastructure containers without chat instances..."
+	docker-compose up -d postgres redis rabbitmq
+# 	@echo "Allowing services a moment to settle..."
+# 	@sleep 5
+# 	@echo "Current infrastructure status:"
+# 	@docker-compose ps postgres redis rabbitmq
+	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
+
+stop:
+	@echo "🛑 Stopping Chat App with Docker..."
+	docker-compose stop
+	@echo "✅ Services stopped!"
+
+restart:
+	@echo "🔄 Restarting services..."
+	docker-compose restart
+	@echo "✅ Services restarted!"
+
+logs:
+	docker-compose logs -f app
+
+status:
+	docker-compose ps
+
+clean:
+	@echo "🧹 Cleaning up stopped containers and volumes..."
+	docker-compose down
+	@echo "✅ Cleanup complete!"
