@@ -48,16 +48,16 @@ start.deps:
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."
-	docker-compose stop
+	docker-compose --profile multi-instance stop
 	@echo "✅ Services stopped!"
 
 restart:
 	@echo "🔄 Restarting services..."
-	docker-compose restart
+	docker-compose --profile multi-instance restart
 	@echo "✅ Services restarted!"
 
 logs:
-	docker-compose logs -f app
+	docker-compose --profile multi-instance logs -f app
 
 status:
 	docker-compose ps
