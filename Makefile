@@ -48,7 +48,7 @@ restart:
 	@echo "✅ Services restarted!"
 
 logs:
-	docker-compose --profile multi-instance logs -f app
+	docker-compose --profile multi-instance logs -f instance-1
 
 status:
 	docker-compose ps
