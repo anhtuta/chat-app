@@ -25,11 +25,6 @@ start.all:
 	fi
 	@echo "🔨 Building and starting services..."
 	docker-compose --profile multi-instance up -d --build
-# 	@echo "⏳ Waiting for services to start..."
-# 	@sleep 10
-# 	@echo "📊 Service status:"
-# 	@docker-compose ps
-# 	@echo ""
 	@echo "✅ Services started!"
 
 start.deps:
@@ -40,10 +35,6 @@ start.deps:
 	fi
 	@echo "Bringing up infrastructure containers without chat instances..."
 	docker-compose up -d postgres redis rabbitmq
-# 	@echo "Allowing services a moment to settle..."
-# 	@sleep 5
-# 	@echo "Current infrastructure status:"
-# 	@docker-compose ps postgres redis rabbitmq
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 stop:
