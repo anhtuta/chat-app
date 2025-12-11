@@ -23,6 +23,8 @@ start.all:
 		echo "📝 Creating .env file from example..."; \
 		cp .env.example .env 2>/dev/null || echo "⚠️  .env.example not found, using defaults"; \
 	fi
+	@echo "🔨 Building frontend..."
+	@cd chat-app-frontend && npm run build:spring && cd ..
 	@echo "🔨 Building and starting services..."
 	docker-compose --profile multi-instance up -d --build
 	@echo "✅ Services started!"

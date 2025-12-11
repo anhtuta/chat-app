@@ -23,7 +23,16 @@ Requirements:
 - Install Redis and start it
 - Install RabbitMQ and start it
 
-Start app: use one of these methods. I usually use both: first for instance1, and second for instance2:
+Copy FE to Spring Boot static resources:
+
+```bash
+cd chat-app-frontend
+npm install
+npm run build:spring
+cd ..
+```
+
+Start BE: use one of these methods. I usually use both: first for instance1, and second for instance2:
 
 1. Build and run spring app: `mvn spring-boot:run`
 2. Build and run jar file:
