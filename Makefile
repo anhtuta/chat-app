@@ -1,4 +1,11 @@
-.PHONY: help start start.all start.deps build.fe stop restart logs clean status
+.PHONY: help start start.all start.deps build.fe run.local stop restart logs clean status check.env
+
+# Check and create .env file if it doesn't exist
+check.env:
+	@if [ ! -f .env ]; then \
+		echo "📝 Creating .env file from example..."; \
+		cp .env.example .env 2>/dev/null || echo "⚠️  .env.example not found, using defaults"; \
+	fi
 
 help:
 	@echo "Chat App Docker Commands"
@@ -9,6 +16,7 @@ help:
 	@echo "  make start.all   - Build and start all services"
 	@echo "  make start.deps  - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
 	@echo "  make build.fe    - Build frontend and copy to Spring Boot static resources"
+	@echo "  make run.local   - Run Spring Boot app locally with .env variables loaded"
 	@echo "  make stop        - Stop all running services"
 	@echo "  make restart     - Restart all services"
 	@echo "  make logs        - View application logs (follow mode)"
@@ -18,24 +26,16 @@ help:
 
 start: start.all
 
-start.all:
+start.all: check.env
 	@echo "🚀 Starting Chat App with Docker..."
-	@if [ ! -f .env ]; then \
-		echo "📝 Creating .env file from example..."; \
-		cp .env.example .env 2>/dev/null || echo "⚠️  .env.example not found, using defaults"; \
-	fi
 	@echo "🔨 Building frontend..."
 	@cd chat-app-frontend && npm run build:spring && cd ..
 	@echo "🔨 Building and starting services..."
 	docker-compose --profile multi-instance up -d --build
 	@echo "✅ Services started!"
 
-start.deps:
+start.deps: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
-	@if [ ! -f .env ]; then \
-		echo "Creating .env file from example..."; \
-		cp .env.example .env 2>/dev/null || echo "Warning: .env.example not found, using defaults"; \
-	fi
 	@echo "Bringing up infrastructure containers without chat instances..."
 	docker-compose up -d postgres redis rabbitmq
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
@@ -44,6 +44,10 @@ build.fe:
 	@echo "🔨 Building frontend and copying to Spring Boot..."
 	@cd chat-app-frontend && npm run build:spring && cd ..
 	@echo "✅ Frontend built and copied to src/main/resources/static/"
+
+run.local: check.env
+	@echo "🚀 Running Spring Boot app locally with .env variables..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."

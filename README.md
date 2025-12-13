@@ -43,11 +43,12 @@ Start BE: use one of these methods. I usually use both: first for instance1, and
 
 Start all in docker: `make start`
 
-Start only infra services (Postgres, Redis, RabbitMQ) in docker, and start Chat App from IDE for debugging:
+Or, we can start only infra services (Postgres, Redis, RabbitMQ) in docker, and start Chat App from IDE or terminal for debugging:
 
 ```sh
 make start.deps
 make build.fe
+make run.local
 ```
 
 ## How Spring converts JSON to Message

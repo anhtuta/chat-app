@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/chatdb
     username: postgres
-    password: 5555
+    password: ${POSTGRES_PASSWORD:-5555}
   jpa:
     hibernate:
       ddl-auto: update
@@ -16,12 +16,12 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: guest
-    password: guest
+    username: ${RABBITMQ_USER:-guest}
+    password: ${RABBITMQ_PASSWORD:-guest}
   data:
     redis:
       host: localhost
-      password:
+      password: ${REDIS_PASSWORD:-redis123}
       port: 6379
   session:
     redis:
