@@ -6,6 +6,7 @@ Ref:
 
 - https://www.callicoder.com/spring-boot-websocket-chat-example/
 - Cursor AI
+- Github Copilot
 
 I will mainly use Cursor editor (before 11/12/2025) or Github Copilot (after 11/12/2025) to help me to code, my main responsibilities are:
 
@@ -14,7 +15,7 @@ I will mainly use Cursor editor (before 11/12/2025) or Github Copilot (after 11/
 
 ## Local setup
 
-### Not using docker
+### Not using docker (not recommended)
 
 Requirements:
 
@@ -39,17 +40,23 @@ Start BE: use one of these methods. I usually use both: first for instance1, and
    - Build jar first: `mvn clean package`
    - Then start multiple instance: [run-multiple-instances](#run-multiple-instances)
 
-### Using docker
+### Using docker only for production
 
 Start all in docker: `make start`
 
-Or, we can start only infra services (Postgres, Redis, RabbitMQ) in docker, and start Chat App from IDE or terminal for debugging:
+Stop all: `make stop`
+
+### Using docker and local IDE for debugging
+
+We can start only infra services (Postgres, Redis, RabbitMQ) in docker, and start Chat App from IDE or terminal for debugging:
 
 ```sh
 make start.deps
 make build.fe
 make run.local
 ```
+
+Stop all: `make stop`
 
 ## How Spring converts JSON to Message
 
@@ -387,6 +394,39 @@ Túm lại:
 - Dù có thêm bao nhiêu user thì số lượng exchange vào queue vẫn chỉ có vậy. Tối đa
   - `Số exchange = số group`
   - `Số queue = số group * số instance`
+
+## Using `.env` file for running spring boot app
+
+Example command in Makefile: `@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run`
+
+**Breakdown:**
+
+- `@` - Makefile syntax to suppress echoing the command
+- `export` - Sets environment variables for the current shell session
+- `$$(...)` - Double `$$` in Makefile becomes single `$` for command substitution
+- `cat .env 2>/dev/null` - Reads .env file, suppressing errors if it doesn't exist
+- `grep -v '^#'` - Filters out comment lines (starting with `#`)
+- `xargs` - Converts the output into space-separated arguments for export
+- `&&` - Only runs the next command if the previous succeeds
+- `./mvnw spring-boot:run` - Executes the Maven wrapper to start Spring Boot
+
+**Example:**
+
+If .env contains:
+
+```
+# Database config
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+The command effectively runs:
+
+```bash
+export DB_HOST=localhost DB_PORT=5432 && ./mvnw spring-boot:run
+```
+
+This makes those variables available to the Spring Boot application at runtime.
 
 ## TODO
 
