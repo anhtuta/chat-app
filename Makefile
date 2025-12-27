@@ -1,4 +1,4 @@
-.PHONY: help start start.all start.deps build.fe run.local stop restart logs clean status check.env
+.PHONY: help start start.all start.deps build.fe run.local run.be run.fe stop restart logs clean status check.env
 
 # Check and create .env file if it doesn't exist
 check.env:
@@ -17,12 +17,21 @@ help:
 	@echo "  make start.deps  - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
 	@echo "  make build.fe    - Build frontend and copy to Spring Boot static resources"
 	@echo "  make run.local   - Run Spring Boot app locally with .env variables loaded"
+	@echo "  make run.be      - Run Spring Boot backend only (Terminal 1)"
+	@echo "  make run.fe      - Run React dev server (Terminal 2)"
 	@echo "  make stop        - Stop all running services"
 	@echo "  make restart     - Restart all services"
 	@echo "  make logs        - View application logs (follow mode)"
 	@echo "  make status      - Show service status"
 	@echo "  make clean       - Remove stopped containers and volumes"
 	@echo "  make help        - Show this help message"
+	@echo ""
+	@echo "Development Workflow:"
+	@echo "  1. make start.deps  - Start infrastructure"
+	@echo "  2. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
+	@echo "  3. make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
+	@echo "  4. Visit http://localhost:9010/login.html to login"
+	@echo "  5. After login, you'll be redirected to http://localhost:3000"
 
 start: start.all
 
@@ -48,6 +57,13 @@ build.fe:
 run.local: check.env
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
+
+run.be: run.local
+
+run.fe:
+	@echo "🚀 Running React dev server (Terminal 2)..."
+	@echo "📝 API proxy configured to http://localhost:9010"
+	@cd chat-app-frontend && npm start
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."

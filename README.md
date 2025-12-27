@@ -40,13 +40,13 @@ Start BE: use one of these methods. I usually use both: first for instance1, and
    - Build jar first: `mvn clean package`
    - Then start multiple instance: [run-multiple-instances](#run-multiple-instances)
 
-### Using docker only for production
+### Using docker for all for production
 
 Start all in docker: `make start`
 
 Stop all: `make stop`
 
-### Using docker and local IDE for debugging
+### Using docker for infra only, and build static FE + run BE locally for development
 
 We can start only infra services (Postgres, Redis, RabbitMQ) in docker, and start Chat App from IDE or terminal for debugging:
 
@@ -57,6 +57,14 @@ make run.local
 ```
 
 Stop all: `make stop`
+
+### Using docker for infra only, and run both FE + BE locally for development
+
+```sh
+make start.deps
+make run.be      # Terminal 1: start BE
+make run.fe      # Terminal 2: start FE
+```
 
 ## How Spring converts JSON to Message
 

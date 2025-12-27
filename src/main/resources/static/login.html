@@ -224,7 +224,11 @@
                 if (data.success) {
                     showSuccess('Login successful! Redirecting...');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        // For development: redirect to React app on localhost:3000
+                        // For production: redirect to the app root
+                        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                        const redirectUrl = isLocalhost ? 'http://localhost:3000' : '/';
+                        window.location.href = redirectUrl;
                     }, 1000);
                 } else {
                     showError(data.message || 'Login failed');

@@ -1,8 +1,10 @@
 /**
  * API service for communicating with Spring Boot backend
+ * In development: requests are proxied via "proxy" in package.json
+ * In production: requests go directly to the backend
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "";
+const API_BASE_URL = "";
 
 /**
  * Check if user is authenticated

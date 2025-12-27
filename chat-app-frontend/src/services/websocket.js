@@ -1,10 +1,12 @@
 /**
  * WebSocket service using STOMP over SockJS
+ * In development: requests are proxied via "proxy" in package.json
+ * In production: requests go directly to the backend
  */
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 
-const WS_BASE_URL = process.env.REACT_APP_WS_URL || "";
+const WS_BASE_URL = "";
 
 let stompClient = null;
 
