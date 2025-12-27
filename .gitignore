@@ -55,4 +55,4 @@ src/main/resources/static/*
 !src/main/resources/static/login.html
 !src/main/resources/static/register.html
 !src/main/resources/static/index.html
-!src/main/resources/static/classic.html
+!src/main/resources/static/classic*.html
