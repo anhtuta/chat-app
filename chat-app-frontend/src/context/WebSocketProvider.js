@@ -21,58 +21,55 @@ const WebSocketContext = createContext({
 export function WebSocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
 
-  // Map topic -> { callback, subscription }
-  const subscriptionsRef = useRef(new Map());
+  // Store single subscription: { topic, callback, subscription }
+  const subscriptionRef = useRef(null);
 
-  const internalSubscribe = (topic) => {
-    const entry = subscriptionsRef.current.get(topic);
-    if (!entry?.callback) return null;
+  const internalSubscribe = () => {
+    if (!subscriptionRef.current?.callback) return null;
 
+    const { topic, callback } = subscriptionRef.current;
     const subscription = subscribeToTopic(topic, (message) => {
-      // Use latest callback reference stored in map
-      const currentEntry = subscriptionsRef.current.get(topic);
-      if (currentEntry?.callback) {
-        currentEntry.callback(message);
+      // Use latest callback reference
+      if (subscriptionRef.current?.callback) {
+        subscriptionRef.current.callback(message);
       }
     });
 
     if (subscription) {
-      subscriptionsRef.current.set(topic, { ...entry, subscription });
+      subscriptionRef.current.subscription = subscription;
     }
 
     return subscription;
   };
 
   const subscribe = (topic, callback) => {
-    // Replace any existing callback/subscription for this topic
-    const existing = subscriptionsRef.current.get(topic);
-    if (existing?.subscription) {
-      existing.subscription.unsubscribe();
+    // Unsubscribe from any existing subscription
+    if (subscriptionRef.current?.subscription) {
+      subscriptionRef.current.subscription.unsubscribe();
     }
 
-    subscriptionsRef.current.set(topic, { callback, subscription: null });
+    subscriptionRef.current = { topic, callback, subscription: null };
 
     if (isConnected) {
-      internalSubscribe(topic);
+      internalSubscribe();
     }
 
     // Return an unsubscribe function to allow callers to remove interest
-    return () => unsubscribe(topic);
+    return () => unsubscribe();
   };
 
-  const unsubscribe = (topic) => {
-    const entry = subscriptionsRef.current.get(topic);
-    if (entry?.subscription) {
-      unsubscribeSubscription(entry.subscription);
+  const unsubscribe = () => {
+    if (subscriptionRef.current?.subscription) {
+      unsubscribeSubscription(subscriptionRef.current.subscription);
     }
-    subscriptionsRef.current.delete(topic);
+    subscriptionRef.current = null;
   };
 
-  // Re-subscribe all registered topics after a reconnect
+  // Re-subscribe after a reconnect
   const resubscribeAll = () => {
-    subscriptionsRef.current.forEach((_, topic) => {
-      internalSubscribe(topic);
-    });
+    if (subscriptionRef.current) {
+      internalSubscribe();
+    }
   };
 
   useEffect(() => {
@@ -91,11 +88,11 @@ export function WebSocketProvider({ children }) {
 
     return () => {
       setIsConnected(false);
-      // Clean up all subscriptions and disconnect
-      subscriptionsRef.current.forEach((entry) => {
-        if (entry.subscription) unsubscribeSubscription(entry.subscription);
-      });
-      subscriptionsRef.current.clear();
+      // Clean up subscription and disconnect
+      if (subscriptionRef.current?.subscription) {
+        unsubscribeSubscription(subscriptionRef.current.subscription);
+      }
+      subscriptionRef.current = null;
       disconnectWebSocket();
     };
   }, []);
