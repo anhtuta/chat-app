@@ -28,22 +28,26 @@ public class SecurityConfig {
                         .ignoringRequestMatchers("/api/**", "/ws/**") // Disable CSRF for API and WebSocket
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/login.html", "/register.html").permitAll()
-                        // Allow React app static resources (JS, CSS, images, etc.)
-                        .requestMatchers("/static/**", "/*.js", "/*.css", "/*.json", "/*.ico", "/*.png",
-                                "/*.svg", "/*.jpg",
-                                "/*.jpeg", "/*.gif", "/*.woff", "/*.woff2", "/*.ttf", "/*.eot")
+                        // Public endpoints
+                        .requestMatchers("/api/auth/**").permitAll()
+                        // SPA entry points and static assets
+                        .requestMatchers(
+                                "/", "/index.html", "/manifest.json", "/asset-manifest.json", "/favicon.ico",
+                                "/*.js", "/*.css", "/*.json", "/*.ico", "/*.png", "/*.svg", "/*.jpg",
+                                "/*.jpeg", "/*.gif", "/*.woff", "/*.woff2", "/*.ttf", "/*.eot",
+                                "/static/**", "/login", "/register", "/group/**")
                         .permitAll()
-                        .requestMatchers("/", "/index.html", "/api/messages/**", "/api/groups/**", "/ws/**").authenticated()
+                        // Protected APIs and WebSocket endpoints
+                        .requestMatchers("/api/**").authenticated()
+                        .requestMatchers("/ws/**").authenticated()
                         .anyRequest().permitAll())
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
-                .formLogin(form -> form
-                        .loginPage("/login.html")
-                        .permitAll())
+                // Login is handled by the SPA calling /api/auth/login
+                .formLogin(form -> form.disable())
                 .logout(logout -> logout
                         .logoutUrl("/api/auth/logout")
-                        .logoutSuccessUrl("/login.html")
+                        .logoutSuccessUrl("/login")
                         .invalidateHttpSession(true)
                         .deleteCookies("JSESSIONID")
                         .permitAll());

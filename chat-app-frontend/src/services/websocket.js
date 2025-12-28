@@ -14,7 +14,7 @@ let stompClient = null;
  * Create and connect WebSocket client
  */
 export function connectWebSocket(onConnect, onError) {
-  if (stompClient && stompClient.connected) {
+  if (stompClient?.connected) {
     return stompClient;
   }
 
@@ -59,7 +59,7 @@ export function disconnectWebSocket() {
  * Subscribe to a topic
  */
 export function subscribeToTopic(topic, callback) {
-  if (!stompClient || !stompClient.connected) {
+  if (!stompClient?.connected) {
     console.error("STOMP client not connected");
     return null;
   }
@@ -78,7 +78,7 @@ export function subscribeToTopic(topic, callback) {
  * Send message to a destination
  */
 export function sendMessage(destination, message) {
-  if (!stompClient || !stompClient.connected) {
+  if (!stompClient?.connected) {
     console.error("STOMP client not connected");
     return false;
   }

@@ -26,7 +26,7 @@ public class GlobalExceptionHandler {
                 .body(e.getMessage());
     }
 
-    @ExceptionHandler(ForbiddenException.class)
+    @ExceptionHandler({ForbiddenException.class, SecurityException.class})
     public ResponseEntity<String> handleForbiddenException(ForbiddenException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(e.getMessage());

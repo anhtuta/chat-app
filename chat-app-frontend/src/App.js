@@ -1,46 +1,49 @@
 import React, { useEffect, useState } from "react";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatContainer from "./components/ChatContainer";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
 import "./App.css";
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(null);
-  const [username, setUsername] = useState(null);
+function AppRoutes() {
+  const navigate = useNavigate();
+  const [authState, setAuthState] = useState({ checking: true, isAuth: false, username: null });
 
   useEffect(() => {
-    checkAuthentication();
+    const fetchAuth = async () => {
+      try {
+        const data = await checkAuth();
+        if (data.authenticated) {
+          setAuthState({ checking: false, isAuth: true, username: data.username });
+        } else {
+          setAuthState({ checking: false, isAuth: false, username: null });
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        setAuthState({ checking: false, isAuth: false, username: null });
+      }
+    };
+
+    fetchAuth();
   }, []);
 
-  const checkAuthentication = async () => {
-    try {
-      const data = await checkAuth();
-      if (data.authenticated) {
-        setIsAuthenticated(true);
-        setUsername(data.username);
-      } else {
-        setIsAuthenticated(false);
-      }
-    } catch (error) {
-      console.error("Auth check failed:", error);
-      setIsAuthenticated(false);
-    }
+  const handleLoginSuccess = (username) => {
+    setAuthState({ checking: false, isAuth: true, username });
   };
 
   const handleLogout = async () => {
     try {
       await apiLogout();
-      setIsAuthenticated(false);
-      setUsername(null);
-      window.location.href = "/login.html";
     } catch (error) {
       console.error("Logout failed:", error);
-      window.location.href = "/login.html";
+    } finally {
+      setAuthState({ checking: false, isAuth: false, username: null });
+      navigate("/login", { replace: true });
     }
   };
 
-  if (isAuthenticated === null) {
-    // Still checking authentication
+  if (authState.checking) {
     return (
       <div
         style={{
@@ -56,21 +59,49 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    // Redirect to login page
-    window.location.href = "/login.html";
-    return null;
-  }
+  const RequireAuth = ({ children }) => {
+    if (!authState.isAuth) {
+      return <Navigate to="/login" replace />;
+    }
+    return children;
+  };
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/" element={<ChatContainer username={username} onLogout={handleLogout} />} />
-        <Route path="/chat" element={<ChatContainer username={username} onLogout={handleLogout} />} />
-        <Route path="/groups/:groupId" element={<ChatContainer username={username} onLogout={handleLogout} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </HashRouter>
+    <Routes>
+      <Route
+        path="/"
+        element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />}
+      />
+      <Route
+        path="/login"
+        element={authState.isAuth ? <Navigate to="/group/public" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} />}
+      />
+      <Route
+        path="/register"
+        element={authState.isAuth ? <Navigate to="/group/public" replace /> : <RegisterPage />}
+      />
+      <Route
+        path="/group"
+        element={<RequireAuth><Navigate to="/group/public" replace /></RequireAuth>}
+      />
+      <Route
+        path="/group/:groupId"
+        element={
+          <RequireAuth>
+            <ChatContainer username={authState.username} onLogout={handleLogout} />
+          </RequireAuth>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
 

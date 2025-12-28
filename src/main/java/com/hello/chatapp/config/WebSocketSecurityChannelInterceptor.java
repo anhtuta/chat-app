@@ -94,6 +94,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     /**
      * Validates that the user is authenticated (user object exists in WebSocket session).
      * Returns the authenticated user if valid, throws SecurityException if not authenticated.
+     * Note: we do NOT check if the user belongs to any group here; that is done in validateSubscription().
      */
     private User validateAuthentication(StompHeaderAccessor accessor) {
         logger.debug("[Start validateAuthentication] Session attributes: {}", accessor.getSessionAttributes());

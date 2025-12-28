@@ -17,6 +17,36 @@ export async function checkAuth() {
 }
 
 /**
+ * Login
+ */
+export async function login(username, password) {
+  const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ username, password }),
+  });
+  return response.json();
+}
+
+/**
+ * Register
+ */
+export async function register(username, password) {
+  const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ username, password }),
+  });
+  return response.json();
+}
+
+/**
  * Logout user
  */
 export async function logout() {
@@ -37,7 +67,7 @@ export async function getGroups() {
   if (response.ok) {
     return response.json();
   }
-  throw new Error("Failed to load groups");
+  handleErrorResponse(response);
 }
 
 /**
@@ -50,7 +80,7 @@ export async function getPublicMessages() {
   if (response.ok) {
     return response.json();
   }
-  throw new Error("Failed to load public messages");
+  handleErrorResponse(response);
 }
 
 /**
@@ -63,7 +93,7 @@ export async function getGroupMessages(groupId) {
   if (response.ok) {
     return response.json();
   }
-  throw new Error("Failed to load group messages");
+  handleErrorResponse(response);
 }
 
 /**
@@ -76,7 +106,7 @@ export async function getUsers() {
   if (response.ok) {
     return response.json();
   }
-  throw new Error("Failed to load users");
+  handleErrorResponse(response);
 }
 
 /**
@@ -99,4 +129,13 @@ export async function createGroup(name, participantIds) {
   }
   const error = await response.text();
   throw new Error(error || "Failed to create group");
+}
+
+function handleErrorResponse(response) {
+  if (response.status === 403) {
+    // redirect to login
+    window.location.href = "/login";
+  } else {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
 }
