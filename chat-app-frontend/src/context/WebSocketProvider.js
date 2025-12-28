@@ -3,6 +3,7 @@ import {
   connectWebSocket,
   disconnectWebSocket,
   subscribeToTopic,
+  unsubscribeSubscription,
   sendMessage as sendWebSocketMessage,
 } from "../services/websocket";
 
@@ -62,7 +63,7 @@ export function WebSocketProvider({ children }) {
   const unsubscribe = (topic) => {
     const entry = subscriptionsRef.current.get(topic);
     if (entry?.subscription) {
-      entry.subscription.unsubscribe();
+      unsubscribeSubscription(entry.subscription);
     }
     subscriptionsRef.current.delete(topic);
   };
@@ -92,7 +93,7 @@ export function WebSocketProvider({ children }) {
       setIsConnected(false);
       // Clean up all subscriptions and disconnect
       subscriptionsRef.current.forEach((entry) => {
-        entry.subscription?.unsubscribe();
+        if (entry.subscription) unsubscribeSubscription(entry.subscription);
       });
       subscriptionsRef.current.clear();
       disconnectWebSocket();

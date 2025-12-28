@@ -8,6 +8,7 @@ import SockJS from "sockjs-client";
 
 const WS_BASE_URL = "";
 
+/** @type {Client | null} */
 let stompClient = null;
 
 /**
@@ -25,7 +26,7 @@ export function connectWebSocket(onConnect, onError, onDisconnect) {
 
   // Always use absolute path from root, not relative to current route
   const wsUrl = `${WS_BASE_URL}/ws`;
-  console.log("Connecting to WebSocket:", wsUrl, "at", window.location.href);
+  console.log("Connecting to WebSocket:", wsUrl);
 
   stompClient = new Client({
     webSocketFactory: () => {
@@ -74,6 +75,7 @@ export function connectWebSocket(onConnect, onError, onDisconnect) {
  * Disconnect WebSocket
  */
 export function disconnectWebSocket() {
+  console.log("Disconnecting WebSocket...");
   if (stompClient) {
     stompClient.deactivate();
     stompClient = null;
@@ -89,14 +91,29 @@ export function subscribeToTopic(topic, callback) {
     return null;
   }
 
+  console.log("Subscribing to topic:", topic);
   return stompClient.subscribe(topic, (message) => {
     try {
+      console.log("Received message on topic:", message, topic);
       const data = JSON.parse(message.body);
       callback(data);
     } catch (error) {
       console.error("Error parsing message:", error);
     }
   });
+}
+
+/**
+ * Unsubscribe a previously created subscription
+ */
+export function unsubscribeSubscription(subscription) {
+  if (!subscription) return;
+  try {
+    console.log("Unsubscribing subscription...");
+    subscription.unsubscribe();
+  } catch (e) {
+    console.warn("Failed to unsubscribe subscription:", e);
+  }
 }
 
 /**
