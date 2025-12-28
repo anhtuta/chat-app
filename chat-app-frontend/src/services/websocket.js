@@ -2,6 +2,9 @@
  * WebSocket service using STOMP over SockJS
  * In development: requests are proxied via "proxy" in package.json
  * In production: requests go directly to the backend
+ * 
+ * Note: Only WebSocketProvider should use this service directly. Other components
+ * should use the WebSocket context via useWebSocket().
  */
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";

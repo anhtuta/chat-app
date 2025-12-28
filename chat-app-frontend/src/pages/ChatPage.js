@@ -17,7 +17,9 @@ function ChatPage({ username, onLogout }) {
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
-  const currentSubscriptionRef = useRef(null);
+  // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
+  const currentUnsubscribeRef = useRef(null);
+
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
 
@@ -26,8 +28,8 @@ function ChatPage({ username, onLogout }) {
 
     return () => {
       // Cleanup current subscription on unmount
-      if (currentSubscriptionRef.current) {
-        currentSubscriptionRef.current();
+      if (currentUnsubscribeRef.current) {
+        currentUnsubscribeRef.current();
       }
     };
   }, []);
@@ -66,9 +68,9 @@ function ChatPage({ username, onLogout }) {
     currentChatIdRef.current = chatId;
 
     // Unsubscribe from previous chat
-    if (currentSubscriptionRef.current) {
-      currentSubscriptionRef.current();
-      currentSubscriptionRef.current = null;
+    if (currentUnsubscribeRef.current) {
+      currentUnsubscribeRef.current();
+      currentUnsubscribeRef.current = null;
     }
 
     // Update current chat
@@ -83,7 +85,7 @@ function ChatPage({ username, onLogout }) {
         setMessages((prev) => [...prev, message]);
       }
     });
-    currentSubscriptionRef.current = unsubscribe;
+    currentUnsubscribeRef.current = unsubscribe;
 
     // Load messages
     if (chatId === 'public') {
