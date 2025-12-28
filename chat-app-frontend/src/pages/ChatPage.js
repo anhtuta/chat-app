@@ -4,13 +4,7 @@ import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
 import { getGroups, getPublicMessages, getGroupMessages } from "../services/api";
-import {
-  connectWebSocket,
-  disconnectWebSocket,
-  subscribeToTopic,
-  sendMessage as sendWebSocketMessage,
-  getStompClient,
-} from "../services/websocket";
+import { useWebSocket } from "../context/WebSocketProvider";
 
 function ChatPage({ username, onLogout }) {
   const navigate = useNavigate();
@@ -28,22 +22,31 @@ function ChatPage({ username, onLogout }) {
   const groupSubscriptions = useRef({});
   const publicSubscription = useRef(null);
   const currentChatRef = useRef({ type: "public", id: null });
+  const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
 
   useEffect(() => {
     loadGroups();
-    connect();
 
     return () => {
       // Cleanup on unmount
-      Object.values(groupSubscriptions.current).forEach((sub) => {
-        if (sub) sub.unsubscribe();
+      Object.values(groupSubscriptions.current).forEach((unsubscribe) => {
+        if (unsubscribe) unsubscribe();
       });
       if (publicSubscription.current) {
-        publicSubscription.current.unsubscribe();
+        publicSubscription.current();
       }
-      disconnectWebSocket();
     };
   }, []);
+
+  // Ensure we keep a single public subscription that auto re-subscribes on reconnect
+  useEffect(() => {
+    if (publicSubscription.current) return;
+    publicSubscription.current = subscribeTopic("/topic/public", (message) => {
+      if (currentChatRef.current.type === "public") {
+        setMessages((prev) => [...prev, message]);
+      }
+    });
+  }, [subscribeTopic]);
 
   useEffect(() => {
     // Handle route changes
@@ -62,32 +65,18 @@ function ChatPage({ username, onLogout }) {
     if (group) {
       switchToChat("group", group.id, group.name);
     }
-  }, [groupId, groups, isConnected]);
+  }, [groupId, groups]);
 
-  const connect = () => {
-    connectWebSocket(
-      (frame) => {
-        setIsConnected(true);
-        // Subscribe to public messages once
-        if (!publicSubscription.current) {
-          publicSubscription.current = subscribeToTopic("/topic/public", (message) => {
-            // Use ref to check current chat type to avoid stale closure
-            if (currentChatRef.current.type === "public") {
-              setMessages((prev) => [...prev, message]);
-            }
-          });
-        }
-        // Load messages for current chat
-        if (currentChatRef.current.type === "public") {
-          loadMessages();
-        }
-      },
-      (error) => {
-        console.error("Connection error:", error);
-        setIsConnected(false);
-      }
-    );
-  };
+  // Track connection state from provider
+  useEffect(() => {
+    setIsConnected(wsConnected);
+    // On first connect, load current chat messages
+    if (wsConnected && currentChatRef.current.type === "public") {
+      loadMessages();
+    } else if (wsConnected && currentChatRef.current.type === "group" && currentChatRef.current.id) {
+      loadGroupMessages(currentChatRef.current.id);
+    }
+  }, [wsConnected]);
 
   const loadGroups = async () => {
     try {
@@ -117,26 +106,16 @@ function ChatPage({ username, onLogout }) {
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
 
-    // Only subscribe if WebSocket is connected
-    if (!isConnected) {
-      console.log("WebSocket not connected yet, will subscribe when connection is ready");
-      return;
-    }
-
     // Subscribe to new chat
     if (type === "public") {
-      // Already subscribed in connect()
       loadMessages();
     } else if (type === "group" && chatId) {
-      const subscription = subscribeToTopic(`/topic/group.${chatId}`, (message) => {
-        // Use ref to ensure we're still on this group chat
+      const unsubscribe = subscribeTopic(`/topic/group.${chatId}`, (message) => {
         if (currentChatRef.current.type === "group" && currentChatRef.current.id === chatId) {
           setMessages((prev) => [...prev, message]);
         }
       });
-      if (subscription) {
-        groupSubscriptions.current[chatId] = subscription;
-      }
+      groupSubscriptions.current[chatId] = unsubscribe;
       loadGroupMessages(chatId);
     }
   };

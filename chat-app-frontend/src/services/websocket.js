@@ -12,8 +12,12 @@ let stompClient = null;
 
 /**
  * Create and connect WebSocket client
+ * @param {function} onConnect - Callback when connected
+ * @param {function} onError - Callback on error
+ * @param {function} onDisconnect - Callback on disconnect
+ * @returns {Client} STOMP client instance
  */
-export function connectWebSocket(onConnect, onError) {
+export function connectWebSocket(onConnect, onError, onDisconnect) {
   if (stompClient?.connected) {
     console.log("WebSocket already connected, reusing existing connection");
     return stompClient;
@@ -55,8 +59,9 @@ export function connectWebSocket(onConnect, onError) {
       console.error("❌ WebSocket error:", event);
       if (onError) onError(event);
     },
-    onDisconnect: () => {
-      console.log("WebSocket disconnected");
+    onDisconnect: (frame) => {
+      console.log("WebSocket disconnected", frame || "");
+      if (onDisconnect) onDisconnect(frame);
     },
   });
 
