@@ -14,7 +14,6 @@ function ChatPage({ username, onLogout }) {
   const [currentChatId, setCurrentChatId] = useState("public");
   const [currentChatName, setCurrentChatName] = useState("Public Chat");
   const [messages, setMessages] = useState([]);
-  const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
@@ -52,18 +51,6 @@ function ChatPage({ username, onLogout }) {
     }
   }, [groupId, groups]);
 
-  // Track connection state from provider
-  useEffect(() => {
-    setIsConnected(wsConnected);
-    // On first connect, load current chat messages
-    if (wsConnected) {
-      if (currentChatIdRef.current === 'public') {
-        loadMessages();
-      } else {
-        loadGroupMessages(currentChatIdRef.current);
-      }
-    }
-  }, [wsConnected]);
 
   const loadGroups = async () => {
     try {
@@ -131,7 +118,7 @@ function ChatPage({ username, onLogout }) {
   };
 
   const sendMessage = (content) => {
-    if (!content.trim() || !isConnected) {
+    if (!content.trim() || !wsConnected) {
       return;
     }
 
@@ -170,7 +157,7 @@ function ChatPage({ username, onLogout }) {
         chatName={currentChatName}
         messages={messages}
         isLoading={isLoading}
-        isConnected={isConnected}
+        isConnected={wsConnected}
         username={username}
         onSendMessage={sendMessage}
         onLogout={onLogout}
