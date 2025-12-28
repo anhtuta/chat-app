@@ -18,7 +18,7 @@ function ChatPage({ username, onLogout }) {
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
-  const subscriptionsRef = useRef({});
+  const currentSubscriptionRef = useRef(null);
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
 
@@ -26,22 +26,11 @@ function ChatPage({ username, onLogout }) {
     loadGroups();
 
     return () => {
-      // Cleanup all subscriptions on unmount
-      Object.values(subscriptionsRef.current).forEach((unsubscribe) => {
-        if (unsubscribe) unsubscribe();
-      });
-    };
-  }, []);
-
-  // Subscribe to public chat on mount
-  useEffect(() => {
-    if (subscriptionsRef.current['public']) return;
-    subscriptionsRef.current['public'] = subscribeTopic("/topic/public", (message) => {
-      if (currentChatIdRef.current === 'public') {
-        setMessages((prev) => [...prev, message]);
+      // Cleanup current subscription on unmount
+      if (currentSubscriptionRef.current) {
+        currentSubscriptionRef.current();
       }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    };
   }, []);
 
   useEffect(() => {
@@ -89,13 +78,10 @@ function ChatPage({ username, onLogout }) {
     // Update ref immediately so subscriptions can use the latest value
     currentChatIdRef.current = chatId;
 
-    // Unsubscribe from previous chat (except public which stays subscribed)
-    if (currentChatId !== 'public' && currentChatId !== chatId) {
-      const unsubscribeFn = subscriptionsRef.current[currentChatId];
-      if (unsubscribeFn) {
-        unsubscribeFn();
-        delete subscriptionsRef.current[currentChatId];
-      }
+    // Unsubscribe from previous chat
+    if (currentSubscriptionRef.current) {
+      currentSubscriptionRef.current();
+      currentSubscriptionRef.current = null;
     }
 
     // Update current chat
@@ -103,20 +89,19 @@ function ChatPage({ username, onLogout }) {
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
 
-    // Load messages and subscribe if needed
+    // Subscribe to new topic (works for both public and groups)
+    const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
+    const unsubscribe = subscribeTopic(topicPath, (message) => {
+      if (currentChatIdRef.current === chatId) {
+        setMessages((prev) => [...prev, message]);
+      }
+    });
+    currentSubscriptionRef.current = unsubscribe;
+
+    // Load messages
     if (chatId === 'public') {
       loadMessages();
-      // Public is already subscribed on mount
     } else {
-      // Subscribe to group topic if not already subscribed
-      if (!subscriptionsRef.current[chatId]) {
-        const unsubscribe = subscribeTopic(`/topic/group.${chatId}`, (message) => {
-          if (currentChatIdRef.current === chatId) {
-            setMessages((prev) => [...prev, message]);
-          }
-        });
-        subscriptionsRef.current[chatId] = unsubscribe;
-      }
       loadGroupMessages(chatId);
     }
   };
