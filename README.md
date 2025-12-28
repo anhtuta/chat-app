@@ -56,6 +56,8 @@ make build.fe
 make run.local
 ```
 
+Then access app at: http://localhost:9010
+
 Stop all: `make stop`
 
 ### Using docker for infra only, and run both FE + BE locally for development
@@ -65,6 +67,8 @@ make start.deps
 make run.be      # Terminal 1: start BE
 make run.fe      # Terminal 2: start FE
 ```
+
+Then access app at: http://localhost:3000
 
 ## How Spring converts JSON to Message
 

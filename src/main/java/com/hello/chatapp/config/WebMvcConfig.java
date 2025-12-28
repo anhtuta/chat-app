@@ -15,6 +15,5 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addViewController("/group/{path:[^\\.]*}").setViewName("forward:/index.html");
         registry.addViewController("/group/{path:[^\\.]*}/{path2:[^\\.]*}").setViewName("forward:/index.html");
         registry.addViewController("/").setViewName("forward:/index.html");
-        registry.addViewController("/chat").setViewName("forward:/index.html");
     }
 }
