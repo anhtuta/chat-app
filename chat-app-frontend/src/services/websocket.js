@@ -15,12 +15,28 @@ let stompClient = null;
  */
 export function connectWebSocket(onConnect, onError) {
   if (stompClient?.connected) {
+    console.log("WebSocket already connected, reusing existing connection");
     return stompClient;
   }
 
+  // Always use absolute path from root, not relative to current route
   const wsUrl = `${WS_BASE_URL}/ws`;
+  console.log("Connecting to WebSocket:", wsUrl, "at", window.location.href);
+
   stompClient = new Client({
-    webSocketFactory: () => new SockJS(wsUrl),
+    webSocketFactory: () => {
+      // SockJS needs HTTP/HTTPS URLs, not WebSocket URLs
+      // It will automatically upgrade to WebSocket if available
+      let sockJsUrl = wsUrl;
+
+      if (!wsUrl.startsWith('http://') && !wsUrl.startsWith('https://')) {
+        // Convert relative path to absolute HTTP URL
+        sockJsUrl = `${window.location.protocol}//${window.location.host}${wsUrl}`;
+      }
+
+      console.log("Using SockJS URL:", sockJsUrl);
+      return new SockJS(sockJsUrl);
+    },
     debug: (str) => {
       console.log("STOMP:", str);
     },
@@ -28,19 +44,23 @@ export function connectWebSocket(onConnect, onError) {
     heartbeatIncoming: 4000,
     heartbeatOutgoing: 4000,
     onConnect: (frame) => {
-      console.log("Connected: " + frame);
+      console.log("✅ WebSocket Connected:", frame);
       if (onConnect) onConnect(frame);
     },
     onStompError: (frame) => {
-      console.error("STOMP error:", frame);
+      console.error("❌ STOMP error:", frame);
       if (onError) onError(frame);
     },
     onWebSocketError: (event) => {
-      console.error("WebSocket error:", event);
+      console.error("❌ WebSocket error:", event);
       if (onError) onError(event);
+    },
+    onDisconnect: () => {
+      console.log("WebSocket disconnected");
     },
   });
 
+  console.log("Activating STOMP client...");
   stompClient.activate();
   return stompClient;
 }
@@ -78,11 +98,14 @@ export function subscribeToTopic(topic, callback) {
  * Send message to a destination
  */
 export function sendMessage(destination, message) {
+  console.log("Attempting to send message:", { destination, connected: stompClient?.connected });
+
   if (!stompClient?.connected) {
-    console.error("STOMP client not connected");
+    console.error("❌ STOMP client not connected. Current state:", stompClient?.active ? "active but not connected" : "not active");
     return false;
   }
 
+  console.log("✅ Sending message to", destination);
   stompClient.publish({
     destination,
     body: JSON.stringify(message),
