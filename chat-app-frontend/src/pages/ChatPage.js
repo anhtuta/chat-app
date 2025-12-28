@@ -140,11 +140,7 @@ function ChatPage({ username, onLogout }) {
   };
 
   const handleChatNavigate = (chatId) => {
-    if (chatId === 'public') {
-      navigate("/group/public");
-    } else {
-      navigate(`/group/${chatId}`);
-    }
+    navigate(`/group/${chatId}`);
   };
 
   return (
