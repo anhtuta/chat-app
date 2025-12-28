@@ -62,7 +62,7 @@ function ChatContainer({ username, onLogout }) {
     if (group) {
       switchToChat("group", group.id, group.name);
     }
-  }, [groupId, groups]);
+  }, [groupId, groups, isConnected]);
 
   const connect = () => {
     connectWebSocket(
@@ -116,6 +116,12 @@ function ChatContainer({ username, onLogout }) {
     setCurrentChatId(chatId);
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
+
+    // Only subscribe if WebSocket is connected
+    if (!isConnected) {
+      console.log("WebSocket not connected yet, will subscribe when connection is ready");
+      return;
+    }
 
     // Subscribe to new chat
     if (type === "public") {
