@@ -1,7 +1,7 @@
 import React from "react";
 import "./Sidebar.css";
 
-function Sidebar({ groups, currentChatType, currentChatId, onChatSelect, onCreateGroupClick }) {
+function Sidebar({ groups, currentChatId, onChatSelect, onCreateGroupClick }) {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -13,8 +13,8 @@ function Sidebar({ groups, currentChatType, currentChatId, onChatSelect, onCreat
       <div className="chat-list">
         {/* Public Chat Item */}
         <div
-          className={`chat-item ${currentChatType === "public" ? "active" : ""}`}
-          onClick={() => onChatSelect("public", null, "Public Chat")}
+          className={`chat-item ${currentChatId === "public" ? "active" : ""}`}
+          onClick={() => onChatSelect("public")}
         >
           <div className="chat-item-name">Public Chat</div>
           <div className="chat-item-type">Everyone</div>
@@ -24,8 +24,8 @@ function Sidebar({ groups, currentChatType, currentChatId, onChatSelect, onCreat
         {groups.map((group) => (
           <div
             key={group.id}
-            className={`chat-item ${currentChatType === "group" && currentChatId === group.id ? "active" : ""}`}
-            onClick={() => onChatSelect("group", group.id, group.name)}
+            className={`chat-item ${currentChatId === group.id ? "active" : ""}`}
+            onClick={() => onChatSelect(group.id)}
           >
             <div className="chat-item-name">{group.name}</div>
             <div className="chat-item-type">Group</div>

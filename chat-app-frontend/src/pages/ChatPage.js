@@ -11,59 +11,55 @@ function ChatPage({ username, onLogout }) {
   const { groupId } = useParams();
 
   const [groups, setGroups] = useState([]);
-  const [currentChatType, setCurrentChatType] = useState("public");
-  const [currentChatId, setCurrentChatId] = useState(null);
+  const [currentChatId, setCurrentChatId] = useState("public");
   const [currentChatName, setCurrentChatName] = useState("Public Chat");
   const [messages, setMessages] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
-  const groupSubscriptions = useRef({});
-  const publicSubscription = useRef(null);
-  const currentChatRef = useRef({ type: "public", id: null });
+  const subscriptionsRef = useRef({});
+  const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
 
   useEffect(() => {
     loadGroups();
 
     return () => {
-      // Cleanup on unmount
-      Object.values(groupSubscriptions.current).forEach((unsubscribe) => {
+      // Cleanup all subscriptions on unmount
+      Object.values(subscriptionsRef.current).forEach((unsubscribe) => {
         if (unsubscribe) unsubscribe();
       });
-      if (publicSubscription.current) {
-        publicSubscription.current();
-      }
     };
   }, []);
 
-  // Ensure we keep a single public subscription that auto re-subscribes on reconnect
+  // Subscribe to public chat on mount
   useEffect(() => {
-    if (publicSubscription.current) return;
-    publicSubscription.current = subscribeTopic("/topic/public", (message) => {
-      if (currentChatRef.current.type === "public") {
+    if (subscriptionsRef.current['public']) return;
+    subscriptionsRef.current['public'] = subscribeTopic("/topic/public", (message) => {
+      if (currentChatIdRef.current === 'public') {
         setMessages((prev) => [...prev, message]);
       }
     });
-  }, [subscribeTopic]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Handle route changes
     if (!groupId || groupId === "public") {
-      switchToChat("public", null, "Public Chat");
+      switchToChat("public", "Public Chat");
       return;
     }
 
     const numericId = Number(groupId);
     if (Number.isNaN(numericId)) {
-      switchToChat("public", null, "Public Chat");
+      switchToChat("public", "Public Chat");
       return;
     }
 
     const group = groups.find((g) => g.id === numericId);
     if (group) {
-      switchToChat("group", group.id, group.name);
+      switchToChat(group.id, group.name);
     }
   }, [groupId, groups]);
 
@@ -71,10 +67,12 @@ function ChatPage({ username, onLogout }) {
   useEffect(() => {
     setIsConnected(wsConnected);
     // On first connect, load current chat messages
-    if (wsConnected && currentChatRef.current.type === "public") {
-      loadMessages();
-    } else if (wsConnected && currentChatRef.current.type === "group" && currentChatRef.current.id) {
-      loadGroupMessages(currentChatRef.current.id);
+    if (wsConnected) {
+      if (currentChatIdRef.current === 'public') {
+        loadMessages();
+      } else {
+        loadGroupMessages(currentChatIdRef.current);
+      }
     }
   }, [wsConnected]);
 
@@ -87,35 +85,38 @@ function ChatPage({ username, onLogout }) {
     }
   };
 
-  const switchToChat = async (type, chatId, chatName) => {
+  const switchToChat = async (chatId, chatName) => {
     // Update ref immediately so subscriptions can use the latest value
-    currentChatRef.current = { type, id: chatId };
+    currentChatIdRef.current = chatId;
 
-    // Unsubscribe from previous chat
-    if (currentChatType === "group" && currentChatId) {
-      const subscription = groupSubscriptions.current[currentChatId];
-      if (subscription) {
-        subscription.unsubscribe();
-        delete groupSubscriptions.current[currentChatId];
+    // Unsubscribe from previous chat (except public which stays subscribed)
+    if (currentChatId !== 'public' && currentChatId !== chatId) {
+      const unsubscribeFn = subscriptionsRef.current[currentChatId];
+      if (unsubscribeFn) {
+        unsubscribeFn();
+        delete subscriptionsRef.current[currentChatId];
       }
     }
 
     // Update current chat
-    setCurrentChatType(type);
     setCurrentChatId(chatId);
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
 
-    // Subscribe to new chat
-    if (type === "public") {
+    // Load messages and subscribe if needed
+    if (chatId === 'public') {
       loadMessages();
-    } else if (type === "group" && chatId) {
-      const unsubscribe = subscribeTopic(`/topic/group.${chatId}`, (message) => {
-        if (currentChatRef.current.type === "group" && currentChatRef.current.id === chatId) {
-          setMessages((prev) => [...prev, message]);
-        }
-      });
-      groupSubscriptions.current[chatId] = unsubscribe;
+      // Public is already subscribed on mount
+    } else {
+      // Subscribe to group topic if not already subscribed
+      if (!subscriptionsRef.current[chatId]) {
+        const unsubscribe = subscribeTopic(`/topic/group.${chatId}`, (message) => {
+          if (currentChatIdRef.current === chatId) {
+            setMessages((prev) => [...prev, message]);
+          }
+        });
+        subscriptionsRef.current[chatId] = unsubscribe;
+      }
       loadGroupMessages(chatId);
     }
   };
@@ -151,9 +152,9 @@ function ChatPage({ username, onLogout }) {
 
     const chatMessage = { content };
 
-    if (currentChatType === "public") {
+    if (currentChatId === 'public') {
       sendWebSocketMessage("/app/chat.send", chatMessage);
-    } else if (currentChatType === "group" && currentChatId) {
+    } else {
       chatMessage.groupId = currentChatId;
       sendWebSocketMessage("/app/group.send", chatMessage);
     }
@@ -161,13 +162,13 @@ function ChatPage({ username, onLogout }) {
 
   const handleGroupCreated = (newGroup) => {
     loadGroups();
-    switchToChat("group", newGroup.id, newGroup.name);
+    switchToChat(newGroup.id, newGroup.name);
   };
 
-  const handleChatNavigate = (type, chatId, chatName) => {
-    if (type === "public") {
+  const handleChatNavigate = (chatId) => {
+    if (chatId === 'public') {
       navigate("/group/public");
-    } else if (type === "group" && chatId) {
+    } else {
       navigate(`/group/${chatId}`);
     }
   };
@@ -176,7 +177,6 @@ function ChatPage({ username, onLogout }) {
     <div className="chat-container">
       <Sidebar
         groups={groups}
-        currentChatType={currentChatType}
         currentChatId={currentChatId}
         onChatSelect={handleChatNavigate}
         onCreateGroupClick={() => setShowCreateGroupModal(true)}
