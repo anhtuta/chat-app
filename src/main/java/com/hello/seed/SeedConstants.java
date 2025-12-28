@@ -10,7 +10,7 @@ public class SeedConstants {
     public static final int GROUP_COUNT = 100;
 
     // Database connection details
-    public static final String DB_URL = "jdbc:postgresql://localhost:5432/chatdb";
+    public static final String DB_URL = "jdbc:postgresql://localhost:5434/chatdb";
     public static final String DB_USER = "postgres";
     public static final String DB_PASSWORD = "5555";
 

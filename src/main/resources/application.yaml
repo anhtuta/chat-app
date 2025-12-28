@@ -6,7 +6,7 @@ spring:
     # If not specified, can use a random UUID like this: ${HOSTNAME:instance-${random.uuid}}, or use "instance-dev" for local development
     instance-id: ${HOSTNAME:instance-dev}
   datasource:
-    url: jdbc:postgresql://localhost:5432/chatdb
+    url: jdbc:postgresql://localhost:5434/chatdb
     username: postgres
     password: ${POSTGRES_PASSWORD:-5555}
   jpa:
