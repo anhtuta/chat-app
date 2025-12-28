@@ -3,6 +3,9 @@
     "[xml]": {
         "editor.formatOnSave": false
     },
+    "[sql]": {
+        "editor.formatOnSave": false
+    },
     "cSpell.words": [
         "amqp",
         "chatapp",
