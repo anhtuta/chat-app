@@ -4,6 +4,7 @@ import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import { WebSocketProvider } from "./context/WebSocketProvider";
 import "./App.css";
 
 function AppRoutes() {
@@ -100,7 +101,9 @@ function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <AppRoutes />
+      <WebSocketProvider>
+        <AppRoutes />
+      </WebSocketProvider>
     </BrowserRouter>
   );
 }
