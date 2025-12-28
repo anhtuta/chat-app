@@ -135,6 +135,18 @@
 					</excludes>
 				</configuration>
 			</plugin>
+			<plugin>
+				<groupId>org.flywaydb</groupId>
+				<artifactId>flyway-maven-plugin</artifactId>
+				<configuration>
+					<url>jdbc:postgresql://localhost:5434/chatdb</url>
+					<user>postgres</user>
+					<password>${env.POSTGRES_PASSWORD}</password>
+					<locations>
+						<location>classpath:db/migration</location>
+					</locations>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 

@@ -1,4 +1,4 @@
-.PHONY: help start start.all start.deps build.fe run.local run.be run.fe stop restart logs clean status check.env
+.PHONY: help start start.all start.deps build.fe run.local run.be run.fe stop restart logs clean status check.env db.migrate db.info db.clean db.repair
 
 # Check and create .env file if it doesn't exist
 check.env:
@@ -24,14 +24,22 @@ help:
 	@echo "  make logs        - View application logs (follow mode)"
 	@echo "  make status      - Show service status"
 	@echo "  make clean       - Remove stopped containers and volumes"
+	@echo ""
+	@echo "Database Migration Commands:"
+	@echo "  make db.migrate  - Run Flyway migrations"
+	@echo "  make db.info     - Show migration status"
+	@echo "  make db.clean    - Drop all objects in schema (use with caution!)"
+	@echo "  make db.repair   - Repair Flyway schema history"
+	@echo ""
 	@echo "  make help        - Show this help message"
 	@echo ""
 	@echo "Development Workflow:"
 	@echo "  1. make start.deps  - Start infrastructure"
-	@echo "  2. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
-	@echo "  3. make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
-	@echo "  4. Visit http://localhost:9010/login.html to login"
-	@echo "  5. After login, you'll be redirected to http://localhost:3000"
+	@echo "  2. make db.migrate  - Run database migrations"
+	@echo "  3. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
+	@echo "  4. make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
+	@echo "  5. Visit http://localhost:9010/login.html to login"
+	@echo "  6. After login, you'll be redirected to http://localhost:3000"
 
 start: start.all
 
@@ -77,6 +85,31 @@ restart:
 
 logs:
 	docker-compose --profile multi-instance logs -f instance-1
+
+# Database Migration Commands
+db.migrate: check.env
+	@echo "🔄 Running Flyway migrations..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:migrate
+	@echo "✅ Migrations complete!"
+
+db.info: check.env
+	@echo "📊 Checking migration status..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:info
+
+db.clean: check.env
+	@echo "⚠️  WARNING: This will drop all objects in the schema!"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:clean; \
+		echo "✅ Schema cleaned!"; \
+	else \
+		echo "❌ Cancelled"; \
+	fi
+
+db.repair: check.env
+	@echo "🔧 Repairing Flyway schema history..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:repair
 
 status:
 	docker-compose ps

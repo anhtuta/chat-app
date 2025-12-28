@@ -15,6 +15,12 @@ I will mainly use Cursor editor (before 11/12/2025) or Github Copilot (after 11/
 
 ## Local setup
 
+After starting Postgres, should run DB migration first:
+
+```sh
+make db.migrate
+```
+
 ### Not using docker (not recommended)
 
 Requirements:
