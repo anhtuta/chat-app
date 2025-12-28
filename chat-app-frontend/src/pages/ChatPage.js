@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import Sidebar from "./Sidebar";
-import ChatArea from "./ChatArea";
-import CreateGroupModal from "./CreateGroupModal";
+import Sidebar from "../components/Sidebar";
+import ChatArea from "../components/ChatArea";
+import CreateGroupModal from "../components/CreateGroupModal";
 import { getGroups, getPublicMessages, getGroupMessages } from "../services/api";
 import {
   connectWebSocket,
@@ -12,7 +12,7 @@ import {
   getStompClient,
 } from "../services/websocket";
 
-function ChatContainer({ username, onLogout }) {
+function ChatPage({ username, onLogout }) {
   const navigate = useNavigate();
   const { groupId } = useParams();
 
@@ -218,4 +218,4 @@ function ChatContainer({ username, onLogout }) {
   );
 }
 
-export default ChatContainer;
+export default ChatPage;

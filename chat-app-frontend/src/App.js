@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { checkAuth, logout as apiLogout } from "./services/api";
-import ChatContainer from "./components/ChatContainer";
+import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import "./App.css";
@@ -88,7 +88,7 @@ function AppRoutes() {
         path="/group/:groupId"
         element={
           <RequireAuth>
-            <ChatContainer username={authState.username} onLogout={handleLogout} />
+            <ChatPage username={authState.username} onLogout={handleLogout} />
           </RequireAuth>
         }
       />
