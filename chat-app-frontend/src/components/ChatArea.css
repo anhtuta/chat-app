@@ -88,6 +88,13 @@
   background: #f5f5f5;
 }
 
+.loading-older {
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
 .message {
   margin-bottom: 15px;
   padding: 12px 16px;

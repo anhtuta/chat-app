@@ -86,8 +86,8 @@ export async function getPublicMessages() {
 /**
  * Get group messages
  */
-export async function getGroupMessages(groupId) {
-  const response = await fetch(`${API_BASE_URL}/api/messages/groups/${groupId}`, {
+export async function getGroupMessages(groupId, page = 0, size = 10) {
+  const response = await fetch(`${API_BASE_URL}/api/messages/groups/${groupId}?page=${page}&size=${size}`, {
     credentials: "include",
   });
   if (response.ok) {

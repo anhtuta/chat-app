@@ -7,6 +7,8 @@ import { getGroups, getPublicMessages, getGroupMessages } from "../services/api"
 import { useWebSocket } from "../context/WebSocketProvider";
 
 function ChatPage({ username, onLogout }) {
+  const GROUP_PAGE_SIZE = 10;
+
   const navigate = useNavigate();
   const { groupId } = useParams();
 
@@ -15,10 +17,13 @@ function ChatPage({ username, onLogout }) {
   const [currentChatName, setCurrentChatName] = useState("Public Chat");
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasMoreGroupMessages, setHasMoreGroupMessages] = useState(true);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef(null);
+  const currentGroupPageRef = useRef(0);
 
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
@@ -77,6 +82,8 @@ function ChatPage({ username, onLogout }) {
     setCurrentChatId(chatId);
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
+    setHasMoreGroupMessages(true);
+    currentGroupPageRef.current = 0;
 
     // Subscribe to new topic (works for both public and groups)
     const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
@@ -91,7 +98,7 @@ function ChatPage({ username, onLogout }) {
     if (chatId === 'public') {
       loadMessages();
     } else {
-      loadGroupMessages(chatId);
+      loadGroupMessages(chatId, { page: 0, prepend: false });
     }
   };
 
@@ -107,16 +114,43 @@ function ChatPage({ username, onLogout }) {
     }
   };
 
-  const loadGroupMessages = async (groupId) => {
-    setIsLoading(true);
+  const loadGroupMessages = async (groupId, { page = 0, prepend = false } = {}) => {
+    if (prepend) {
+      setIsLoadingOlder(true);
+    } else {
+      setIsLoading(true);
+    }
+
     try {
-      const messagesData = await getGroupMessages(groupId);
-      setMessages(messagesData);
+      const messagesData = await getGroupMessages(groupId, page, GROUP_PAGE_SIZE);
+
+      if (prepend) {
+        setMessages((prev) => [...messagesData, ...prev]);
+      } else {
+        setMessages(messagesData);
+      }
+
+      currentGroupPageRef.current = page;
+      setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
     } catch (error) {
       console.error("Error loading group messages:", error);
     } finally {
-      setIsLoading(false);
+      if (prepend) {
+        setIsLoadingOlder(false);
+      } else {
+        setIsLoading(false);
+      }
     }
+  };
+
+  const loadOlderGroupMessages = async () => {
+    if (currentChatId === "public" || isLoading || isLoadingOlder || !hasMoreGroupMessages) {
+      return false;
+    }
+
+    const nextPage = currentGroupPageRef.current + 1;
+    await loadGroupMessages(currentChatId, { page: nextPage, prepend: true });
+    return true;
   };
 
   const sendMessage = (content) => {
@@ -152,12 +186,16 @@ function ChatPage({ username, onLogout }) {
         onCreateGroupClick={() => setShowCreateGroupModal(true)}
       />
       <ChatArea
+        chatId={currentChatId}
         chatName={currentChatName}
         messages={messages}
         isLoading={isLoading}
+        isLoadingOlder={isLoadingOlder}
+        hasMoreMessages={currentChatId !== "public" && hasMoreGroupMessages}
         isConnected={wsConnected}
         username={username}
         onSendMessage={sendMessage}
+        onLoadOlderMessages={loadOlderGroupMessages}
         onLogout={onLogout}
       />
       {showCreateGroupModal && (

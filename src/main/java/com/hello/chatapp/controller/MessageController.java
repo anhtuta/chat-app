@@ -10,14 +10,17 @@ import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Collections;
 import java.util.stream.Collectors;
 
 @RestController
@@ -45,7 +48,11 @@ public class MessageController {
     }
 
     @GetMapping("/groups/{groupId}")
-    public ResponseEntity<List<MessageResponse>> getGroupMessages(@PathVariable @NonNull Long groupId, HttpSession session) {
+    public ResponseEntity<List<MessageResponse>> getGroupMessages(
+            @PathVariable @NonNull Long groupId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            HttpSession session) {
         fakeDelay();
 
         // Get authenticated user from session
@@ -63,9 +70,17 @@ public class MessageController {
             throw new ForbiddenException("You are not a member of this group");
         }
 
-        List<MessageResponse> messages = messageRepository.findByGroupOrderByTimestampAsc(group).stream()
+        int validatedPage = Math.max(page, 0);
+        int validatedSize = Math.min(Math.max(size, 1), 100);
+
+        List<MessageResponse> messages = messageRepository
+                .findGroupMessagesPageLatestFirst(group, PageRequest.of(validatedPage, validatedSize)).stream()
                 .map(MessageResponse::fromMessage)
                 .collect(Collectors.toList());
+
+        // Keep the response in ascending order so UI can prepend older pages safely.
+        Collections.reverse(messages);
+
         return ResponseEntity.ok(messages);
     }
 
