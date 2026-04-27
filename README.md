@@ -58,7 +58,6 @@ We can start only infra services (Postgres, Redis, RabbitMQ) in docker, and star
 
 ```sh
 make start.deps
-make build.fe
 make run.local
 ```
 

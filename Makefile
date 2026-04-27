@@ -62,11 +62,14 @@ build.fe:
 	@cd chat-app-frontend && npm run build:spring && cd ..
 	@echo "✅ Frontend built and copied to src/main/resources/static/"
 
-run.local: check.env
+run.local: check.env build.fe
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
-run.be: run.local
+# Similar to run.local but without building frontend
+run.be: check.env
+	@echo "🚀 Running Spring Boot app locally with .env variables..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
 run.fe:
 	@echo "🚀 Running React dev server (Terminal 2)..."
