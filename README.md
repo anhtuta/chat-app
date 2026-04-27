@@ -111,6 +111,13 @@ java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
 
 Stack: Single Spring Boot app (ChatAppApplication) using MVC + STOMP-over-WebSocket
 
+Detailed Plan: [cursor.md](./cursor.md#implement-a-custom-subscription-registry-in-rabbitmq-without-springs-stomp-broker-relay)
+
+Brokers:
+
+- In-memory broker: forward messages to WebSocket connections of users connected to the same instance
+- RabbitMQ: a custom subscription registry, used to forward messages across instances
+
 Concepts:
 
 - Các instance sẽ dùng chung exchange. Mỗi 1 destination sẽ có 1 exchange kiểu Fanout
@@ -119,7 +126,7 @@ Concepts:
   - Do đó chỉ cần tạo queue khi user đầu tiên đến subscribe (gửi lệnh `StompCommand.SUBSCRIBE`) đến 1 destination nào đó
   - Các destination khác cũng vậy, user nào đến subscribe đầu tiên sẽ tạo queue tương ứng
   - Listener của queue KHÔNG quan tâm đến users, nó chỉ quan tâm đến destination của broker. Nó chỉ forward message tới destination đó, KHÔNG quan tâm ai có quyền xem message
-  - Khi user subscribe 1 destination của broker, thì broker phải check user có trong nhóm không rồi mới cho phép subscribe (xem [phần 4 ở trên](#4-how-the-broker-knows-which-users-to-forward-to))
+  - Khi user subscribe 1 destination của broker, thì broker phải check user có trong nhóm không rồi mới cho phép subscribe (xem [spring.md](./docs/spring.md#4-how-the-broker-knows-which-users-to-forward-to))
 - Việc tạo exchange/queue sẽ chỉ được thực hiện khi user đầu tiên connect đến server và join group. Các user khác đến sau sẽ không tạo mới nữa
 
 Flow đơn giản khi dùng RabbitMQ:
@@ -167,39 +174,6 @@ Túm lại:
 - Dù có thêm bao nhiêu user thì số lượng exchange vào queue vẫn chỉ có vậy. Tối đa
   - `Số exchange = số group`
   - `Số queue = số group * số instance`
-
-## Using `.env` file for running spring boot app
-
-Example command in Makefile: `@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run`
-
-**Breakdown:**
-
-- `@` - Makefile syntax to suppress echoing the command
-- `export` - Sets environment variables for the current shell session
-- `$$(...)` - Double `$$` in Makefile becomes single `$` for command substitution
-- `cat .env 2>/dev/null` - Reads .env file, suppressing errors if it doesn't exist
-- `grep -v '^#'` - Filters out comment lines (starting with `#`)
-- `xargs` - Converts the output into space-separated arguments for export
-- `&&` - Only runs the next command if the previous succeeds
-- `./mvnw spring-boot:run` - Executes the Maven wrapper to start Spring Boot
-
-**Example:**
-
-If .env contains:
-
-```
-# Database config
-DB_HOST=localhost
-DB_PORT=5432
-```
-
-The command effectively runs:
-
-```bash
-export DB_HOST=localhost DB_PORT=5432 && ./mvnw spring-boot:run
-```
-
-This makes those variables available to the Spring Boot application at runtime.
 
 ## TODO
 
