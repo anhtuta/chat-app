@@ -19,20 +19,50 @@ function ChatArea({
   const messagesEndRef = useRef(null);
   const isPrependingRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
+  const prevMessagesRef = useRef([]);
+  const forceScrollToBottomRef = useRef(true);
 
   useEffect(() => {
     isLoadingOlderRef.current = isLoadingOlder;
   }, [isLoadingOlder]);
 
   useEffect(() => {
-    if (isPrependingRef.current) {
-      return;
+    const container = chatMessagesRef.current;
+    const prevMessages = prevMessagesRef.current;
+
+    const getMessageKey = (message) => {
+      if (!message) return "";
+      return `${message.id ?? "no-id"}-${message.timestamp ?? "no-time"}-${message.content ?? ""}`;
+    };
+
+    const prevFirstKey = getMessageKey(prevMessages[0]);
+    const prevLastKey = getMessageKey(prevMessages[prevMessages.length - 1]);
+    const nextFirstKey = getMessageKey(messages[0]);
+    const nextLastKey = getMessageKey(messages[messages.length - 1]);
+
+    const grew = messages.length > prevMessages.length;
+    const didPrepend = grew && prevLastKey === nextLastKey && prevFirstKey !== nextFirstKey;
+    const didAppend = grew && prevLastKey !== nextLastKey;
+
+    const distanceFromBottom = container
+      ? container.scrollHeight - container.scrollTop - container.clientHeight
+      : Number.MAX_SAFE_INTEGER;
+    const wasNearBottom = distanceFromBottom < 120;
+
+    if (!isPrependingRef.current && !didPrepend) {
+      if (forceScrollToBottomRef.current || (didAppend && wasNearBottom)) {
+        scrollToBottom();
+      }
     }
-    scrollToBottom();
+
+    forceScrollToBottomRef.current = false;
+    prevMessagesRef.current = messages;
   }, [messages]);
 
   useEffect(() => {
     isPrependingRef.current = false;
+    forceScrollToBottomRef.current = true;
+    prevMessagesRef.current = [];
   }, [chatId]);
 
   const scrollToBottom = () => {
