@@ -446,18 +446,15 @@ Configure Redis as message broker (requires custom implementation)
 ### Important Points
 
 1. **RabbitMQ is the single source of truth:**
-
    - All instances register their subscriptions with RabbitMQ
    - RabbitMQ maintains the complete subscription map
 
 2. **Messages flow through RabbitMQ:**
-
    - When an instance sends a message, it goes to RabbitMQ first
    - RabbitMQ then distributes it to all subscribed instances
    - Each instance delivers to its own WebSocket clients
 
 3. **No direct instance-to-instance communication:**
-
    - Instances don't talk to each other directly
    - **All communication goes through RabbitMQ**
    - This is why it works across different servers/machines
@@ -582,7 +579,6 @@ The key insight: **With RabbitMQ, your application doesn't maintain a subscripti
 ### Additional Considerations for Multi-Instance
 
 1. **Session Management:**
-
    - Current implementation uses in-memory HTTP sessions
    - For multiple instances, use **Spring Session with Redis**:
      ```xml
@@ -593,7 +589,6 @@ The key insight: **With RabbitMQ, your application doesn't maintain a subscripti
      ```
 
 2. **Database:**
-
    - ✅ Already shared (PostgreSQL) - all instances use the same database
    - Messages are persisted and shared across instances
 
@@ -670,7 +665,6 @@ When a client subscribes:
 If you want to use RabbitMQ without STOMP:
 
 - Option 1: Use AMQP directly
-
   - Use RabbitMQ's native AMQP protocol instead of STOMP
   - You can't use Spring's `@EnableWebSocketMessageBroker` STOMP support
   - You'd need to implement your own WebSocket message routing
@@ -1046,92 +1040,6 @@ public class CustomWebSocketHandler extends TextWebSocketHandler {
 - Want to integrate with non-STOMP systems
 - Require fine-grained control over queue/exchange management
 
-## Should we use DirectExchange or TopicExchange for this app
-
-### Implementation with DirectExchange
-
-How it works:
-
-- One exchange per destination:
-  - `/topic/public` → `topic.public` exchange
-  - `/topic/group.1` → `topic.group.1` exchange
-  - `/topic/group.2` → `topic.group.2` exchange
-- Routing: Empty routing key (`""`). All queues bound to an exchange receive all messages from that exchange.
-- Bindings: Queue → Exchange with `""` routing key
-- (Destination: a destination of the STOMP broker. FE can subscribe to it and receive message (via WebSocket))
-
-Pros:
-
-- Simple: no routing key logic
-- Clear separation: **each destination has its own exchange**
-- Easy to debug: one exchange per destination
-- No wildcards needed
-
-Cons:
-
-- More exchanges: one per destination (can be many for many groups)
-- Less flexible: cannot route based on patterns
-
-### Alternative: TopicExchange
-
-How it would work:
-
-- One or a few exchanges for all destinations:
-  - Single `topic.exchange` for all topics
-  - Or separate `topic.public` and `topic.groups` exchanges
-- Routing: Uses routing keys with wildcards:
-  - `"public"` → `/topic/public`
-  - `"group.1"` → `/topic/group.1`
-  - `"group.*"` → all groups (wildcard)
-- Bindings: Queue → Exchange with routing key pattern (e.g., `"public"`, `"group.1"`, `"group.*"`)
-
-Pros:
-
-- Fewer exchanges: can use **one exchange for all destinations**
-- Flexible routing: wildcards (`*`, `#`) for pattern matching
-- Can subscribe to multiple destinations with one binding (e.g., `"group.*"`)
-
-Cons:
-
-- More complex: routing key logic and pattern matching
-- Harder to debug: routing depends on key patterns
-- Potential mistakes: incorrect routing keys can cause missed messages
-
-### Recommendation: DirectExchange
-
-Reasons:
-
-1. Simplicity: no routing key patterns to manage
-2. Clarity: one exchange per destination is easy to understand
-3. Fewer bugs: no wildcard matching errors
-4. Sufficient for this use case: you don't need pattern-based routing
-5. Exchange overhead is low: RabbitMQ handles many exchanges efficiently
-
-When to use TopicExchange:
-
-- You need pattern-based subscriptions (e.g., subscribe to all groups with `"group.*"`)
-- You want fewer exchanges (though this is a minor benefit)
-- You need complex routing rules
-
-### Visual comparison
-
-- DirectExchange (current):
-
-```
-/topic/public → topic.public (DirectExchange) → [queue1, queue2, queue3]
-/topic/group.1 → topic.group.1 (DirectExchange) → [queue4, queue5]
-/topic/group.2 → topic.group.2 (DirectExchange) → [queue6, queue7]
-```
-
-- TopicExchange (alternative):
-
-```
-All destinations → topic.exchange (TopicExchange)
-  - Routing key "public" → [queues bound with "public"]
-  - Routing key "group.1" → [queues bound with "group.1" or "group.*"]
-  - Routing key "group.2" → [queues bound with "group.2" or "group.*"]
-```
-
 ## Cleanup queue when users disconnect from Websocket
 
 ### Problem
@@ -1150,12 +1058,10 @@ All destinations → topic.exchange (TopicExchange)
    ```
 
 2. Cleanup on WebSocket disconnect: When a client disconnects, all queues for that session are deleted
-
    - Added `cleanupSessionQueues()` method
    - Called from `WebSocketEventListener.handleWebSocketDisconnectListener()`
 
 3. Cleanup on app shutdown: When the app shuts down gracefully, all queues created by this instance are deleted
-
    - Enhanced `@PreDestroy cleanup()` method
    - Added `cleanupAllQueues()` private method
 
@@ -1256,7 +1162,6 @@ Message published → Broadcast to all queues → Each instance receives once
 # Scalability Assessment for the Approach 1: Hybrid - Simple Broker + Manual RabbitMQ Sync
 
 - **Current fit**: Works well for a few thousand concurrent users on a handful of app instances.
-
   - Auth is session-based
   - WebSocket delivery rides the embedded SimpleBroker
   - RabbitMQ mirrors subscriptions for cross-instance fan-out
@@ -1276,7 +1181,6 @@ Message published → Broadcast to all queues → Each instance receives once
 - **Session/auth**: Replace HTTP session coupling with stateless JWT or opaque tokens stored in Redis. For WebSockets, use token-based handshake validation (e.g., `Authorization` header on `/ws`). This removes the need to serialize entire `User` objects and lets you load-balance freely.
 
 - **Message flow**:
-
   - Adopt CQRS-style services: an API gateway for REST/WebSocket auth, a chat service for message ingestion, and a notification service for broadcasting.
   - ~~Messages go onto a durable log (Kafka/Pulsar). Consumers handle persistence, fan-out, and delivery to connected clients (via a WebSocket backplane or push service). This ensures backpressure handling and replay~~.
     - Nếu dùng kafka, thì KHÔNG tạo 1 topic cho mỗi group, như vậy sẽ là 10M groups, kafka KHÔNG thể handle được
@@ -1288,7 +1192,6 @@ Message published → Broadcast to all queues → Each instance receives once
       - No event streaming needs → Kafka adds complexity
 
 - **Persistence**:
-
   - Partition chat history per group/user or use a scalable store (Cassandra, DynamoDB, Scylla) **optimized for append-heavy workloads**.
   - Keep PostgreSQL (or another relational DB) for metadata (users, groups) but shard/replicate as needed.
 
@@ -1441,23 +1344,19 @@ Total Redis Pub/Sub Overhead
 At this scale, RabbitMQ becomes impractical:
 
 1. 100M queues to create, bind, monitor, and clean up
-
    - Startup time: Hours to create 100M queues
    - Shutdown time: Hours to delete 100M queues
    - Memory: 250 GB just for queue metadata
 
 2. 10M exchanges to manage
-
    - 15 GB memory overhead
    - Complex routing table management
 
 3. 100M bindings to maintain
-
    - 50 GB memory overhead
    - Binding operations are expensive
 
 4. Operational impossibility
-
    - Management UI can't handle 100M queues
    - Monitoring tools will crash
    - Cluster coordination becomes a bottleneck
@@ -1469,18 +1368,15 @@ At this scale, RabbitMQ becomes impractical:
 ### Redis Pub/Sub Advantages (10M Groups)
 
 1. Channels are ephemeral
-
    - No explicit creation needed
    - Auto-cleanup when empty
    - 750 MB vs 250 GB (333x less memory)
 
 2. No bindings
-
    - Direct channel-based routing
    - No 50 GB binding overhead
 
 3. No exchanges
-
    - Simple string-based channels
    - No 15 GB exchange overhead
 
