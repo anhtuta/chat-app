@@ -86,8 +86,18 @@ export async function getPublicMessages() {
 /**
  * Get group messages
  */
-export async function getGroupMessages(groupId, page = 0, size = 10) {
-  const response = await fetch(`${API_BASE_URL}/api/messages/groups/${groupId}?page=${page}&size=${size}`, {
+export async function getGroupMessages(groupId, { beforeTimestamp, beforeId, size = 10 } = {}) {
+  const queryParams = new URLSearchParams({ size: String(size) });
+
+  if (beforeTimestamp) {
+    queryParams.set("beforeTimestamp", beforeTimestamp);
+  }
+
+  if (beforeId !== undefined && beforeId !== null) {
+    queryParams.set("beforeId", String(beforeId));
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/messages/groups/${groupId}?${queryParams.toString()}`, {
     credentials: "include",
   });
   if (response.ok) {

@@ -23,7 +23,7 @@ function ChatPage({ username, onLogout }) {
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef(null);
-  const currentGroupPageRef = useRef(0);
+  const oldestGroupCursorRef = useRef(null);
 
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
@@ -38,6 +38,19 @@ function ChatPage({ username, onLogout }) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const oldestMessage = messages[0];
+    if (!oldestMessage?.timestamp || oldestMessage?.id === undefined || oldestMessage?.id === null) {
+      oldestGroupCursorRef.current = null;
+      return;
+    }
+
+    oldestGroupCursorRef.current = {
+      timestamp: oldestMessage.timestamp,
+      id: oldestMessage.id,
+    };
+  }, [messages]);
 
   useEffect(() => {
     // Handle route changes
@@ -83,7 +96,7 @@ function ChatPage({ username, onLogout }) {
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
     setHasMoreGroupMessages(true);
-    currentGroupPageRef.current = 0;
+    oldestGroupCursorRef.current = null;
 
     // Subscribe to new topic (works for both public and groups)
     const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
@@ -98,7 +111,7 @@ function ChatPage({ username, onLogout }) {
     if (chatId === 'public') {
       loadMessages();
     } else {
-      loadGroupMessages(chatId, { page: 0, prepend: false });
+      loadGroupMessages(chatId, { prepend: false });
     }
   };
 
@@ -114,7 +127,7 @@ function ChatPage({ username, onLogout }) {
     }
   };
 
-  const loadGroupMessages = async (groupId, { page = 0, prepend = false } = {}) => {
+  const loadGroupMessages = async (groupId, { prepend = false, cursor = null } = {}) => {
     if (prepend) {
       setIsLoadingOlder(true);
     } else {
@@ -122,15 +135,22 @@ function ChatPage({ username, onLogout }) {
     }
 
     try {
-      const messagesData = await getGroupMessages(groupId, page, GROUP_PAGE_SIZE);
+      const messagesData = await getGroupMessages(groupId, {
+        size: GROUP_PAGE_SIZE,
+        beforeTimestamp: cursor?.timestamp,
+        beforeId: cursor?.id,
+      });
 
       if (prepend) {
-        setMessages((prev) => [...messagesData, ...prev]);
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((message) => message.id));
+          const uniqueOlder = messagesData.filter((message) => !existingIds.has(message.id));
+          return [...uniqueOlder, ...prev];
+        });
       } else {
         setMessages(messagesData);
       }
 
-      currentGroupPageRef.current = page;
       setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
     } catch (error) {
       console.error("Error loading group messages:", error);
@@ -148,8 +168,10 @@ function ChatPage({ username, onLogout }) {
       return false;
     }
 
-    const nextPage = currentGroupPageRef.current + 1;
-    await loadGroupMessages(currentChatId, { page: nextPage, prepend: true });
+    await loadGroupMessages(currentChatId, {
+      prepend: true,
+      cursor: oldestGroupCursorRef.current,
+    });
     return true;
   };
 

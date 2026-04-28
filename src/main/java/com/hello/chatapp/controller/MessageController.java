@@ -3,6 +3,7 @@ package com.hello.chatapp.controller;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.exception.UnauthorizedException;
@@ -13,12 +14,14 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Collections;
 import java.util.stream.Collectors;
@@ -50,7 +53,8 @@ public class MessageController {
     @GetMapping("/groups/{groupId}")
     public ResponseEntity<List<MessageResponse>> getGroupMessages(
             @PathVariable @NonNull Long groupId,
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime beforeTimestamp,
+            @RequestParam(required = false) Long beforeId,
             @RequestParam(defaultValue = "10") int size,
             HttpSession session) {
         fakeDelay();
@@ -70,13 +74,20 @@ public class MessageController {
             throw new ForbiddenException("You are not a member of this group");
         }
 
-        int validatedPage = Math.max(page, 0);
         int validatedSize = Math.min(Math.max(size, 1), 100);
+        boolean hasCursorTimestamp = beforeTimestamp != null;
+        boolean hasCursorId = beforeId != null;
 
-        List<MessageResponse> messages = messageRepository
-                .findGroupMessagesPageLatestFirst(group, PageRequest.of(validatedPage, validatedSize)).stream()
-                .map(MessageResponse::fromMessage)
-                .collect(Collectors.toList());
+        if (hasCursorTimestamp != hasCursorId) {
+            throw new BadRequestException("Both beforeTimestamp and beforeId are required when using cursor pagination");
+        }
+
+        List<MessageResponse> messages = (hasCursorTimestamp
+                ? messageRepository.findGroupMessagesBeforeCursor(group, beforeTimestamp, beforeId,
+                        PageRequest.of(0, validatedSize))
+                : messageRepository.findLatestGroupMessages(group, PageRequest.of(0, validatedSize))).stream()
+                        .map(MessageResponse::fromMessage)
+                        .collect(Collectors.toList());
 
         // Keep the response in ascending order so UI can prepend older pages safely.
         Collections.reverse(messages);
