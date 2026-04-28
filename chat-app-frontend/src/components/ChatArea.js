@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
-import "./ChatArea.css";
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Box,
+  Paper,
+  TextField,
+  Button,
+  Chip,
+  CircularProgress,
+  Stack,
+  InputAdornment,
+} from "@mui/material";
+import SendIcon from "@mui/icons-material/Send";
+import LogoutIcon from "@mui/icons-material/Logout";
 
 function ChatArea({
   chatId,
@@ -107,7 +121,8 @@ function ChatArea({
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
       handleSend();
     }
   };
@@ -142,60 +157,198 @@ function ChatArea({
   };
 
   return (
-    <div className="main-chat">
-      <div className="chat-header">
-        <div className="header-title">{chatName}</div>
-        <button className="logout-button" onClick={onLogout}>
-          Logout
-        </button>
-      </div>
-      <div className={`status ${isConnected ? "connected" : "disconnected"}`}>
-        {isConnected ? "Connected" : "Disconnected"}
-      </div>
-      {isLoading && <div className="loading-indicator show">Loading previous messages</div>}
-      <div ref={chatMessagesRef} className="chat-messages" onScroll={handleMessagesScroll}>
-        {isLoadingOlder && <div className="loading-older">Loading older messages...</div>}
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100vh", flex: 1 }}>
+      {/* Header */}
+      <AppBar position="static" sx={{ backgroundColor: "#667eea" }}>
+        <Toolbar sx={{ justifyContent: "space-between" }}>
+          <Typography variant="h6" sx={{ fontWeight: "bold" }}>
+            {chatName}
+          </Typography>
+          <Button
+            color="inherit"
+            startIcon={<LogoutIcon />}
+            onClick={onLogout}
+            sx={{ textTransform: "none" }}
+          >
+            Logout
+          </Button>
+        </Toolbar>
+      </AppBar>
+
+      {/* Status */}
+      <Box sx={{ p: 1, backgroundColor: isConnected ? "#c8e6c9" : "#ffcdd2" }}>
+        <Chip
+          label={isConnected ? "🟢 Connected" : "🔴 Disconnected"}
+          variant="outlined"
+          size="small"
+          color={isConnected ? "success" : "error"}
+        />
+      </Box>
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <Box sx={{ p: 2, textAlign: "center" }}>
+          <CircularProgress size={24} sx={{ mr: 1 }} />
+          Loading previous messages
+        </Box>
+      )}
+
+      {/* Messages Container */}
+      <Box
+        ref={chatMessagesRef}
+        onScroll={handleMessagesScroll}
+        sx={{
+          flex: 1,
+          overflowY: "auto",
+          p: 2,
+          backgroundColor: "#fafafa",
+        }}
+      >
+        {isLoadingOlder && (
+          <Box sx={{ textAlign: "center", py: 2 }}>
+            <CircularProgress size={24} />
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Loading older messages...
+            </Typography>
+          </Box>
+        )}
+
         {messages.map((message, index) => {
           const formatted = formatMessage(message);
 
           if (formatted.type === "system") {
             return (
-              <div
+              <Box
                 key={index}
-                className={`message system ${formatted.isDisconnected ? "disconnected" : ""} ${formatted.isConnected ? "connected" : ""
-                  }`}
+                sx={{
+                  textAlign: "center",
+                  py: 1.5,
+                  px: 2,
+                  my: 1,
+                  backgroundColor: formatted.isDisconnected
+                    ? "#ffebee"
+                    : formatted.isConnected
+                      ? "#e8f5e9"
+                      : "#f5f5f5",
+                  borderRadius: 1,
+                }}
               >
-                <div className="message-content">{formatted.content}</div>
-              </div>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: formatted.isDisconnected
+                      ? "#c62828"
+                      : formatted.isConnected
+                        ? "#2e7d32"
+                        : "#666",
+                    fontWeight: 500,
+                  }}
+                >
+                  {formatted.content}
+                </Typography>
+              </Box>
             );
           }
 
+          const isOwnMessage = formatted.type === "sent";
+
           return (
-            <div key={message.id || index} className={`message ${formatted.type}`}>
-              <div className="message-header">
-                {formatted.displayName} • {new Date(formatted.timestamp).toLocaleTimeString()}{" "}
-                {new Date(formatted.timestamp).toLocaleDateString()}
-              </div>
-              <div className="message-content">{formatted.content}</div>
-            </div>
+            <Box
+              key={message.id || index}
+              sx={{
+                display: "flex",
+                justifyContent: isOwnMessage ? "flex-end" : "flex-start",
+                mb: 1.5,
+              }}
+            >
+              <Paper
+                sx={{
+                  maxWidth: "60%",
+                  p: 1.5,
+                  backgroundColor: isOwnMessage ? "#667eea" : "#e0e0e0",
+                  color: isOwnMessage ? "white" : "black",
+                  borderRadius: 2,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: "block",
+                    fontWeight: 600,
+                    mb: 0.5,
+                    opacity: isOwnMessage ? 0.9 : 1,
+                  }}
+                >
+                  {formatted.displayName}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  {formatted.content}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: "block",
+                    opacity: isOwnMessage ? 0.8 : 0.7,
+                  }}
+                >
+                  {new Date(formatted.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}{" "}
+                  {new Date(formatted.timestamp).toLocaleDateString()}
+                </Typography>
+              </Paper>
+            </Box>
           );
         })}
+
         <div ref={messagesEndRef} />
-      </div>
-      <div className="chat-input-container">
-        <input
-          type="text"
-          className="message-input"
-          placeholder="Type a message..."
-          value={messageInput}
-          onChange={(e) => setMessageInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-        />
-        <button className="send-button" onClick={handleSend}>
-          Send
-        </button>
-      </div>
-    </div>
+      </Box>
+
+      {/* Input Area */}
+      <Box
+        sx={{
+          p: 2,
+          backgroundColor: "white",
+          borderTop: "1px solid #e0e0e0",
+        }}
+      >
+        <Stack direction="row" spacing={1}>
+          <TextField
+            fullWidth
+            placeholder="Type a message..."
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            variant="outlined"
+            size="small"
+            multiline
+            maxRows={3}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <Button
+                    onClick={handleSend}
+                    disabled={!messageInput.trim()}
+                    startIcon={<SendIcon />}
+                    sx={{ minWidth: "auto" }}
+                  />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <Button
+            variant="contained"
+            onClick={handleSend}
+            disabled={!messageInput.trim()}
+            endIcon={<SendIcon />}
+            sx={{ px: 3 }}
+          >
+            Send
+          </Button>
+        </Stack>
+      </Box>
+    </Box>
   );
 }
 

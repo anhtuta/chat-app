@@ -1,7 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import {
+    Container,
+    Card,
+    TextField,
+    Button,
+    Typography,
+    Box,
+    Alert,
+    CircularProgress,
+    Stack,
+} from "@mui/material";
 import { register } from "../services/api";
-import "./auth.css";
 
 function RegisterPage() {
     const navigate = useNavigate();
@@ -50,56 +60,106 @@ function RegisterPage() {
     };
 
     return (
-        <div className="auth-page">
-            <div className="auth-card">
-                <div className="auth-header">
-                    <h1>💬 Chat App</h1>
-                    <p>Create a new account</p>
-                </div>
-                {error && <div className="auth-error">{error}</div>}
-                <form onSubmit={handleSubmit} className="auth-form">
-                    <label className="auth-label">
-                        Username
-                        <input
-                            className="auth-input"
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            autoComplete="username"
-                            required
-                        />
-                    </label>
-                    <label className="auth-label">
-                        Password
-                        <input
-                            className="auth-input"
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            autoComplete="new-password"
-                            required
-                        />
-                    </label>
-                    <label className="auth-label">
-                        Confirm Password
-                        <input
-                            className="auth-input"
-                            type="password"
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            autoComplete="new-password"
-                            required
-                        />
-                    </label>
-                    <button className="auth-submit" type="submit" disabled={loading}>
-                        {loading ? "Registering..." : "Register"}
-                    </button>
-                </form>
-                <div className="auth-footer">
-                    Already have an account? <Link to="/login">Login</Link>
-                </div>
-            </div>
-        </div>
+        <Box
+            sx={{
+                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                minHeight: "100vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                py: 2,
+            }}
+        >
+            <Container maxWidth="sm">
+                <Card
+                    sx={{
+                        p: 4,
+                        borderRadius: 2,
+                        boxShadow: "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
+                    }}
+                >
+                    <Box sx={{ textAlign: "center", mb: 3 }}>
+                        <Typography variant="h4" sx={{ fontWeight: "bold", mb: 1 }}>
+                            💬 Chat App
+                        </Typography>
+                        <Typography variant="body1" color="textSecondary">
+                            Create a new account
+                        </Typography>
+                    </Box>
+
+                    {error && (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
+
+                    <form onSubmit={handleSubmit}>
+                        <Stack spacing={2} sx={{ mb: 3 }}>
+                            <TextField
+                                label="Username"
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                autoComplete="username"
+                                required
+                                fullWidth
+                                variant="outlined"
+                            />
+                            <TextField
+                                label="Password"
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                autoComplete="new-password"
+                                required
+                                fullWidth
+                                variant="outlined"
+                            />
+                            <TextField
+                                label="Confirm Password"
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                autoComplete="new-password"
+                                required
+                                fullWidth
+                                variant="outlined"
+                            />
+                        </Stack>
+
+                        <Button
+                            type="submit"
+                            disabled={loading}
+                            fullWidth
+                            variant="contained"
+                            sx={{ py: 1.5, mb: 2 }}
+                        >
+                            {loading ? (
+                                <CircularProgress size={24} sx={{ color: "white" }} />
+                            ) : (
+                                "Register"
+                            )}
+                        </Button>
+                    </form>
+
+                    <Box sx={{ textAlign: "center" }}>
+                        <Typography variant="body2">
+                            Already have an account?{" "}
+                            <Link
+                                to="/login"
+                                style={{
+                                    color: "#667eea",
+                                    textDecoration: "none",
+                                    fontWeight: "bold",
+                                }}
+                            >
+                                Login
+                            </Link>
+                        </Typography>
+                    </Box>
+                </Card>
+            </Container>
+        </Box>
     );
 }
 

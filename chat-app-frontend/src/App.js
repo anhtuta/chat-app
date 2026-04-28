@@ -1,11 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { ThemeProvider, createTheme, Box, CircularProgress } from "@mui/material";
 import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import { WebSocketProvider } from "./context/WebSocketProvider";
 import "./App.css";
+
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: "#667eea",
+    },
+    secondary: {
+      main: "#764ba2",
+    },
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+  },
+});
 
 function AppRoutes() {
   const navigate = useNavigate();
@@ -46,8 +61,8 @@ function AppRoutes() {
 
   if (authState.checking) {
     return (
-      <div
-        style={{
+      <Box
+        sx={{
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
@@ -55,8 +70,8 @@ function AppRoutes() {
           background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         }}
       >
-        <div style={{ color: "white", fontSize: "18px" }}>Loading...</div>
-      </div>
+        <CircularProgress sx={{ color: "white" }} />
+      </Box>
     );
   }
 
@@ -100,11 +115,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <WebSocketProvider>
-        <AppRoutes />
-      </WebSocketProvider>
-    </BrowserRouter>
+    <ThemeProvider theme={theme}>
+      <BrowserRouter>
+        <WebSocketProvider>
+          <AppRoutes />
+        </WebSocketProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

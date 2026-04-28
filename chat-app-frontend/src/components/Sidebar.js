@@ -1,38 +1,102 @@
 import React from "react";
-import "./Sidebar.css";
+import {
+  Box,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  Button,
+  Typography,
+  Divider,
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 
 function Sidebar({ groups, currentChatId, onChatSelect, onCreateGroupClick }) {
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <div className="sidebar-title">💬 Chats</div>
-        <button className="create-group-button" onClick={onCreateGroupClick}>
-          + New Group
-        </button>
-      </div>
-      <div className="chat-list">
-        {/* Public Chat Item */}
-        <div
-          className={`chat-item ${currentChatId === "public" ? "active" : ""}`}
-          onClick={() => onChatSelect("public")}
+    <Drawer
+      variant="permanent"
+      sx={{
+        width: 280,
+        flexShrink: 0,
+        "& .MuiDrawer-paper": {
+          width: 280,
+          boxSizing: "border-box",
+          backgroundColor: "#f5f5f5",
+          borderRight: "1px solid #e0e0e0",
+        },
+      }}
+    >
+      <Box sx={{ p: 2 }}>
+        <Typography variant="h6" sx={{ fontWeight: "bold", mb: 2 }}>
+          💬 Chats
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          fullWidth
+          onClick={onCreateGroupClick}
+          sx={{ textTransform: "none" }}
         >
-          <div className="chat-item-name">Public Chat</div>
-          <div className="chat-item-type">Everyone</div>
-        </div>
+          New Group
+        </Button>
+      </Box>
+      <Divider />
+      <List>
+        {/* Public Chat Item */}
+        <ListItemButton
+          selected={currentChatId === "public"}
+          onClick={() => onChatSelect("public")}
+          sx={{
+            backgroundColor:
+              currentChatId === "public" ? "#e3f2fd" : "transparent",
+            "&:hover": {
+              backgroundColor: "#f0f0f0",
+            },
+          }}
+        >
+          <ListItemText
+            primary="Public Chat"
+            secondary="Everyone"
+            primaryTypographyProps={{
+              variant: "body2",
+              sx: { fontWeight: "500" },
+            }}
+            secondaryTypographyProps={{
+              variant: "caption",
+            }}
+          />
+        </ListItemButton>
 
         {/* Group Items */}
         {groups.map((group) => (
-          <div
+          <ListItemButton
             key={group.id}
-            className={`chat-item ${currentChatId === group.id ? "active" : ""}`}
+            selected={currentChatId === group.id}
             onClick={() => onChatSelect(group.id)}
+            sx={{
+              backgroundColor:
+                currentChatId === group.id ? "#e3f2fd" : "transparent",
+              "&:hover": {
+                backgroundColor: "#f0f0f0",
+              },
+            }}
           >
-            <div className="chat-item-name">{group.name}</div>
-            <div className="chat-item-type">Group</div>
-          </div>
+            <ListItemText
+              primary={group.name}
+              secondary="Group"
+              primaryTypographyProps={{
+                variant: "body2",
+                sx: { fontWeight: "500" },
+              }}
+              secondaryTypographyProps={{
+                variant: "caption",
+              }}
+            />
+          </ListItemButton>
         ))}
-      </div>
-    </div>
+      </List>
+    </Drawer>
   );
 }
 

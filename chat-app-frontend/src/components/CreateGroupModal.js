@@ -1,12 +1,27 @@
 import React, { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+  Button,
+  Box,
+  Typography,
+  CircularProgress,
+  Alert,
+} from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
-import "./CreateGroupModal.css";
 
 function CreateGroupModal({ onClose, onGroupCreated }) {
   const [groupName, setGroupName] = useState("");
   const [users, setUsers] = useState([]);
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     loadUsers();
@@ -18,7 +33,7 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
       setUsers(usersData);
     } catch (error) {
       console.error("Error loading users:", error);
-      alert("Error loading users");
+      setError("Error loading users");
     }
   };
 
@@ -34,14 +49,15 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
 
     if (!groupName.trim()) {
-      alert("Please enter a group name");
+      setError("Please enter a group name");
       return;
     }
 
     if (selectedUserIds.length === 0) {
-      alert("Please select at least one participant");
+      setError("Please select at least one participant");
       return;
     }
 
@@ -52,71 +68,113 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
       onClose();
     } catch (error) {
       console.error("Error creating group:", error);
-      alert("Error creating group: " + error.message);
+      setError("Error creating group: " + error.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleBackdropClick = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   return (
-    <div className="modal show" onClick={handleBackdropClick}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">Create New Group</div>
+    <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontWeight: "bold" }}>Create New Group</DialogTitle>
+      <DialogContent dividers>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="groupName">
-              Group Name
-            </label>
-            <input
-              type="text"
-              id="groupName"
-              className="form-input"
-              placeholder="Enter group name"
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Select Participants</label>
-            <div className="user-list">
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          <TextField
+            label="Group Name"
+            placeholder="Enter group name"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+            fullWidth
+            required
+            sx={{ mb: 3, mt: 1 }}
+            variant="outlined"
+          />
+
+          <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 2 }}>
+            Select Participants
+          </Typography>
+
+          <Box
+            sx={{
+              maxHeight: 300,
+              overflowY: "auto",
+              border: "1px solid #e0e0e0",
+              borderRadius: 1,
+              p: 1,
+            }}
+          >
+            <FormGroup>
               {users.map((user) => (
-                <div
+                <Box
                   key={user.id}
-                  className={`user-item ${selectedUserIds.includes(user.id) ? "selected" : ""}`}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 1,
+                    backgroundColor: selectedUserIds.includes(user.id)
+                      ? "#e3f2fd"
+                      : "transparent",
+                    "&:hover": {
+                      backgroundColor: "#f5f5f5",
+                    },
+                    cursor: "pointer",
+                  }}
                   onClick={() => toggleUser(user.id)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedUserIds.includes(user.id)}
-                    onChange={() => toggleUser(user.id)}
-                    onClick={(e) => e.stopPropagation()}
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={selectedUserIds.includes(user.id)}
+                        onChange={() => toggleUser(user.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    }
+                    label={
+                      <Box>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {user.fullname || user.username}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          @{user.username}
+                        </Typography>
+                      </Box>
+                    }
                   />
-                  <div>
-                    <div className="user-item-name">{user.fullname || user.username}</div>
-                    <div className="user-item-username">@{user.username}</div>
-                  </div>
-                </div>
+                </Box>
               ))}
-            </div>
-          </div>
-          <div className="modal-buttons">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isLoading}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={isLoading}>
-              {isLoading ? "Creating..." : "Create Group"}
-            </button>
-          </div>
+            </FormGroup>
+          </Box>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button
+          onClick={onClose}
+          disabled={isLoading}
+          variant="outlined"
+        >
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          disabled={isLoading || !groupName.trim() || selectedUserIds.length === 0}
+          variant="contained"
+        >
+          {isLoading ? (
+            <>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              Creating...
+            </>
+          ) : (
+            "Create Group"
+          )}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 

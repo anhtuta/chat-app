@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { Box } from "@mui/material";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
@@ -200,7 +201,7 @@ function ChatPage({ username, onLogout }) {
   };
 
   return (
-    <div className="chat-container">
+    <Box sx={{ display: "flex", height: "100vh" }}>
       <Sidebar
         groups={groups}
         currentChatId={currentChatId}
@@ -223,7 +224,7 @@ function ChatPage({ username, onLogout }) {
       {showCreateGroupModal && (
         <CreateGroupModal onClose={() => setShowCreateGroupModal(false)} onGroupCreated={handleGroupCreated} />
       )}
-    </div>
+    </Box>
   );
 }
 
