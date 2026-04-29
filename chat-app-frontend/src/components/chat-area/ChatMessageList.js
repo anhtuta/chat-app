@@ -1,6 +1,58 @@
 import React from "react";
 import { Box, Paper, Typography, CircularProgress } from "@mui/material";
 
+function formatRelativeTime(timestamp) {
+  if (!timestamp) {
+    return "just now";
+  }
+
+  const targetTime = new Date(timestamp).getTime();
+
+  if (Number.isNaN(targetTime)) {
+    return "just now";
+  }
+
+  const diffInSeconds = Math.max(0, Math.floor((Date.now() - targetTime) / 1000));
+
+  if (diffInSeconds < 60) {
+    return "just now";
+  }
+
+  const units = [
+    { label: "y", seconds: 60 * 60 * 24 * 365 },
+    { label: "mo", seconds: 60 * 60 * 24 * 30 },
+    { label: "d", seconds: 60 * 60 * 24 },
+    { label: "h", seconds: 60 * 60 },
+    { label: "min", seconds: 60 },
+  ];
+
+  for (const unit of units) {
+    if (diffInSeconds >= unit.seconds) {
+      const value = Math.floor(diffInSeconds / unit.seconds);
+      return `${value}${unit.label} ago`;
+    }
+  }
+
+  return "just now";
+}
+
+function formatAbsoluteTimeVi(timestamp) {
+  if (!timestamp) {
+    return "";
+  }
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "full",
+    timeStyle: "medium",
+  }).format(date);
+}
+
 function formatMessage(message, username) {
   const isSystemMessage = message.content && message.content.startsWith("[SYSTEM] ");
 
@@ -27,6 +79,8 @@ function formatMessage(message, username) {
     displayName,
     content: message.content,
     timestamp: message.timestamp,
+    relativeTimestamp: formatRelativeTime(message.timestamp),
+    absoluteTimestamp: formatAbsoluteTimeVi(message.timestamp),
   };
 }
 
@@ -127,29 +181,28 @@ function ChatMessageList({
                 <Typography
                   variant="caption"
                   sx={{
-                    display: "block",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
                     fontWeight: 600,
                     mb: 0.5,
                     opacity: isOwnMessage ? 0.9 : 1,
                   }}
                 >
-                  {formatted.displayName}
+                  <Box component="span" sx={{ fontWeight: 600 }}>
+                    {formatted.displayName}
+                  </Box>
+                  <Box
+                    component="span"
+                    title={formatted.absoluteTimestamp}
+                    sx={{ fontWeight: 400, opacity: 0.8, cursor: "help" }}
+                  >
+                    {formatted.relativeTimestamp}
+                  </Box>
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 0.5 }}>
                   {formatted.content}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    display: "block",
-                    opacity: isOwnMessage ? 0.8 : 0.7,
-                  }}
-                >
-                  {new Date(formatted.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}{" "}
-                  {new Date(formatted.timestamp).toLocaleDateString()}
                 </Typography>
               </Paper>
             </Box>
