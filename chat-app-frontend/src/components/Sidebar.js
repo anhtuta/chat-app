@@ -8,10 +8,22 @@ import {
   Typography,
   Divider,
   Box,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 
-function Sidebar({ groups, currentChatId, onChatSelect, onCreateGroupClick }) {
+function Sidebar({
+  groups,
+  currentChatId,
+  onChatSelect,
+  onCreateGroupClick,
+  selectedThemeId,
+  onThemeChange,
+  themeOptions,
+}) {
   return (
     <div className="sidebar-wrapper">
       <Drawer
@@ -40,6 +52,21 @@ function Sidebar({ groups, currentChatId, onChatSelect, onCreateGroupClick }) {
           >
             New Group
           </Button>
+          <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
+            <InputLabel id="theme-selector-label">Theme</InputLabel>
+            <Select
+              labelId="theme-selector-label"
+              value={selectedThemeId}
+              label="Theme"
+              onChange={(event) => onThemeChange(event.target.value)}
+            >
+              {themeOptions.map((theme) => (
+                <MenuItem key={theme.id} value={theme.id}>
+                  {theme.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
         <Divider />
         <List>

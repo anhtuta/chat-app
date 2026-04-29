@@ -7,7 +7,7 @@ import CreateGroupModal from "../components/CreateGroupModal";
 import { getGroups, getPublicMessages, getGroupMessages } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
 
-function ChatPage({ username, onLogout }) {
+function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOptions }) {
   const GROUP_PAGE_SIZE = 10;
 
   const navigate = useNavigate();
@@ -208,6 +208,9 @@ function ChatPage({ username, onLogout }) {
           currentChatId={currentChatId}
           onChatSelect={handleChatNavigate}
           onCreateGroupClick={() => setShowCreateGroupModal(true)}
+          selectedThemeId={selectedThemeId}
+          onThemeChange={onThemeChange}
+          themeOptions={themeOptions}
         />
         <ChatArea
           chatId={currentChatId}
