@@ -47,9 +47,10 @@ function formatAbsoluteTimeVi(timestamp) {
     return "";
   }
 
-  return new Intl.DateTimeFormat("vi-VN", {
-    dateStyle: "full",
-    timeStyle: "medium",
+  // E.g. "29/04/2026, 14:30"
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "short",
+    timeStyle: "short",
   }).format(date);
 }
 
