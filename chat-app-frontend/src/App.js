@@ -5,21 +5,17 @@ import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import { colorTokens, gradientTokens } from "./theme/tokens";
 import { WebSocketProvider } from "./context/WebSocketProvider";
 import "./App.css";
-
-const themeColors = {
-  primary: "#667eea",
-  secondary: "#764ba2",
-};
 
 const theme = createTheme({
   palette: {
     primary: {
-      main: themeColors.primary,
+      main: colorTokens.primary,
     },
     secondary: {
-      main: themeColors.secondary,
+      main: colorTokens.primaryDark,
     },
   },
   typography: {
@@ -72,7 +68,7 @@ function AppRoutes() {
           justifyContent: "center",
           alignItems: "center",
           height: "100vh",
-          background: "var(--gradient-brand)",
+          background: gradientTokens.brand,
         }}
       >
         <CircularProgress sx={{ color: "white" }} />

@@ -6,7 +6,7 @@
   top: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   justify-content: center;
   align-items: center;
 }
@@ -16,21 +16,21 @@
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface);
   border-radius: 12px;
   padding: 30px;
   width: 90%;
   max-width: 500px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 40px var(--color-overlay-soft);
 }
 
 .modal-header {
   font-size: 24px;
   font-weight: bold;
   margin-bottom: 20px;
-  color: #333;
+  color: var(--color-text-muted);
 }
 
 .form-group {
@@ -41,26 +41,26 @@
   display: block;
   margin-bottom: 8px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text-muted);
 }
 
 .form-input {
   width: 100%;
   padding: 10px;
-  border: 2px solid #e0e0e0;
+  border: 2px solid var(--color-border);
   border-radius: 8px;
   font-size: 14px;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--color-primary);
 }
 
 .user-list {
   max-height: 300px;
   overflow-y: auto;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px;
 }
@@ -68,7 +68,7 @@
 .user-item {
   padding: 10px;
   margin-bottom: 8px;
-  background: #f8f9fa;
+  background: var(--color-surface-raised);
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.2s;
@@ -78,11 +78,11 @@
 }
 
 .user-item:hover {
-  background: #e9ecef;
+  background: var(--color-surface-hover);
 }
 
 .user-item.selected {
-  background: #667eea;
+  background: var(--color-primary);
   color: white;
 }
 
@@ -119,7 +119,7 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--gradient-brand);
   color: white;
 }
 
@@ -128,12 +128,12 @@
 }
 
 .btn-secondary {
-  background: #e0e0e0;
-  color: #333;
+  background: var(--color-border);
+  color: var(--color-text-muted);
 }
 
 .btn-secondary:hover {
-  background: #d0d0d0;
+  background: var(--color-border-strong);
 }
 
 .btn:disabled {

@@ -76,7 +76,7 @@ function RegisterPage() {
                         sx={{
                             p: 4,
                             borderRadius: 2,
-                            boxShadow: "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
+                            boxShadow: "0 8px 32px 0 var(--color-shadow-brand)",
                         }}
                     >
                         <Box sx={{ textAlign: "center", mb: 3 }}>
@@ -136,7 +136,7 @@ function RegisterPage() {
                                 sx={{ py: 1.5, mb: 2 }}
                             >
                                 {loading ? (
-                                    <CircularProgress size={24} sx={{ color: "white" }} />
+                                    <CircularProgress size={24} sx={{ color: "var(--color-surface)" }} />
                                 ) : (
                                     "Register"
                                 )}
