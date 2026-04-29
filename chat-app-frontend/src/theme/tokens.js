@@ -29,6 +29,51 @@ const THEME_PRESETS = {
             surface: "#F1FAEE",
         },
     },
+    cyanSlate: {
+        label: "Cyan Slate",
+        colors: {
+            primary: "#00ADB5",
+            primaryDark: "#222831",
+            primarySoft: "#393E46",
+            surface: "#EEEEEE",
+        },
+    },
+    amberSlate: {
+        label: "Amber Slate",
+        colors: {
+            primary: "#FFD369",
+            primaryDark: "#222831",
+            primarySoft: "#393E46",
+            surface: "#EEEEEE",
+        },
+    },
+    neonViolet: {
+        label: "Neon Violet",
+        colors: {
+            primary: "#892CDC",
+            primaryDark: "#000000",
+            primarySoft: "#52057B",
+            surface: "#BC6FF1",
+        },
+    },
+    arcticBlue: {
+        label: "Arctic Blue",
+        colors: {
+            primary: "#576CBC",
+            primaryDark: "#0B2447",
+            primarySoft: "#19376D",
+            surface: "#A5D7E8",
+        },
+    },
+    mossNight: {
+        label: "Moss Night",
+        colors: {
+            primary: "#4E9F3D",
+            primaryDark: "#191A19",
+            primarySoft: "#1E5128",
+            surface: "#D8E9A8",
+        },
+    },
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
