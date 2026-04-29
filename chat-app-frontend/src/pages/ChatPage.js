@@ -201,30 +201,32 @@ function ChatPage({ username, onLogout }) {
   };
 
   return (
-    <Box sx={{ display: "flex", height: "100vh" }}>
-      <Sidebar
-        groups={groups}
-        currentChatId={currentChatId}
-        onChatSelect={handleChatNavigate}
-        onCreateGroupClick={() => setShowCreateGroupModal(true)}
-      />
-      <ChatArea
-        chatId={currentChatId}
-        chatName={currentChatName}
-        messages={messages}
-        isLoading={isLoading}
-        isLoadingOlder={isLoadingOlder}
-        hasMoreMessages={currentChatId !== "public" && hasMoreGroupMessages}
-        isConnected={wsConnected}
-        username={username}
-        onSendMessage={sendMessage}
-        onLoadOlderMessages={loadOlderGroupMessages}
-        onLogout={onLogout}
-      />
-      {showCreateGroupModal && (
-        <CreateGroupModal onClose={() => setShowCreateGroupModal(false)} onGroupCreated={handleGroupCreated} />
-      )}
-    </Box>
+    <div className="chat-page-wrapper">
+      <Box sx={{ display: "flex", height: "100vh" }}>
+        <Sidebar
+          groups={groups}
+          currentChatId={currentChatId}
+          onChatSelect={handleChatNavigate}
+          onCreateGroupClick={() => setShowCreateGroupModal(true)}
+        />
+        <ChatArea
+          chatId={currentChatId}
+          chatName={currentChatName}
+          messages={messages}
+          isLoading={isLoading}
+          isLoadingOlder={isLoadingOlder}
+          hasMoreMessages={currentChatId !== "public" && hasMoreGroupMessages}
+          isConnected={wsConnected}
+          username={username}
+          onSendMessage={sendMessage}
+          onLoadOlderMessages={loadOlderGroupMessages}
+          onLogout={onLogout}
+        />
+        {showCreateGroupModal && (
+          <CreateGroupModal onClose={() => setShowCreateGroupModal(false)} onGroupCreated={handleGroupCreated} />
+        )}
+      </Box>
+    </div>
   );
 }
 

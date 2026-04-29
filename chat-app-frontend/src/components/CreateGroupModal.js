@@ -75,106 +75,104 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
   };
 
   return (
-    <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontWeight: "bold" }}>Create New Group</DialogTitle>
-      <DialogContent dividers>
-        <form onSubmit={handleSubmit}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+    <div className="create-group-modal-wrapper">
+      <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: "bold" }}>Create New Group</DialogTitle>
+        <DialogContent dividers>
+          <form onSubmit={handleSubmit}>
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
 
-          <TextField
-            label="Group Name"
-            placeholder="Enter group name"
-            value={groupName}
-            onChange={(e) => setGroupName(e.target.value)}
-            fullWidth
-            required
-            sx={{ mb: 3, mt: 1 }}
-            variant="outlined"
-          />
+            <TextField
+              label="Group Name"
+              placeholder="Enter group name"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              fullWidth
+              required
+              sx={{ mb: 3, mt: 1 }}
+              variant="outlined"
+            />
 
-          <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 2 }}>
-            Select Participants
-          </Typography>
+            <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 2 }}>
+              Select Participants
+            </Typography>
 
-          <Box
-            sx={{
-              maxHeight: 300,
-              overflowY: "auto",
-              border: "1px solid #e0e0e0",
-              borderRadius: 1,
-              p: 1,
-            }}
+            <Box
+              sx={{
+                maxHeight: 300,
+                overflowY: "auto",
+                border: "1px solid var(--color-border)",
+                borderRadius: 1,
+                p: 1,
+              }}
+            >
+              <FormGroup>
+                {users.map((user) => (
+                  <Box
+                    key={user.id}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 1,
+                      backgroundColor: selectedUserIds.includes(user.id)
+                        ? "var(--color-selection-bg)"
+                        : "transparent",
+                      "&:hover": {
+                        backgroundColor: "var(--color-surface-soft)",
+                      },
+                      cursor: "pointer",
+                    }}
+                    onClick={() => toggleUser(user.id)}
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={selectedUserIds.includes(user.id)}
+                          onChange={() => toggleUser(user.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      }
+                      label={
+                        <Box>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {user.fullname || user.username}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            @{user.username}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </Box>
+                ))}
+              </FormGroup>
+            </Box>
+          </form>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={onClose} disabled={isLoading} variant="outlined">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isLoading || !groupName.trim() || selectedUserIds.length === 0}
+            variant="contained"
           >
-            <FormGroup>
-              {users.map((user) => (
-                <Box
-                  key={user.id}
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 1,
-                    backgroundColor: selectedUserIds.includes(user.id)
-                      ? "#e3f2fd"
-                      : "transparent",
-                    "&:hover": {
-                      backgroundColor: "#f5f5f5",
-                    },
-                    cursor: "pointer",
-                  }}
-                  onClick={() => toggleUser(user.id)}
-                >
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={selectedUserIds.includes(user.id)}
-                        onChange={() => toggleUser(user.id)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    }
-                    label={
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {user.fullname || user.username}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          @{user.username}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-              ))}
-            </FormGroup>
-          </Box>
-        </form>
-      </DialogContent>
-      <DialogActions sx={{ p: 2 }}>
-        <Button
-          onClick={onClose}
-          disabled={isLoading}
-          variant="outlined"
-        >
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          disabled={isLoading || !groupName.trim() || selectedUserIds.length === 0}
-          variant="contained"
-        >
-          {isLoading ? (
-            <>
-              <CircularProgress size={20} sx={{ mr: 1 }} />
-              Creating...
-            </>
-          ) : (
-            "Create Group"
-          )}
-        </Button>
-      </DialogActions>
-    </Dialog>
+            {isLoading ? (
+              <>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                Creating...
+              </>
+            ) : (
+              "Create Group"
+            )}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </div>
   );
 }
 

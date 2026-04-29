@@ -8,13 +8,18 @@ import RegisterPage from "./pages/RegisterPage";
 import { WebSocketProvider } from "./context/WebSocketProvider";
 import "./App.css";
 
+const themeColors = {
+  primary: "#667eea",
+  secondary: "#764ba2",
+};
+
 const theme = createTheme({
   palette: {
     primary: {
-      main: "#667eea",
+      main: themeColors.primary,
     },
     secondary: {
-      main: "#764ba2",
+      main: themeColors.secondary,
     },
   },
   typography: {
@@ -67,7 +72,7 @@ function AppRoutes() {
           justifyContent: "center",
           alignItems: "center",
           height: "100vh",
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          background: "var(--gradient-brand)",
         }}
       >
         <CircularProgress sx={{ color: "white" }} />

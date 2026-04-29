@@ -4,10 +4,35 @@ body {
   padding: 0;
   height: 100%;
   width: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
-    "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans",
+    "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  --color-primary: #667eea;
+  --color-primary-dark: #764ba2;
+  --color-surface: #ffffff;
+  --color-surface-muted: #fafafa;
+  --color-surface-soft: #f5f5f5;
+  --color-surface-subtle: #f0f0f0;
+  --color-border: #e0e0e0;
+  --color-border-strong: #d0d0d0;
+  --color-text-primary: #111111;
+  --color-text-secondary: #666666;
+  --color-text-muted: #333333;
+  --color-link: #667eea;
+  --color-status-success-bg: #c8e6c9;
+  --color-status-success-soft: #e8f5e9;
+  --color-status-success-text: #2e7d32;
+  --color-status-error-bg: #ffcdd2;
+  --color-status-error-soft: #ffebee;
+  --color-status-error-text: #c62828;
+  --color-selection-bg: #e3f2fd;
+  --color-message-received: #e0e0e0;
+  --gradient-brand: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
 }
 
 code {
