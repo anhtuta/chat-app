@@ -7,11 +7,11 @@
 // For now, just accepts 2 sources of truth, but keep the token values consistent between them.
 
 export const colorTokens = {
-    primary: "#667eea",
-    primaryDark: "#764ba2",
-    primarySoft: "#4c51bf",
-    surface: "#ffffff",
-    shadowBrand: "rgba(31, 38, 135, 0.37)",
+    primary: "#609966",
+    primaryDark: "#40513B",
+    primarySoft: "#9DC08B",
+    surface: "#EDF1D6",
+    shadowBrand: "rgba(64, 81, 59, 0.35)",
 };
 
 export const gradientTokens = {
