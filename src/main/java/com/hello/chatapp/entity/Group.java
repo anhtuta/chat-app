@@ -37,6 +37,15 @@ public class Group {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "latest_message", length = 1000)
+    private String latestMessage;
+
+    @Column(name = "latest_message_sender", length = 255)
+    private String latestMessageSender;
+
+    @Column(name = "latest_message_at")
+    private LocalDateTime latestMessageAt;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {

@@ -13,10 +13,16 @@ import java.util.Optional;
 @Repository
 public interface GroupParticipantRepository extends JpaRepository<GroupParticipant, Long> {
     List<GroupParticipant> findByGroup(Group group);
-    
-    @Query("SELECT gp FROM GroupParticipant gp JOIN FETCH gp.group g JOIN FETCH g.createdBy WHERE gp.user = :user")
+
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.group g
+            JOIN FETCH g.createdBy
+            WHERE gp.user = :user
+            ORDER BY COALESCE(g.latestMessageAt, g.createdAt) DESC, g.id DESC
+            """)
     List<GroupParticipant> findByUser(User user);
-    
+
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);
     boolean existsByGroupAndUser(Group group, User user);
 }

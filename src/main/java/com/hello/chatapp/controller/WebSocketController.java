@@ -11,6 +11,7 @@ import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
+import com.hello.chatapp.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
@@ -22,6 +23,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
+import java.util.Objects;
 
 @Controller
 public class WebSocketController {
@@ -33,17 +35,20 @@ public class WebSocketController {
     private final GroupParticipantRepository groupParticipantRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final MessageService messageService;
 
     public WebSocketController(MessageRepository messageRepository,
             GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             SimpMessagingTemplate messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            MessageService messageService) {
         this.messageRepository = messageRepository;
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.messageService = messageService;
     }
 
     @MessageMapping("/chat.send")
@@ -55,14 +60,15 @@ public class WebSocketController {
         Message message = new Message(user, request.getContent());
         message.setGroup(null); // Ensure group is null for public messages
 
-        MessageResponse response;
+        final MessageResponse response;
 
         // If message is a system message, don't save to database
         if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
-            response = MessageResponse.fromMessage(message);
+            response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
             Message savedMessage = messageRepository.save(message);
-            response = MessageResponse.fromMessage(savedMessage);
+            // TODO why don't we use messageService.saveGroupMessage?
+            response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
         // Publish to RabbitMQ for cross-instance distribution
@@ -83,14 +89,14 @@ public class WebSocketController {
         message.setGroup(group);
 
         String destination = "/topic/group." + group.getId();
-        MessageResponse response;
+        final MessageResponse response;
 
         // If message is a system message, don't save to database
         if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
-            response = MessageResponse.fromMessage(message);
+            response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
-            Message savedMessage = messageRepository.save(message);
-            response = MessageResponse.fromMessage(savedMessage);
+            response = Objects.requireNonNull(MessageResponse.fromMessage(
+                    messageService.saveGroupMessage(group, user, request.getContent())));
         }
 
         // Send to local subscribers via SimpleBroker

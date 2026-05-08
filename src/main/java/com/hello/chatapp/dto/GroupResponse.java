@@ -18,6 +18,9 @@ public class GroupResponse {
     private Long createdById;
     private String createdByUsername;
     private LocalDateTime createdAt;
+    private String latestMessage;
+    private String latestMessageSender;
+    private LocalDateTime latestMessageAt;
 
     public static GroupResponse fromGroup(Group group) {
         if (group == null) {
@@ -29,6 +32,9 @@ public class GroupResponse {
                 .createdById(group.getCreatedBy().getId())
                 .createdByUsername(group.getCreatedBy().getUsername())
                 .createdAt(group.getCreatedAt())
+                .latestMessage(group.getLatestMessage())
+                .latestMessageSender(group.getLatestMessageSender())
+                .latestMessageAt(group.getLatestMessageAt())
                 .build();
     }
 }
