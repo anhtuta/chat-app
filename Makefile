@@ -95,6 +95,14 @@ db.migrate: check.env
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:migrate
 	@echo "✅ Migrations complete!"
 
+# Skip executing migrations but still update the schema history to the target version.
+# Use it when we've already run migrations manually, and flyway_schema_history table doesn't have executed versions.
+# Please update Dflyway.target to the version you want to mark as executed.
+db.migrate.skip: check.env
+	@echo "🔄 Running Flyway migrations (skip)..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:migrate -Dflyway.target=4 -Dflyway.skipExecutingMigrations=true
+	@echo "✅ Migrations complete!"
+
 db.info: check.env
 	@echo "📊 Checking migration status..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:info
