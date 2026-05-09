@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Paper, Typography, CircularProgress } from "@mui/material";
+import "./ChatMessageList.css";
 
 function formatRelativeTime(timestamp) {
   if (!timestamp) {
@@ -97,26 +98,17 @@ function ChatMessageList({
   return (
     <div className="chat-message-list-wrapper">
       {isLoading && (
-        <Box sx={{ p: 2, textAlign: "center" }}>
-          <CircularProgress size={24} sx={{ mr: 1 }} />
+        <Box className="chat-message-list-loading-header">
+          <CircularProgress size={24} />
           Loading previous messages
         </Box>
       )}
 
-      <Box
-        ref={chatMessagesRef}
-        onScroll={onScroll}
-        sx={{
-          flex: 1,
-          overflowY: "auto",
-          p: 2,
-          backgroundColor: "var(--color-surface-muted)",
-        }}
-      >
+      <Box className="chat-message-list-container" ref={chatMessagesRef} onScroll={onScroll}>
         {isLoadingOlder && (
-          <Box sx={{ textAlign: "center", py: 2 }}>
+          <Box className="chat-message-list-loading-older-container">
             <CircularProgress size={24} />
-            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            <Typography variant="body2" className="chat-message-list-loading-older-text">
               Loading older messages...
             </Typography>
           </Box>
@@ -126,33 +118,14 @@ function ChatMessageList({
           const formatted = formatMessage(message, username);
 
           if (formatted.type === "system") {
+            const systemClass = formatted.isDisconnected
+              ? "disconnected"
+              : formatted.isConnected
+                ? "connected"
+                : "default";
             return (
-              <Box
-                key={index}
-                sx={{
-                  textAlign: "center",
-                  py: 1.5,
-                  px: 2,
-                  my: 1,
-                  backgroundColor: formatted.isDisconnected
-                    ? "var(--color-status-error-soft)"
-                    : formatted.isConnected
-                      ? "var(--color-status-success-soft)"
-                      : "var(--color-surface-soft)",
-                  borderRadius: 1,
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: formatted.isDisconnected
-                      ? "var(--color-status-error-text)"
-                      : formatted.isConnected
-                        ? "var(--color-status-success-text)"
-                        : "var(--color-text-secondary)",
-                    fontWeight: 500,
-                  }}
-                >
+              <Box key={index} className={`chat-message-system-message ${systemClass}`}>
+                <Typography variant="caption" className={`chat-message-system-text ${systemClass}`}>
                   {formatted.content}
                 </Typography>
               </Box>
@@ -164,45 +137,25 @@ function ChatMessageList({
           return (
             <Box
               key={message.id || index}
-              sx={{
-                display: "flex",
-                justifyContent: isOwnMessage ? "flex-end" : "flex-start",
-                mb: 1.5,
-              }}
+              className={`chat-message-bubble-wrapper ${isOwnMessage ? "own" : "other"}`}
             >
-              <Paper
-                sx={{
-                  maxWidth: "60%",
-                  p: 1.5,
-                  backgroundColor: isOwnMessage ? "var(--color-primary)" : "var(--color-message-received)",
-                  color: isOwnMessage ? "var(--color-surface)" : "var(--color-text-primary)",
-                  borderRadius: 2,
-                }}
-              >
+              <Paper className={`chat-message-bubble ${isOwnMessage ? "own" : "other"}`}>
                 <Typography
                   variant="caption"
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 1,
-                    fontWeight: 600,
-                    mb: 0.5,
-                    opacity: isOwnMessage ? 0.9 : 1,
-                  }}
+                  className={`chat-message-sender-info ${isOwnMessage ? "own" : ""}`}
                 >
-                  <Box component="span" sx={{ fontWeight: 600 }}>
+                  <Box component="span" className="chat-message-sender-name">
                     {formatted.displayName}
                   </Box>
                   <Box
                     component="span"
+                    className="chat-message-timestamp"
                     title={formatted.absoluteTimestamp}
-                    sx={{ fontWeight: 400, opacity: 0.8, cursor: "help" }}
                   >
                     {formatted.relativeTimestamp}
                   </Box>
                 </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                <Typography variant="body2" className="chat-message-text">
                   {formatted.content}
                 </Typography>
               </Paper>

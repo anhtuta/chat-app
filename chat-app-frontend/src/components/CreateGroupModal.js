@@ -15,6 +15,7 @@ import {
   Alert,
 } from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
+import "./CreateGroupModal.css";
 
 function CreateGroupModal({ onClose, onGroupCreated }) {
   const [groupName, setGroupName] = useState("");
@@ -77,11 +78,11 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
   return (
     <div className="create-group-modal-wrapper">
       <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: "bold" }}>Create New Group</DialogTitle>
+        <DialogTitle className="create-group-dialog-title">Create New Group</DialogTitle>
         <DialogContent dividers>
           <form onSubmit={handleSubmit}>
             {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert severity="error" className="create-group-alert">
                 {error}
               </Alert>
             )}
@@ -93,38 +94,20 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
               onChange={(e) => setGroupName(e.target.value)}
               fullWidth
               required
-              sx={{ mb: 3, mt: 1 }}
+              className="create-group-name-field"
               variant="outlined"
             />
 
-            <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 2 }}>
+            <Typography variant="subtitle2" className="create-group-participants-label">
               Select Participants
             </Typography>
 
-            <Box
-              sx={{
-                maxHeight: 300,
-                overflowY: "auto",
-                border: "1px solid var(--color-border)",
-                borderRadius: 1,
-                p: 1,
-              }}
-            >
+            <Box className="create-group-users-container">
               <FormGroup>
                 {users.map((user) => (
                   <Box
                     key={user.id}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 1,
-                      backgroundColor: selectedUserIds.includes(user.id)
-                        ? "var(--color-selection-bg)"
-                        : "transparent",
-                      "&:hover": {
-                        backgroundColor: "var(--color-surface-soft)",
-                      },
-                      cursor: "pointer",
-                    }}
+                    className={`create-group-user-item ${selectedUserIds.includes(user.id) ? "selected" : ""}`}
                     onClick={() => toggleUser(user.id)}
                   >
                     <FormControlLabel
@@ -137,10 +120,10 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
                       }
                       label={
                         <Box>
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          <Typography variant="body2" className="create-group-user-fullname">
                             {user.fullname || user.username}
                           </Typography>
-                          <Typography variant="caption" color="textSecondary">
+                          <Typography variant="caption" className="create-group-user-username">
                             @{user.username}
                           </Typography>
                         </Box>
@@ -152,7 +135,7 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
             </Box>
           </form>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions className="create-group-dialog-actions">
           <Button onClick={onClose} disabled={isLoading} variant="outlined">
             Cancel
           </Button>
@@ -163,7 +146,7 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
           >
             {isLoading ? (
               <>
-                <CircularProgress size={20} sx={{ mr: 1 }} />
+                <CircularProgress size={20} className="create-group-loading-spinner" />
                 Creating...
               </>
             ) : (

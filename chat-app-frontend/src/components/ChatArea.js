@@ -3,6 +3,7 @@ import { Box } from "@mui/material";
 import ChatAreaHeader from "./chat-area/ChatAreaHeader";
 import ChatMessageList from "./chat-area/ChatMessageList";
 import ChatMessageComposer from "./chat-area/ChatMessageComposer";
+import "./ChatArea.css";
 
 function ChatArea({
   chatId,
@@ -118,7 +119,7 @@ function ChatArea({
 
   return (
     <div className="chat-area-wrapper">
-      <Box sx={{ display: "flex", flexDirection: "column", height: "100vh", flex: 1 }}>
+      <Box className="chat-area-flex-container">
         <ChatAreaHeader chatName={chatName} isConnected={isConnected} onLogout={onLogout} />
         <ChatMessageList
           chatMessagesRef={chatMessagesRef}

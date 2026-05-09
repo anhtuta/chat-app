@@ -1,0 +1,28 @@
+/* ChatAreaHeader styling */
+.chat-area-header-appbar {
+  background-color: var(--color-primary) !important;
+}
+
+.chat-area-header-toolbar {
+  justify-content: space-between !important;
+}
+
+.chat-area-header-title {
+  font-weight: bold !important;
+}
+
+.chat-area-header-logout-button {
+  text-transform: none !important;
+}
+
+.chat-area-header-status-box {
+  padding: 8px !important;
+}
+
+.chat-area-header-status-box.connected {
+  background-color: var(--color-status-success-bg) !important;
+}
+
+.chat-area-header-status-box.disconnected {
+  background-color: var(--color-status-error-bg) !important;
+}

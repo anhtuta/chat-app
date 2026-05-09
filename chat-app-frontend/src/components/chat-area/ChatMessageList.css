@@ -1,0 +1,119 @@
+/* ChatMessageList styling */
+.chat-message-list-loading-header {
+  padding: 16px;
+  text-align: center;
+}
+
+.chat-message-list-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background-color: var(--color-surface-muted);
+}
+
+.chat-message-list-loading-older-container {
+  text-align: center;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.chat-message-list-loading-older-text {
+  color: var(--color-text-secondary) !important;
+  margin-top: 8px !important;
+}
+
+.chat-message-system-message {
+  text-align: center;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  padding-left: 16px;
+  padding-right: 16px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+}
+
+.chat-message-system-message.disconnected {
+  background-color: var(--color-status-error-soft);
+}
+
+.chat-message-system-message.connected {
+  background-color: var(--color-status-success-soft);
+}
+
+.chat-message-system-message.default {
+  background-color: var(--color-surface-soft);
+}
+
+.chat-message-system-text {
+  font-weight: 500 !important;
+}
+
+.chat-message-system-text.disconnected {
+  color: var(--color-status-error-text) !important;
+}
+
+.chat-message-system-text.connected {
+  color: var(--color-status-success-text) !important;
+}
+
+.chat-message-system-text.default {
+  color: var(--color-text-secondary) !important;
+}
+
+.chat-message-bubble-wrapper {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.chat-message-bubble-wrapper.own {
+  justify-content: flex-end;
+}
+
+.chat-message-bubble-wrapper.other {
+  justify-content: flex-start;
+}
+
+.chat-message-bubble {
+  max-width: 60%;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.chat-message-bubble.own {
+  background-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.chat-message-bubble.other {
+  background-color: var(--color-message-received);
+  color: var(--color-text-primary);
+}
+
+.chat-message-sender-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+}
+
+.chat-message-sender-info.own {
+  opacity: 0.9;
+}
+
+.chat-message-sender-name {
+  font-weight: 600;
+}
+
+.chat-message-timestamp {
+  font-weight: 400;
+  opacity: 0.8;
+  cursor: help;
+}
+
+.chat-message-text {
+  margin-bottom: 4px !important;
+}

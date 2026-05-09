@@ -11,15 +11,6 @@ const THEME_PRESETS = {
             surface: "#EDF1D6",
         },
     },
-    amethyst: {
-        label: "Amethyst",
-        colors: {
-            primary: "#667EEA",
-            primaryDark: "#764BA2",
-            primarySoft: "#9A7BC7",
-            surface: "#F5F2FB",
-        },
-    },
     ocean: {
         label: "Ocean",
         colors: {
@@ -27,33 +18,6 @@ const THEME_PRESETS = {
             primaryDark: "#264653",
             primarySoft: "#8ECAE6",
             surface: "#F1FAEE",
-        },
-    },
-    cyanSlate: {
-        label: "Cyan Slate",
-        colors: {
-            primary: "#00ADB5",
-            primaryDark: "#222831",
-            primarySoft: "#393E46",
-            surface: "#EEEEEE",
-        },
-    },
-    amberSlate: {
-        label: "Amber Slate",
-        colors: {
-            primary: "#FFD369",
-            primaryDark: "#222831",
-            primarySoft: "#393E46",
-            surface: "#EEEEEE",
-        },
-    },
-    neonViolet: {
-        label: "Neon Violet",
-        colors: {
-            primary: "#892CDC",
-            primaryDark: "#000000",
-            primarySoft: "#52057B",
-            surface: "#BC6FF1",
         },
     },
     arcticBlue: {
@@ -72,6 +36,51 @@ const THEME_PRESETS = {
             primaryDark: "#191A19",
             primarySoft: "#1E5128",
             surface: "#D8E9A8",
+        },
+    },
+    darkSlate: {
+        label: "Dark Slate",
+        colors: {
+            primary: "#00D9FF",
+            primaryDark: "#0A0E27",
+            primarySoft: "#1A2847",
+            surface: "#0F1419",
+        },
+    },
+    darkNeon: {
+        label: "Dark Neon",
+        colors: {
+            primary: "#FF006E",
+            primaryDark: "#0D0221",
+            primarySoft: "#3A0CA3",
+            surface: "#10002B",
+        },
+    },
+    darkForest: {
+        label: "Dark Forest",
+        colors: {
+            primary: "#52B788",
+            primaryDark: "#0B3D2C",
+            primarySoft: "#1B4332",
+            surface: "#081B15",
+        },
+    },
+    darkOcean: {
+        label: "Dark Ocean",
+        colors: {
+            primary: "#00D9FF",
+            primaryDark: "#0B1929",
+            primarySoft: "#1A3A52",
+            surface: "#050E19",
+        },
+    },
+    darkPurple: {
+        label: "Dark Purple",
+        colors: {
+            primary: "#5764EF",
+            primaryDark: "#121214",
+            primarySoft: "#1A1A1E",
+            surface: "#121214",
         },
     },
 };
@@ -120,11 +129,24 @@ const alpha = (hex, opacity) => {
 };
 
 const buildCssVars = ({ primary, primaryDark, primarySoft, surface }) => {
-    const surfaceMuted = mix(surface, "#ffffff", 0.35);
-    const surfaceSoft = mix(surface, primarySoft, 0.18);
-    const surfaceSubtle = mix(surface, primarySoft, 0.32);
-    const surfaceRaised = mix(surface, "#ffffff", 0.55);
-    const surfaceHover = mix(surface, primarySoft, 0.45);
+    // Detect if this is a dark theme by checking if surface is dark
+    const surfaceRgb = hexToRgb(surface);
+    const surfaceLuminance = (0.299 * surfaceRgb.r + 0.587 * surfaceRgb.g + 0.114 * surfaceRgb.b) / 255;
+    const isDarkTheme = surfaceLuminance < 0.5;
+
+    // For dark themes, use light text; for light themes, use dark text
+    const textColor = isDarkTheme ? "#FBFBFB" : primaryDark;
+    const textSecondaryColor = isDarkTheme ? "#E0E0E0" : primary;
+    const sidebarBg = isDarkTheme ? primaryDark : surface;
+    const chatBg = isDarkTheme ? primarySoft : surface;
+    const borderColor = isDarkTheme ? primarySoft : primarySoft;
+
+    // For light themes, mix towards white; for dark, stay dark
+    const surfaceMuted = isDarkTheme ? mix(surface, "#1A1A1E", 0.4) : mix(surface, "#ffffff", 0.35);
+    const surfaceSoft = isDarkTheme ? mix(primarySoft, primary, 0.12) : mix(surface, primarySoft, 0.18);
+    const surfaceSubtle = isDarkTheme ? mix(primarySoft, primary, 0.25) : mix(surface, primarySoft, 0.32);
+    const surfaceRaised = isDarkTheme ? mix(primarySoft, "#2A2A30", 0.5) : mix(surface, "#ffffff", 0.55);
+    const surfaceHover = isDarkTheme ? mix(primarySoft, primary, 0.4) : mix(surface, primarySoft, 0.45);
 
     return {
         "--color-primary": primary,
@@ -136,36 +158,36 @@ const buildCssVars = ({ primary, primaryDark, primarySoft, surface }) => {
         "--color-surface-subtle": surfaceSubtle,
         "--color-surface-raised": surfaceRaised,
         "--color-surface-hover": surfaceHover,
-        "--color-border": primarySoft,
+        "--color-border": isDarkTheme ? mix(primarySoft, primary, 0.5) : primarySoft,
         "--color-border-strong": primary,
-        "--color-border-soft": mix(primarySoft, surface, 0.5),
-        "--color-text-primary": primaryDark,
-        "--color-text-heading": primaryDark,
-        "--color-text-secondary": primary,
-        "--color-text-tertiary": primary,
-        "--color-text-muted": primaryDark,
-        "--color-link": primaryDark,
+        "--color-border-soft": isDarkTheme ? mix(primarySoft, primary, 0.3) : mix(primarySoft, surface, 0.5),
+        "--color-text-primary": textColor,
+        "--color-text-heading": textColor,
+        "--color-text-secondary": textSecondaryColor,
+        "--color-text-tertiary": textSecondaryColor,
+        "--color-text-muted": textColor,
+        "--color-link": primary,
         "--color-status-success-bg": primarySoft,
-        "--color-status-success-soft": alpha(primarySoft, 0.28),
-        "--color-status-success-text": primaryDark,
+        "--color-status-success-soft": alpha(primary, isDarkTheme ? 0.25 : 0.28),
+        "--color-status-success-text": isDarkTheme ? "#4ADE80" : primaryDark,
         "--color-status-live-text": primary,
-        "--color-status-error-bg": primaryDark,
-        "--color-status-error-soft": alpha(primaryDark, 0.18),
-        "--color-status-error-text": surface,
-        "--color-status-live-error": primaryDark,
-        "--color-selection-bg": alpha(primarySoft, 0.35),
-        "--color-message-received": surfaceSubtle,
-        "--color-auth-error-bg": alpha(primaryDark, 0.16),
-        "--color-auth-error-text": primaryDark,
-        "--color-overlay": alpha(primaryDark, 0.5),
-        "--color-overlay-soft": alpha(primaryDark, 0.3),
-        "--color-shadow-soft": alpha(primaryDark, 0.1),
-        "--color-shadow-medium": alpha(primaryDark, 0.16),
-        "--color-shadow-strong": alpha(primaryDark, 0.28),
-        "--color-shadow-brand": alpha(primaryDark, 0.35),
-        "--color-button-ghost": alpha(surface, 0.2),
-        "--color-button-ghost-hover": alpha(surface, 0.3),
-        "--color-button-ghost-border": alpha(surface, 0.45),
+        "--color-status-error-bg": isDarkTheme ? alpha(primary, 0.35) : primaryDark,
+        "--color-status-error-soft": alpha(primary, isDarkTheme ? 0.2 : 0.18),
+        "--color-status-error-text": isDarkTheme ? "#FF6B6B" : surface,
+        "--color-status-live-error": isDarkTheme ? "#FF6B6B" : primaryDark,
+        "--color-selection-bg": alpha(primary, isDarkTheme ? 0.25 : 0.35),
+        "--color-message-received": isDarkTheme ? surfaceSubtle : surfaceSubtle,
+        "--color-auth-error-bg": alpha(primary, isDarkTheme ? 0.15 : 0.16),
+        "--color-auth-error-text": textColor,
+        "--color-overlay": alpha(primaryDark, isDarkTheme ? 0.6 : 0.5),
+        "--color-overlay-soft": alpha(primaryDark, isDarkTheme ? 0.4 : 0.3),
+        "--color-shadow-soft": alpha(primaryDark, isDarkTheme ? 0.3 : 0.1),
+        "--color-shadow-medium": alpha(primaryDark, isDarkTheme ? 0.4 : 0.16),
+        "--color-shadow-strong": alpha(primaryDark, isDarkTheme ? 0.5 : 0.28),
+        "--color-shadow-brand": alpha(primary, isDarkTheme ? 0.3 : 0.35),
+        "--color-button-ghost": alpha(primary, isDarkTheme ? 0.15 : 0.2),
+        "--color-button-ghost-hover": alpha(primary, isDarkTheme ? 0.25 : 0.3),
+        "--color-button-ghost-border": alpha(primary, isDarkTheme ? 0.4 : 0.45),
         "--gradient-brand": `linear-gradient(135deg, ${primary} 0%, ${primaryDark} 100%)`,
     };
 };

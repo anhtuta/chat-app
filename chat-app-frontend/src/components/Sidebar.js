@@ -14,6 +14,7 @@ import {
   MenuItem,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import "./Sidebar.css";
 
 function Sidebar({
   groups,
@@ -26,21 +27,9 @@ function Sidebar({
 }) {
   return (
     <div className="sidebar-wrapper">
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: 280,
-          flexShrink: 0,
-          "& .MuiDrawer-paper": {
-            width: 280,
-            boxSizing: "border-box",
-            backgroundColor: "var(--color-surface-soft)",
-            borderRight: "1px solid var(--color-border)",
-          },
-        }}
-      >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" sx={{ fontWeight: "bold", mb: 2 }}>
+      <Drawer variant="permanent">
+        <Box className="sidebar-header-box">
+          <Typography variant="h6" className="sidebar-title">
             💬 Chats
           </Typography>
           <Button
@@ -48,20 +37,43 @@ function Sidebar({
             startIcon={<AddIcon />}
             fullWidth
             onClick={onCreateGroupClick}
-            sx={{ textTransform: "none" }}
+            className="new-group-button"
           >
             New Group
           </Button>
-          <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
-            <InputLabel id="theme-selector-label">Theme</InputLabel>
+          <FormControl fullWidth size="small" className="theme-selector-form">
+            <InputLabel id="theme-selector-label" className="theme-selector-label">
+              Theme
+            </InputLabel>
+            {/* MUI's Select dropdown menu renders as a "portal" (outside the normal DOM tree), so CSS selectors targeting it don't work.
+                That's why we use the `sx` prop to apply styles directly. */}
             <Select
               labelId="theme-selector-label"
               value={selectedThemeId}
               label="Theme"
               onChange={(event) => onThemeChange(event.target.value)}
+              className="theme-selector-select"
+              MenuProps={{
+                sx: {
+                  "& .MuiMenu-paper": {
+                    backgroundColor: "var(--color-surface)",
+                    color: "var(--color-text-primary)",
+                  },
+                  "& .MuiMenuItem-root": {
+                    color: "var(--color-text-primary)",
+                    backgroundColor: "var(--color-surface)",
+                    "&:hover": {
+                      backgroundColor: "var(--color-surface-hover)",
+                    },
+                    "&.Mui-selected": {
+                      backgroundColor: "var(--color-selection-bg)",
+                    },
+                  },
+                },
+              }}
             >
               {themeOptions.map((theme) => (
-                <MenuItem key={theme.id} value={theme.id}>
+                <MenuItem key={theme.id} value={theme.id} className="theme-selector-menu-item">
                   {theme.label}
                 </MenuItem>
               ))}
@@ -73,22 +85,20 @@ function Sidebar({
           <ListItemButton
             selected={currentChatId === "public"}
             onClick={() => onChatSelect("public")}
-            sx={{
-              backgroundColor: currentChatId === "public" ? "var(--color-selection-bg)" : "transparent",
-              "&:hover": {
-                backgroundColor: "var(--color-surface-subtle)",
-              },
-            }}
+            className="chat-list-item"
           >
             <ListItemText
               primary="Public Chat"
               secondary="Everyone"
               primaryTypographyProps={{
                 variant: "body2",
-                sx: { fontWeight: "500" },
+                className: "chat-list-item-primary-text",
+                sx: { color: "var(--color-text-primary)" },
               }}
               secondaryTypographyProps={{
                 variant: "caption",
+                className: "chat-list-item-secondary-text",
+                sx: { color: "var(--color-text-secondary)" },
               }}
             />
           </ListItemButton>
@@ -98,22 +108,20 @@ function Sidebar({
               key={group.id}
               selected={currentChatId === group.id}
               onClick={() => onChatSelect(group.id)}
-              sx={{
-                backgroundColor: currentChatId === group.id ? "var(--color-selection-bg)" : "transparent",
-                "&:hover": {
-                  backgroundColor: "var(--color-surface-subtle)",
-                },
-              }}
+              className="chat-list-item"
             >
               <ListItemText
                 primary={group.name}
-                secondary={group.latestMessage || "No messages"}
+                secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
                 primaryTypographyProps={{
                   variant: "body2",
-                  sx: { fontWeight: "500" },
+                  className: "chat-list-item-primary-text",
+                  sx: { color: "var(--color-text-primary)" },
                 }}
                 secondaryTypographyProps={{
                   variant: "caption",
+                  className: "chat-list-item-secondary-text",
+                  sx: { color: "var(--color-text-secondary)" },
                 }}
               />
             </ListItemButton>
