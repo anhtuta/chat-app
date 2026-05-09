@@ -107,7 +107,7 @@ function Sidebar({
             >
               <ListItemText
                 primary={group.name}
-                secondary="Group"
+                secondary={group.latestMessage || "No messages"}
                 primaryTypographyProps={{
                   variant: "body2",
                   sx: { fontWeight: "500" },
