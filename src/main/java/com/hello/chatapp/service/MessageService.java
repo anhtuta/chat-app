@@ -6,10 +6,8 @@ import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
-import com.hello.chatapp.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,23 +21,19 @@ public class MessageService {
 
     private final MessageRepository messageRepository;
     private final GroupRepository groupRepository;
-    private final UserRepository userRepository;
 
     public MessageService(
             MessageRepository messageRepository,
-            GroupRepository groupRepository,
-            UserRepository userRepository) {
+            GroupRepository groupRepository) {
         this.messageRepository = messageRepository;
         this.groupRepository = groupRepository;
-        this.userRepository = userRepository;
     }
 
     @Transactional
     public Message savePublicMessage(User user, String content) {
-        Long userId = Objects.requireNonNull(user.getId());
-        User messageUser = userRepository.getReferenceById(userId);
+        Objects.requireNonNull(user.getId());
 
-        Message message = new Message(messageUser, content);
+        Message message = new Message(user, content);
         message.setGroup(null);
         return messageRepository.save(message);
     }
@@ -59,12 +53,11 @@ public class MessageService {
     @Transactional
     public Message saveGroupMessage(Group group, User user, String content) {
         Long groupId = Objects.requireNonNull(group.getId());
-        Long userId = Objects.requireNonNull(user.getId());
+        Objects.requireNonNull(user.getId());
         Group lockedGroup = groupRepository.findByIdForLatestMessageUpdate(groupId)
                 .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-        User messageUser = userRepository.getReferenceById(userId);
 
-        Message message = new Message(messageUser, content);
+        Message message = new Message(user, content);
         message.setGroup(lockedGroup);
 
         Message savedMessage = messageRepository.saveAndFlush(message);
