@@ -48,11 +48,13 @@ public class MessageService {
      * Saves a new message to the database and updates the group's latest message summary.
      * It will modify both messages and groups tables.
      * How it works:
-     * 1. Save the new message to the database.
-     * 2. Lock the group row in the database to prevent concurrent updates to the same group.
-     * 3. After acquiring the lock, re-query the latest message for the group .
-     * 4. Update the group's latest message summary based on the latest message.
-     * 5. When the transaction commits, any changes to the locked group entity will be persisted to the database.
+     * 1. Lock the group row first to prevent concurrent updates to the same group.
+     * 2. Save the new message to the database (while holding the lock).
+     * 3. Update the group's latest message summary based on the message we just saved.
+     * 4. When the transaction commits, any changes to the locked group entity will be persisted to the database.
+     *
+     * The pessimistic lock ensures that only one transaction can update the group's summary fields at a time.
+     * Therefore, the message we save is guaranteed to be the latest, and we apply its values directly to the group.
      */
     @Transactional
     public Message saveGroupMessage(Group group, User user, String content) {
@@ -76,13 +78,11 @@ public class MessageService {
         }
         // TODO remove the sleep
 
-        Message latestMessage = messageRepository.findLatestGroupMessages(lockedGroup, PageRequest.of(0, 1)).stream()
-                .findFirst()
-                .orElse(savedMessage);
-
+        // The pessimistic lock ensures no other transaction can write to this group while we hold it.
+        // Therefore, the message we just saved is guaranteed to be the latest for this group.
         // When the transaction commits, any changes to lockedGroup entity will be persisted to the database.
         // So we don't need to call groupRepository.save(lockedGroup) explicitly.
-        applyLatestMessage(lockedGroup, latestMessage);
+        applyLatestMessage(lockedGroup, savedMessage);
 
         return savedMessage;
     }

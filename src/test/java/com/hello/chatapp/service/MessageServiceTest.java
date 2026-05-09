@@ -66,7 +66,7 @@ class MessageServiceTest {
     }
 
     @Test
-    void saveGroupMessage_updatesLatestFieldsFromSavedMessageWhenItRemainsNewest() {
+    void saveGroupMessage_updatesLatestFieldsFromSavedMessage() {
         Message savedMessage = buildMessage(100L, managedUser, lockedGroup, "hello world", LocalDateTime.now());
         Long groupId = Objects.requireNonNull(group.getId());
         Long userId = Objects.requireNonNull(user.getId());
@@ -74,8 +74,6 @@ class MessageServiceTest {
         when(groupRepository.findByIdForLatestMessageUpdate(groupId)).thenReturn(Optional.of(lockedGroup));
         when(userRepository.getReferenceById(userId)).thenReturn(managedUser);
         when(messageRepository.saveAndFlush(notNull())).thenReturn(savedMessage);
-        when(messageRepository.findLatestGroupMessages(lockedGroup, PageRequest.of(0, 1)))
-                .thenReturn(List.of(savedMessage));
 
         Message result = messageService.saveGroupMessage(group, user, "hello world");
 
@@ -83,30 +81,6 @@ class MessageServiceTest {
         assertThat(lockedGroup.getLatestMessage()).isEqualTo("hello world");
         assertThat(lockedGroup.getLatestMessageSender()).isEqualTo("alice");
         assertThat(lockedGroup.getLatestMessageAt()).isEqualTo(savedMessage.getTimestamp());
-    }
-
-    @Test
-    void saveGroupMessage_usesActualLatestMessageWhenAnotherWriteWinsRace() {
-        Message savedMessage = buildMessage(100L, managedUser, lockedGroup, "older", LocalDateTime.now());
-        Long groupId = Objects.requireNonNull(group.getId());
-        Long userId = Objects.requireNonNull(user.getId());
-        User newerUser = new User();
-        newerUser.setId(21L);
-        newerUser.setUsername("bob");
-        Message newerMessage = buildMessage(101L, newerUser, lockedGroup, "newer", savedMessage.getTimestamp().plusNanos(1));
-
-        when(groupRepository.findByIdForLatestMessageUpdate(groupId)).thenReturn(Optional.of(lockedGroup));
-        when(userRepository.getReferenceById(userId)).thenReturn(managedUser);
-        when(messageRepository.saveAndFlush(notNull())).thenReturn(savedMessage);
-        when(messageRepository.findLatestGroupMessages(lockedGroup, PageRequest.of(0, 1)))
-                .thenReturn(List.of(newerMessage));
-
-        Message result = messageService.saveGroupMessage(group, user, "older");
-
-        assertThat(result).isSameAs(savedMessage);
-        assertThat(lockedGroup.getLatestMessage()).isEqualTo("newer");
-        assertThat(lockedGroup.getLatestMessageSender()).isEqualTo("bob");
-        assertThat(lockedGroup.getLatestMessageAt()).isEqualTo(newerMessage.getTimestamp());
     }
 
     @Test
