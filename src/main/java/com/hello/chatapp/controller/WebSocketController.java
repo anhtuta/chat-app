@@ -53,16 +53,17 @@ public class WebSocketController {
     public MessageResponse sendPublicMessage(@Payload @NonNull MessageRequest request,
             SimpMessageHeaderAccessor headerAccessor) {
         User user = getUserFromSession(headerAccessor);
-        Message message = new Message(user, request.getContent());
-        message.setGroup(null); // Ensure group is null for public messages
+        String content = request.getContent();
 
         final MessageResponse response;
 
         // If message is a system message, don't save to database
-        if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
+        if (isSystemMessage(content)) {
+            Message message = new Message(user, content);
+            message.setGroup(null); // Ensure group is null for public messages
             response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
-            Message savedMessage = messageService.savePublicMessage(user, request.getContent());
+            Message savedMessage = messageService.savePublicMessage(user, content);
             response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
@@ -80,18 +81,19 @@ public class WebSocketController {
         logger.debug("[sendGroupMessage] request={}", request);
         User user = getUserFromSession(headerAccessor);
         Group group = validateGroup(request.getGroupId(), user);
-        Message message = new Message(user, request.getContent());
-        message.setGroup(group);
+        String content = request.getContent();
 
         String destination = "/topic/group." + group.getId();
         final MessageResponse response;
 
         // If message is a system message, don't save to database
-        if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
+        if (isSystemMessage(content)) {
+            Message message = new Message(user, content);
+            message.setGroup(group);
             response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
             response = Objects.requireNonNull(MessageResponse.fromMessage(
-                    messageService.saveGroupMessage(group, user, request.getContent())));
+                    messageService.saveGroupMessage(group, user, content)));
         }
 
         // Send to local subscribers via SimpleBroker
@@ -103,6 +105,10 @@ public class WebSocketController {
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
 
         return response;
+    }
+
+    private boolean isSystemMessage(String content) {
+        return content != null && content.startsWith("[SYSTEM] ");
     }
 
     /**
