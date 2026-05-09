@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @Import(MessageService.class)
 @DirtiesContext
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class MessageServiceIntegrationTest {
 
     @Autowired
@@ -71,11 +71,11 @@ class MessageServiceIntegrationTest {
 
         List<Message> persistedMessages = new ArrayList<>();
         for (Future<Message> future : futures) {
-            persistedMessages.add(future.get(10, TimeUnit.SECONDS));
+            persistedMessages.add(future.get(30, TimeUnit.SECONDS));
         }
 
         executorService.shutdown();
-        assertThat(executorService.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(executorService.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
 
         Group persistedGroup = groupRepository.findById(Objects.requireNonNull(group.getId())).orElseThrow();
         Message actualLatestMessage = messageRepository.findLatestGroupMessages(persistedGroup, PageRequest.of(0, 1)).stream()

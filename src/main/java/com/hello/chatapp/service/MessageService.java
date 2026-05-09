@@ -34,27 +34,38 @@ public class MessageService {
         this.userRepository = userRepository;
     }
 
+    @Transactional
+    public Message savePublicMessage(User user, String content) {
+        Long userId = Objects.requireNonNull(user.getId());
+        User messageUser = userRepository.getReferenceById(userId);
+
+        Message message = new Message(messageUser, content);
+        message.setGroup(null);
+        return messageRepository.save(message);
+    }
+
     /**
      * Saves a new message to the database and updates the group's latest message summary.
      * It will modify both messages and groups tables.
+     * How it works:
+     * 1. Save the new message to the database.
+     * 2. Lock the group row in the database to prevent concurrent updates to the same group.
+     * 3. After acquiring the lock, re-query the latest message for the group .
+     * 4. Update the group's latest message summary based on the latest message.
+     * 5. When the transaction commits, any changes to the locked group entity will be persisted to the database.
      */
     @Transactional
     public Message saveGroupMessage(Group group, User user, String content) {
         Long groupId = Objects.requireNonNull(group.getId());
         Long userId = Objects.requireNonNull(user.getId());
-        Group messageGroup = groupRepository.getReferenceById(groupId);
+        Group lockedGroup = groupRepository.findByIdForLatestMessageUpdate(groupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
         User messageUser = userRepository.getReferenceById(userId);
 
         Message message = new Message(messageUser, content);
-        message.setGroup(messageGroup);
+        message.setGroup(lockedGroup);
 
         Message savedMessage = messageRepository.saveAndFlush(message);
-        Group lockedGroup = groupRepository.findByIdForLatestMessageUpdate(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-
-        // We have two different Java objects, even though they represent the same database row: messageGroup and lockedGroup.
-        // messageGroup = a proxy/reference created within the current transaction.
-        // lockedGroup = a fresh entity loaded and LOCKED within the current transaction.
 
         // After locking the group, sleep to simulate a long-running transaction and increase the chance of concurrent updates
         try {
@@ -71,10 +82,7 @@ public class MessageService {
 
         // When the transaction commits, any changes to lockedGroup entity will be persisted to the database.
         // So we don't need to call groupRepository.save(lockedGroup) explicitly.
-        // Updating group is more of a convenience for the caller: it's good practice to keep both in sync so
-        // the caller's object reference doesn't become stale.
         applyLatestMessage(lockedGroup, latestMessage);
-        applyLatestMessage(group, latestMessage);
 
         return savedMessage;
     }

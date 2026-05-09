@@ -10,7 +10,6 @@ import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
-import com.hello.chatapp.repository.MessageRepository;
 import com.hello.chatapp.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,20 +29,17 @@ public class WebSocketController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketController.class);
 
-    private final MessageRepository messageRepository;
     private final GroupRepository groupRepository;
     private final GroupParticipantRepository groupParticipantRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
     private final MessageService messageService;
 
-    public WebSocketController(MessageRepository messageRepository,
-            GroupRepository groupRepository,
+    public WebSocketController(GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
             MessageService messageService) {
-        this.messageRepository = messageRepository;
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.messagingTemplate = messagingTemplate;
@@ -66,8 +62,7 @@ public class WebSocketController {
         if (message.getContent() != null && message.getContent().startsWith("[SYSTEM] ")) {
             response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
-            Message savedMessage = messageRepository.save(message);
-            // TODO why don't we use messageService.saveGroupMessage?
+            Message savedMessage = messageService.savePublicMessage(user, request.getContent());
             response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
