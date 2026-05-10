@@ -107,7 +107,7 @@ java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
   --spring.application.instance-id=instance-3
 ```
 
-## Hybrid broker using RabbitMQ: Queue per instance, WebSocket per user
+## Hybrid broker using RabbitMQ: Queue per instance, WebSocket per user (`v2.1`)
 
 Stack: Single Spring Boot app (ChatAppApplication) using MVC + STOMP-over-WebSocket
 
