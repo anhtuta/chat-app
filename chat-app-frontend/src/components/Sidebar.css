@@ -68,23 +68,33 @@
 }
 
 /* Chat list items */
-.chat-list-item {
+.sidebar-group-item {
   background-color: transparent !important;
 }
 
-.chat-list-item:hover {
+.sidebar-group-item:hover {
   background-color: var(--color-surface-subtle) !important;
 }
 
-.chat-list-item.Mui-selected {
+.sidebar-group-item.Mui-selected {
   background-color: var(--color-selection-bg) !important;
 }
 
-.chat-list-item-primary-text {
+.sidebar-group-item-primary-text {
   font-weight: 500 !important;
   color: var(--color-text-primary) !important;
 }
 
-.chat-list-item-secondary-text {
+.sidebar-group-item-secondary-text {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Strong fallback selectors for MUI Typography slots inside list items */
+.sidebar-group-item .MuiListItemText-primary {
+  font-weight: 500 !important;
+  color: var(--color-text-primary) !important;
+}
+
+.sidebar-group-item .MuiListItemText-secondary {
   color: var(--color-text-secondary) !important;
 }

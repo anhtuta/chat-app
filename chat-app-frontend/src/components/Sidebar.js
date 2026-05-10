@@ -81,23 +81,23 @@ function Sidebar({
           </FormControl>
         </Box>
         <Divider />
-        <List>
+        <List className="sidebar-group-list">
           <ListItemButton
             selected={currentChatId === "public"}
             onClick={() => onChatSelect("public")}
-            className="chat-list-item"
+            className="sidebar-group-item"
           >
             <ListItemText
               primary="Public Chat"
               secondary="Everyone"
               primaryTypographyProps={{
                 variant: "body2",
-                className: "chat-list-item-primary-text",
+                className: "sidebar-group-item-primary-text",
                 sx: { color: "var(--color-text-primary)" },
               }}
               secondaryTypographyProps={{
                 variant: "caption",
-                className: "chat-list-item-secondary-text",
+                className: "sidebar-group-item-secondary-text",
                 sx: { color: "var(--color-text-secondary)" },
               }}
             />
@@ -108,19 +108,19 @@ function Sidebar({
               key={group.id}
               selected={currentChatId === group.id}
               onClick={() => onChatSelect(group.id)}
-              className="chat-list-item"
+              className="sidebar-group-item"
             >
               <ListItemText
                 primary={group.name}
                 secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
                 primaryTypographyProps={{
                   variant: "body2",
-                  className: "chat-list-item-primary-text",
+                  className: "sidebar-group-item-primary-text",
                   sx: { color: "var(--color-text-primary)" },
                 }}
                 secondaryTypographyProps={{
                   variant: "caption",
-                  className: "chat-list-item-secondary-text",
+                  className: "sidebar-group-item-secondary-text",
                   sx: { color: "var(--color-text-secondary)" },
                 }}
               />
