@@ -3,7 +3,7 @@ package com.hello.seed;
 public class SeedConstants {
 
     // User seeding constants
-    public static final String USER_PASSWORD = "$2a$10$bDDVkus07dWTgkNBPxWczupezjEU7p5YlTbwfGTpTOC6UiSqF1GCW";
+    public static final String USER_PASSWORD = "$2a$10$bDDVkus07dWTgkNBPxWczupezjEU7p5YlTbwfGTpTOC6UiSqF1GCW"; // 5555
     public static final int USER_COUNT = 1000;
 
     // Group seeding constants
