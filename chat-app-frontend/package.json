@@ -23,7 +23,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "build:spring": "react-scripts build && npm run copy-to-spring",
-    "copy-to-spring": "cp -r build/* ../src/main/resources/static/",
+    "copy-to-spring": "cp -r build/* ../chat-app-backend/src/main/resources/static/",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

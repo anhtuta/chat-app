@@ -46,7 +46,7 @@ start: start.all
 start.all: check.env
 	@echo "🚀 Starting Chat App with Docker..."
 	@echo "🔨 Building frontend..."
-	@cd chat-app-frontend && npm run build:spring && cd ..
+	@cd ../chat-app-frontend && npm run build:spring && cd ../chat-app-backend
 	@echo "🔨 Building and starting services..."
 	docker-compose --profile multi-instance up -d --build
 	@echo "✅ Services started!"
@@ -59,7 +59,7 @@ start.deps: check.env
 
 build.fe:
 	@echo "🔨 Building frontend and copying to Spring Boot..."
-	@cd chat-app-frontend && npm run build:spring && cd ..
+	@cd ../chat-app-frontend && npm run build:spring && cd ../chat-app-backend
 	@echo "✅ Frontend built and copied to src/main/resources/static/"
 
 run.local: check.env build.fe
@@ -74,7 +74,7 @@ run.be: check.env
 run.fe:
 	@echo "🚀 Running React dev server (Terminal 2)..."
 	@echo "📝 API proxy configured to http://localhost:9010"
-	@cd chat-app-frontend && npm start
+	@cd ../chat-app-frontend && npm start
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."
