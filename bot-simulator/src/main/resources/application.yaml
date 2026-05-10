@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: bot-simulator
+
+logging:
+  level:
+    com.hello.botsimulator: INFO
+
+simulator:
+  base-url: ${SIM_BASE_URL:http://localhost:9010}
+  ws-endpoint: ${SIM_WS_ENDPOINT:/ws}
+  bot-count: ${SIM_BOT_COUNT:1000}
+  bot-username-prefix: ${SIM_BOT_USERNAME_PREFIX:u}
+  bot-password: ${SIM_BOT_PASSWORD:5555}
+  target-group-ids: ${SIM_TARGET_GROUP_IDS:1,2,3,4,5,6,7,8,9,10}
+  message-prefix: ${SIM_MESSAGE_PREFIX:Load test message}
+  send-interval-ms: ${SIM_SEND_INTERVAL_MS:500}
+  send-jitter-ms: ${SIM_SEND_JITTER_MS:250}
+  startup-spread-ms: ${SIM_STARTUP_SPREAD_MS:15000}
+  reconnect-delay-ms: ${SIM_RECONNECT_DELAY_MS:1500}
+  connect-timeout-seconds: ${SIM_CONNECT_TIMEOUT_SECONDS:10}
+  report-interval-seconds: ${SIM_REPORT_INTERVAL_SECONDS:5}
