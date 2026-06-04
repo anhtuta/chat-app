@@ -1,4 +1,7 @@
-.PHONY: help start start.all start.deps build.fe run.local run.be run.fe stop restart logs clean status check.env db.migrate db.info db.clean db.repair
+.PHONY: help start start.all start.deps 
+.PHONY: build.fe run.local run.be run.fe run.bot
+.PHONY: stop restart logs clean status check.env
+.PHONY: db.migrate db.info db.clean db.repair
 
 # Check and create .env file if it doesn't exist
 check.env:
@@ -36,10 +39,12 @@ help:
 	@echo "Development Workflow:"
 	@echo "  1. make start.deps  - Start infrastructure"
 	@echo "  2. make db.migrate  - Run database migrations"
-	@echo "  3. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
-	@echo "  4. make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
-	@echo "  5. Visit http://localhost:9010/login.html to login"
-	@echo "  6. After login, you'll be redirected to http://localhost:3000"
+	@echo "  3. Start BE and FE: use one of these:"
+	@echo "  3.1. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
+	@echo "       make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
+	@echo "  3.2. make run.local   - Start Backend with embedded frontend (http://localhost:9010)"
+	@echo "  4. Visit http://localhost:9010/login.html to login"
+	@echo "  5. After login, you'll be redirected to http://localhost:3000"
 
 start: start.all
 
@@ -54,19 +59,22 @@ start.all: check.env
 start.deps: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d postgres redis rabbitmq
+	docker-compose up -d postgres redis rabbitmq prometheus grafana
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
+# Build FE and copy to BE static resources
 build.fe:
 	@echo "🔨 Building frontend and copying to Spring Boot..."
 	@cd ../chat-app-frontend && npm run build:spring && cd ../chat-app-backend
 	@echo "✅ Frontend built and copied to src/main/resources/static/"
 
+# Build FE, copy to BE static resources, and run BE
 run.local: check.env build.fe
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
 # Similar to run.local but without building frontend
+# (Only run BE, use it when static files are already in place, or when running FE separately)
 run.be: check.env
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
@@ -75,6 +83,10 @@ run.fe:
 	@echo "🚀 Running React dev server (Terminal 2)..."
 	@echo "📝 API proxy configured to http://localhost:9010"
 	@cd ../chat-app-frontend && npm start
+
+run.bot:
+	@echo "🚀 Running Bot simulator..."
+	cd ../bot-simulator && ./mvnw spring-boot:run
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."

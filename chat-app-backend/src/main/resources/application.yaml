@@ -31,6 +31,31 @@ spring:
     redis:
       flush-mode: on_save
       namespace: chatapp
+  task:
+    execution:
+      pool:
+        core-size: 10
+        max-size: 100
+        queue-capacity: 500
+        keep-alive: 60s
+        thread-name-prefix: ws-handler-
+      shutdown:
+        await-termination: true
+        await-termination-period: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus,threaddump,metrics-tags
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        tomcat.threads.busy: true
+        tomcat.threads.current: true
 
 server:
   port: 9010

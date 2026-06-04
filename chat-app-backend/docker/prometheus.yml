@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'chat-app-monitor'
+
+scrape_configs:
+  - job_name: 'chat-app-instance-1'
+    static_configs:
+      # - targets: ['instance-1:9010']
+      - targets: ['host.docker.internal:9010']
+    metrics_path: '/actuator/prometheus'
+
+  # - job_name: 'chat-app-instance-2'
+  #   static_configs:
+  #     - targets: ['instance-2:9010']
+  #   metrics_path: '/actuator/prometheus'
+  #   scrape_interval: 30s
+  #   # Only scrape if multi-instance profile is enabled
+
+  # - job_name: 'chat-app-instance-3'
+  #   static_configs:
+  #     - targets: ['instance-3:9010']
+  #   metrics_path: '/actuator/prometheus'
+  #   scrape_interval: 30s
+  #   # Only scrape if multi-instance profile is enabled
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
