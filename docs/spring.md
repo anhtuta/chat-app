@@ -301,3 +301,19 @@ export DB_HOST=localhost DB_PORT=5432 && ./mvnw spring-boot:run
 ```
 
 This makes those variables available to the Spring Boot application at runtime.
+
+## Why use ScheduledExecutorService instead of a raw thread?
+
+You’re asking why `SimulationOrchestrator.java` uses a single-thread scheduled executor instead of just starting one raw thread:
+
+- `Executors.newSingleThreadScheduledExecutor()` creates a scheduler backed by one worker thread at `SimulationOrchestrator.java`.
+- It runs `reportStats()` periodically via `scheduleAtFixedRate(...)` at `SimulationOrchestrator.java`.
+
+Why not `new Thread()`?
+
+- `new Thread()` is one-shot by default. For periodic work, you must manually write a loop + sleep + interruption handling.
+- `ScheduledExecutorService` gives precise periodic scheduling (`fixedRate`) out of the box.
+- Shutdown is cleaner and explicit (`shutdownNow()`) in your lifecycle at `SimulationOrchestrator.java`.
+- It is easier to evolve later (multiple scheduled tasks, different frequencies) without rewriting threading logic.
+
+So: your intuition is right that it’s a single thread, but the executor is chosen for scheduling/lifecycle correctness and maintainability, **NOT for parallelism**.

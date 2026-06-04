@@ -1,5 +1,6 @@
 package com.hello.botsimulator.service;
 
+import com.github.javafaker.Faker;
 import com.hello.botsimulator.client.ChatHttpSessionClient;
 import com.hello.botsimulator.config.SimulatorProperties;
 import com.hello.botsimulator.model.BotHttpSession;
@@ -38,6 +39,7 @@ public class StompBotWorker implements Runnable {
     private final WebSocketStompClient webSocketStompClient;
     private final SimulationStats stats;
     private final AtomicBoolean running;
+    private final Faker faker;
 
     public StompBotWorker(int botNumber,
             String username,
@@ -57,6 +59,7 @@ public class StompBotWorker implements Runnable {
         this.webSocketStompClient = webSocketStompClient;
         this.stats = stats;
         this.running = running;
+        this.faker = new Faker();
     }
 
     @Override
@@ -172,8 +175,12 @@ public class StompBotWorker implements Runnable {
     private Map<String, Object> buildMessagePayload(Long groupId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("groupId", groupId);
-        payload.put("content", properties.getMessagePrefix() + " | bot=" + botNumber + " | ts=" + System.currentTimeMillis());
+        payload.put("content", properties.getMessagePrefix() + " | bot=" + botNumber + " | " + hackerSentence());
         return payload;
+    }
+
+    private String hackerSentence() {
+        return faker.hacker().ingverb() + " " + faker.hacker().adjective() + " " + faker.hacker().noun();
     }
 
     private Long pickRandomGroupId() {
