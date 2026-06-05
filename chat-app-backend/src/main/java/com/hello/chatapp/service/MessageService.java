@@ -42,48 +42,46 @@ public class MessageService {
      * Saves a new message to the database and updates the group's latest message summary.
      * It will modify both messages and groups tables.
      * How it works:
-     * 1. Lock the group row first to prevent concurrent updates to the same group.
-     * 2. Save the new message to the database (while holding the lock).
-     * 3. Update the group's latest message summary based on the message we just saved.
-     * 4. When the transaction commits, any changes to the locked group entity will be persisted to the database.
+     * 1. Load the group to ensure it exists and to attach a managed entity to the message.
+     * 2. Save the new message to the database.
+     * 3. Try a compare-and-set update on group summary fields.
+     * 4. If compare-and-set doesn't update any row, another concurrent transaction already wrote a newer latest message.
      *
-     * The pessimistic lock ensures that only one transaction can update the group's summary fields at a time.
-     * Therefore, the message we save is guaranteed to be the latest, and we apply its values directly to the group.
+     * This avoids a pessimistic lock on the group row while still preventing stale summary updates.
      */
     @Transactional
     public Message saveGroupMessage(Group group, User user, String content) {
         Long groupId = Objects.requireNonNull(group.getId());
         Objects.requireNonNull(user.getId());
-        Group lockedGroup = groupRepository.findByIdForLatestMessageUpdate(groupId)
+        Group existingGroup = groupRepository.findById(groupId)
                 .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
 
         Message message = new Message(user, content);
-        message.setGroup(lockedGroup);
+        message.setGroup(existingGroup);
 
         Message savedMessage = messageRepository.saveAndFlush(message);
 
-        // After locking the group, sleep to simulate a long-running transaction and increase the chance of concurrent updates
+        // Sleep is intentionally kept for demo timing to simulate a slower request.
         try {
-            logger.debug("Acquired lock on group {}, sleeping to simulate long transaction...", groupId);
-            Thread.sleep(2000);
+            logger.debug("Saved message for group {}, sleeping to simulate long request...", groupId);
+            Thread.sleep(200);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
         // TODO remove the sleep
 
-        // The pessimistic lock ensures no other transaction can write to this group while we hold it.
-        // Therefore, the message we just saved is guaranteed to be the latest for this group.
-        // When the transaction commits, any changes to lockedGroup entity will be persisted to the database.
-        // So we don't need to call groupRepository.save(lockedGroup) explicitly.
-        applyLatestMessage(lockedGroup, savedMessage);
+        int rowsUpdated = groupRepository.updateLatestMessageIfNewer(
+                groupId,
+                buildLatestMessagePreview(savedMessage.getContent()),
+                savedMessage.getUser().getUsername(),
+                savedMessage.getTimestamp(),
+                Objects.requireNonNull(savedMessage.getId()));
+
+        if (rowsUpdated == 0) {
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists", groupId);
+        }
 
         return savedMessage;
-    }
-
-    private void applyLatestMessage(Group group, Message message) {
-        group.setLatestMessage(buildLatestMessagePreview(message.getContent()));
-        group.setLatestMessageSender(message.getUser().getUsername());
-        group.setLatestMessageAt(message.getTimestamp());
     }
 
     static String buildLatestMessagePreview(String content) {

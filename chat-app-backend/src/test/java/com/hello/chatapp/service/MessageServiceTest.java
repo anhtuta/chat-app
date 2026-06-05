@@ -17,7 +17,12 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.notNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings("null")
@@ -34,16 +39,12 @@ class MessageServiceTest {
     private MessageService messageService;
 
     private Group group;
-    private Group lockedGroup;
     private User user;
 
     @BeforeEach
     void setUp() {
         group = new Group();
         group.setId(10L);
-
-        lockedGroup = new Group();
-        lockedGroup.setId(10L);
 
         user = new User();
         user.setId(20L);
@@ -52,18 +53,24 @@ class MessageServiceTest {
 
     @Test
     void saveGroupMessage_updatesLatestFieldsFromSavedMessage() {
-        Message savedMessage = buildMessage(100L, user, lockedGroup, "hello world", LocalDateTime.now());
+        Message savedMessage = buildMessage(100L, user, group, "hello world", LocalDateTime.now());
         Long groupId = Objects.requireNonNull(group.getId());
 
-        when(groupRepository.findByIdForLatestMessageUpdate(groupId)).thenReturn(Optional.of(lockedGroup));
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(messageRepository.saveAndFlush(notNull())).thenReturn(savedMessage);
+        when(groupRepository.updateLatestMessageIfNewer(anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong()))
+                .thenReturn(1);
 
         Message result = messageService.saveGroupMessage(group, user, "hello world");
 
         assertThat(result).isSameAs(savedMessage);
-        assertThat(lockedGroup.getLatestMessage()).isEqualTo("hello world");
-        assertThat(lockedGroup.getLatestMessageSender()).isEqualTo("alice");
-        assertThat(lockedGroup.getLatestMessageAt()).isEqualTo(savedMessage.getTimestamp());
+
+        verify(groupRepository).updateLatestMessageIfNewer(
+                eq(groupId),
+                eq("hello world"),
+                eq("alice"),
+                eq(savedMessage.getTimestamp()),
+                eq(100L));
     }
 
     @Test
