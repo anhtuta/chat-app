@@ -1,0 +1,10 @@
+---
+description: "Use when modifying any code in this project. Preserve existing sleep/delay calls used for demo timing or network/work simulation unless the user explicitly asks to change them."
+applyTo: "**"
+---
+# Preserve Demo Sleeps
+
+- Treat existing sleep/delay calls as intentional demo behavior.
+- Do not remove, reduce, increase, or bypass any sleep/delay call unless the user explicitly asks for that change.
+- It is allowed to mention sleep/delay calls as observations or risks, but keep code unchanged unless explicitly requested.
+- If a task seems to require changing a sleep/delay call and user intent is unclear, keep current behavior and add a TODO comment near the related change describing what needs confirmation.
