@@ -13,6 +13,9 @@
 	"settings": {
 		"java.compile.nullAnalysis.mode": "automatic",
 		"java.configuration.updateBuildConfiguration": "automatic",
-		"specstory.cloudSync.enabled": "never"
+		"specstory.cloudSync.enabled": "never",
+		"cSpell.words": [
+			"chatapp"
+		]
 	}
 }

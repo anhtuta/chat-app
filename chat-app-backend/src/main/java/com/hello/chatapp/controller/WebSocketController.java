@@ -1,6 +1,7 @@
 package com.hello.chatapp.controller;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
@@ -21,6 +22,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -85,6 +87,7 @@ public class WebSocketController {
 
         String destination = "/topic/group." + group.getId();
         final MessageResponse response;
+        Message savedMessage = null;
 
         // If message is a system message, don't save to database
         if (isSystemMessage(content)) {
@@ -92,8 +95,8 @@ public class WebSocketController {
             message.setGroup(group);
             response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         } else {
-            response = Objects.requireNonNull(MessageResponse.fromMessage(
-                    messageService.saveGroupMessage(group, user, content)));
+            savedMessage = messageService.saveGroupMessage(group, user, content);
+            response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
         // Send to local subscribers via SimpleBroker
@@ -104,11 +107,47 @@ public class WebSocketController {
         logger.debug("[sendGroupMessage] Publishing to RabbitMQ for cross-instance distribution: destination={}", destination);
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
 
+        // Fan-out group summary update to every member's personal queue so their
+        // sidebar refreshes without polling, even when they are not in this group chat.
+        if (savedMessage != null) {
+            pushGroupSummaryUpdate(group, savedMessage);
+        }
+
         return response;
     }
 
     private boolean isSystemMessage(String content) {
         return content != null && content.startsWith("[SYSTEM] ");
+    }
+
+    /**
+     * Pushes a lightweight group-summary update to every member of the group
+     * via their personal WebSocket queue (/user/queue/group-updates).
+     * The frontend uses this to refresh the sidebar in real time.
+     */
+    private void pushGroupSummaryUpdate(Group group, Message savedMessage) {
+        Long groupId = Objects.requireNonNull(group.getId());
+        String preview = MessageService.buildLatestMessagePreview(savedMessage.getContent());
+        GroupSummaryUpdate update = GroupSummaryUpdate.fromMessage(groupId, savedMessage, preview);
+
+        // If we use: participants = groupParticipantRepository.findByGroup(group); participant.getUser().getUsername(); then we will have error: org.hibernate.LazyInitializationException: Could not initialize proxy [com.hello.chatapp.entity.User#1] - no session
+        // Why: findByGroup returns GroupParticipant entities with lazy User relation, and at that point Hibernate session was not open. So participant.user.username access fails. Solution: query repository for usernames directly without loading the User entities.
+        List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
+        for (String username : usernames) {
+            String safeUsername = Objects.requireNonNull(username);
+            String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
+
+            // Local delivery on current instance.
+            messagingTemplate.convertAndSend(userScopedTopicDestination, Objects.requireNonNull((Object) update));
+
+            // Cross-instance delivery via RabbitMQ fanout.
+            rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, update);
+
+            logger.debug("[pushGroupSummaryUpdate] Pushed group summary update to user={}, groupId={}, destination={}",
+                    safeUsername,
+                    groupId,
+                    userScopedTopicDestination);
+        }
     }
 
     /**

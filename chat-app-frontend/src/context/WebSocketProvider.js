@@ -11,6 +11,7 @@ const WebSocketContext = createContext({
   isConnected: false,
   subscribe: () => () => { },
   unsubscribe: () => { },
+  subscribePersonal: () => () => { },
   sendMessage: () => false,
 });
 
@@ -21,8 +22,12 @@ const WebSocketContext = createContext({
 export function WebSocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
 
-  // Store single subscription: { topic, callback, subscription }
+  // Store single chat-topic subscription: { topic, callback, subscription }
   const subscriptionRef = useRef(null);
+
+  // Store persistent personal-queue subscriptions: Map<topic, { callback, subscription }>
+  // These survive chat-switching (e.g. /user/queue/group-updates).
+  const personalSubscriptionsRef = useRef(new Map());
 
   const internalSubscribe = () => {
     if (!subscriptionRef.current?.callback) return null;
@@ -65,10 +70,50 @@ export function WebSocketProvider({ children }) {
     subscriptionRef.current = null;
   };
 
+  /**
+   * Subscribe to a personal (user-specific) topic that survives chat switching.
+   * Intended for topics like /user/queue/group-updates.
+   * Returns an unsubscribe function.
+   */
+  const subscribePersonal = (topic, callback) => {
+    // Tear down any previous subscription on the same topic
+    const existing = personalSubscriptionsRef.current.get(topic);
+    if (existing?.subscription) {
+      unsubscribeSubscription(existing.subscription);
+    }
+
+    const entry = { callback, subscription: null };
+    personalSubscriptionsRef.current.set(topic, entry);
+
+    if (isConnected) {
+      const subscription = subscribeToTopic(topic, (message) => {
+        const latest = personalSubscriptionsRef.current.get(topic);
+        if (latest?.callback) latest.callback(message);
+      });
+      entry.subscription = subscription;
+    }
+
+    return () => {
+      const current = personalSubscriptionsRef.current.get(topic);
+      if (current?.subscription) {
+        unsubscribeSubscription(current.subscription);
+      }
+      personalSubscriptionsRef.current.delete(topic);
+    };
+  };
+
   // Re-subscribe after a reconnect
   const resubscribeAll = () => {
     if (subscriptionRef.current) {
       internalSubscribe();
+    }
+    // Re-subscribe all personal queues after reconnect
+    for (const [topic, entry] of personalSubscriptionsRef.current.entries()) {
+      const subscription = subscribeToTopic(topic, (message) => {
+        const latest = personalSubscriptionsRef.current.get(topic);
+        if (latest?.callback) latest.callback(message);
+      });
+      entry.subscription = subscription;
     }
   };
 
@@ -88,11 +133,16 @@ export function WebSocketProvider({ children }) {
 
     return () => {
       setIsConnected(false);
-      // Clean up subscription and disconnect
+      // Clean up chat subscription
       if (subscriptionRef.current?.subscription) {
         unsubscribeSubscription(subscriptionRef.current.subscription);
       }
       subscriptionRef.current = null;
+      // Clean up personal subscriptions
+      for (const entry of personalSubscriptionsRef.current.values()) {
+        if (entry.subscription) unsubscribeSubscription(entry.subscription);
+      }
+      personalSubscriptionsRef.current.clear();
       disconnectWebSocket();
     };
   }, []);
@@ -102,6 +152,7 @@ export function WebSocketProvider({ children }) {
       isConnected,
       subscribe,
       unsubscribe,
+      subscribePersonal,
       sendMessage: sendWebSocketMessage,
     }),
     [isConnected]

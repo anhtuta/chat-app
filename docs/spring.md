@@ -317,3 +317,46 @@ Why not `new Thread()`?
 - It is easier to evolve later (multiple scheduled tasks, different frequencies) without rewriting threading logic.
 
 So: your intuition is right that it’s a single thread, but the executor is chosen for scheduling/lifecycle correctness and maintainability, **NOT for parallelism**.
+
+## LazyInitializationException: Could not initialize proxy - no session
+
+Error code:
+
+```java
+List<GroupParticipant> participants = groupParticipantRepository.findByGroup(group);
+for (GroupParticipant participant : participants) {
+   String username = participant.getUser().getUsername();
+   // ...
+}
+```
+
+Error:
+
+```log
+2026-06-06T11:06:46.390+07:00 ERROR 10133 --- [chat-app] [boundChannel-31] .WebSocketAnnotationMethodMessageHandler : Unhandled exception from message handler method
+
+org.hibernate.LazyInitializationException: Could not initialize proxy [com.hello.chatapp.entity.User#1] - no session
+   at org.hibernate.proxy.AbstractLazyInitializer.initialize(AbstractLazyInitializer.java:174) ~[hibernate-core-6.6.33.Final.jar:6.6.33.Final]
+   at org.hibernate.proxy.AbstractLazyInitializer.getImplementation(AbstractLazyInitializer.java:328) ~[hibernate-core-6.6.33.Final.jar:6.6.33.Final]
+   at org.hibernate.proxy.pojo.bytebuddy.ByteBuddyInterceptor.intercept(ByteBuddyInterceptor.java:44) ~[hibernate-core-6.6.33.Final.jar:6.6.33.Final]
+   at org.hibernate.proxy.ProxyConfiguration$InterceptorDispatcher.intercept(ProxyConfiguration.java:102) ~[hibernate-core-6.6.33.Final.jar:6.6.33.Final]
+   at com.hello.chatapp.entity.User$HibernateProxy.getUsername(Unknown Source) ~[classes/:na]
+   at com.hello.chatapp.controller.WebSocketController.pushGroupSummaryUpdate(WebSocketController.java:136) ~[classes/:na]
+   at com.hello.chatapp.controller.WebSocketController.sendGroupMessage(WebSocketController.java:114) ~[classes/:na]
+   at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[na:na]
+   at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[na:na]
+   ...
+```
+
+Root cause: `findByGroup` returns `GroupParticipant` entities with lazy `User` relation, and `pushGroupSummaryUpdate` accesses `participant.user.username` after the transaction from `saveGroupMessage` has ended.
+
+Solution: query usernames directly from the repository (no lazy proxy dereference).
+
+Fixed code:
+
+```java
+List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
+for (String username : usernames) {
+   // access username directly without loading User entities...
+}
+```

@@ -5,6 +5,7 @@ import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -22,6 +23,14 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             ORDER BY COALESCE(g.latestMessageAt, g.createdAt) DESC, g.id DESC
             """)
     List<GroupParticipant> findByUser(User user);
+
+    @Query("""
+            SELECT u.username
+            FROM GroupParticipant gp
+            JOIN gp.user u
+            WHERE gp.group.id = :groupId
+            """)
+    List<String> findParticipantUsernamesByGroupId(@Param("groupId") Long groupId);
 
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);
     boolean existsByGroupAndUser(Group group, User user);

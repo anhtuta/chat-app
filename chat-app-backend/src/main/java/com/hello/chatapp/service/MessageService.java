@@ -84,7 +84,7 @@ public class MessageService {
         return savedMessage;
     }
 
-    static String buildLatestMessagePreview(String content) {
+    public static String buildLatestMessagePreview(String content) {
         if (content == null) {
             return null;
         }

@@ -10,6 +10,25 @@ import { useWebSocket } from "../context/WebSocketProvider";
 function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOptions }) {
   const GROUP_PAGE_SIZE = 10;
 
+  const toEpochMillis = (value) => {
+    if (!value) {
+      return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const sortGroupsByLatestActivity = (items) => {
+    return [...items].sort((a, b) => {
+      const aTime = toEpochMillis(a.latestMessageAt || a.createdAt);
+      const bTime = toEpochMillis(b.latestMessageAt || b.createdAt);
+      if (aTime !== bTime) {
+        return bTime - aTime;
+      }
+      return Number(b.id) - Number(a.id);
+    });
+  };
+
   const navigate = useNavigate();
   const { groupId } = useParams();
 
@@ -27,7 +46,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const oldestGroupCursorRef = useRef(null);
 
   const currentChatIdRef = useRef("public");
-  const { isConnected: wsConnected, subscribe: subscribeTopic, sendMessage: sendWebSocketMessage } = useWebSocket();
+  const { isConnected: wsConnected, subscribe: subscribeTopic, subscribePersonal, sendMessage: sendWebSocketMessage } = useWebSocket();
 
   useEffect(() => {
     loadGroups();
@@ -39,6 +58,33 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       }
     };
   }, []);
+
+  // Subscribe to personal group-summary updates so the sidebar refreshes in real time
+  // when other group members send messages, without requiring a poll or page reload.
+  useEffect(() => {
+    if (!wsConnected || !username) return;
+
+    const destination = `/topic/user.${username}.group-updates`;
+
+    const unsubscribe = subscribePersonal(destination, (update) => {
+      const updatedGroupId = Number(update.groupId);
+      setGroups((prev) => {
+        const next = prev.map((g) =>
+          Number(g.id) === updatedGroupId
+            ? {
+              ...g,
+              latestMessage: update.latestMessage,
+              latestMessageSender: update.latestMessageSender,
+              latestMessageAt: update.latestMessageAt,
+            }
+            : g
+        );
+        return sortGroupsByLatestActivity(next);
+      });
+    });
+
+    return unsubscribe;
+  }, [wsConnected, username, subscribePersonal]);
 
   useEffect(() => {
     const oldestMessage = messages[0];
@@ -76,7 +122,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const loadGroups = async () => {
     try {
       const groupsData = await getGroups();
-      setGroups(groupsData);
+      setGroups(sortGroupsByLatestActivity(groupsData));
     } catch (error) {
       console.error("Error loading groups:", error);
     }
