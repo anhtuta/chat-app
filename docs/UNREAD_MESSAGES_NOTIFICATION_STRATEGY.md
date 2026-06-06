@@ -93,8 +93,9 @@ Implementation summary:
 - Domain:
   - Added `lastReadMessageId` to `GroupParticipant` entity.
 - Query logic:
-  - Added unread-count query in `MessageRepository`:
-    - `countUnreadByGroupIdAndLastReadMessageId(groupId, lastReadMessageId)`.
+  - Added user-scoped bulk unread query in `MessageRepository`:
+    - `findUnreadCountRowsByUserId(userId)`.
+  - `GroupService` maps these rows into `groupId -> unreadCount` in one pass to avoid N+1 counting queries.
 - APIs:
   - `GET /api/groups` now returns `unreadCount` per group in `GroupResponse`.
   - `POST /api/groups/{groupId}/read` marks a group as read up to `lastReadMessageId`.
