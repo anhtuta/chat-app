@@ -114,6 +114,12 @@ Recommendation for our problem:
 - Not applicable (we must keep group latest fields updated)
 - (Do t muốn bắt buộc phải có cột `latest_message` trong bảng group, thì mới có bài toán thú vị để giải quyết chứ! Nếu bỏ nó đi thì còn gì hay nữa! Nên cách này ko đc chọn!)
 
+## Recommendation
+
+1. Near-term: replace pessimistic lock with synchronous compare-and-set update in DB.
+2. Mid-term (if traffic grows): move latest-field update to async consumer with per-group ordering.
+3. Keep denormalized latest fields in group table in both approaches.
+
 ## Chosen Solution
 
 We use **compare-and-set (CAS) update without explicit lock**.
@@ -128,6 +134,17 @@ Implementation summary:
 - If no row is updated, we intentionally ignore it because a newer/equal latest is already present.
 
 This keeps `groups.latest_message*` fields accurate without serializing writers on a pessimistic row lock.
+
+Notes
+
+- CAS condition currently uses timestamp and message-id tie-break logic to avoid stale overwrite under concurrency.
+- This gives better hot-group write concurrency than row-level pessimistic locking while still keeping group latest fields updated.
+
+Why this exists:
+
+- Two messages can share the same timestamp (same second or same micro precision window).
+- Timestamp alone cannot decide which one is latest.
+- Message id provides deterministic ordering inside that timestamp.
 
 ## Future Higher-Scale Path
 

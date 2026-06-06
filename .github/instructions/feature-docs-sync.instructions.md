@@ -2,6 +2,7 @@
 description: "Use when implementing, changing, or refactoring any feature. Ensure feature documentation in docs is created or updated, with one markdown file per feature."
 applyTo: "**"
 ---
+
 # Keep Feature Docs In Sync
 
 - Treat feature documentation updates as required whenever feature behavior, API, data flow, config, UX, or operational behavior changes.
@@ -15,3 +16,32 @@ applyTo: "**"
   - Why it changed
   - Any API/contract/config impacts
   - Rollout, migration, or backward-compatibility notes (if applicable)
+- The format of the documentation should have following sections:
+
+  ```md
+  ## Current Problem
+
+  (Describe the current behavior or problem that the feature change is addressing.)
+
+  ## Possible Solutions
+
+  ### 1. Solution A
+
+  - How it works
+  - Pros
+  - Cons
+  - Recommendation for our problem: Yes/No
+  - When I’d use it (only if NOT recommended)
+
+  ### 2. Solution B
+
+  ## Recommendation
+
+  (First, go with which solution and why, then can go with which option if we need scalability later.)
+
+  ## Chosen Solution
+
+  ## Chosen Solution
+
+  ## Future Higher-Scale Path
+  ```

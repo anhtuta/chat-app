@@ -2,6 +2,8 @@
 
 ## Current Problem
 
+This is a classic "group list sidebar" real-time update problem.
+
 When a user sends a message to a group, every group member can see the new message inside that group chat (because they subscribe to `/topic/group.<id>`). However, users who are **not** currently viewing that group cannot see the group's latest message update in the sidebar. The sidebar only reflects the state at page load time and does not refresh unless the user navigates away or refreshes the page.
 
 This means the sidebar group list becomes stale as soon as any message is sent to a group the user is a member of but not currently viewing.
@@ -41,7 +43,7 @@ How it works:
 Pros:
 
 - One personal subscription per user, regardless of group count.
-- Works with the project's current RabbitMQ topic fanout strategy for cross-instance delivery.
+- Works with the project's current **RabbitMQ topic fanout strategy for cross-instance delivery**.
 - Only the summary fields are pushed (not full message payload).
 
 Cons:
