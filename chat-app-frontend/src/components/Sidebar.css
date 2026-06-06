@@ -1,10 +1,10 @@
 /* Sidebar drawer and wrapper */
 .sidebar-wrapper {
-  width: 280px;
+  width: 320px;
 }
 
 .sidebar-wrapper .MuiDrawer-paper {
-  width: 280px !important;
+  width: 320px !important;
   box-sizing: border-box !important;
   background-color: var(--color-surface-soft) !important;
   border-right: 1px solid var(--color-border) !important;
@@ -72,6 +72,12 @@
 /* Chat list items */
 .sidebar-group-item {
   background-color: transparent !important;
+  /* make item a flex container so ListItemText can flex/shrink */
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  /* reserve horizontal space for the badge */
+  padding-right: 56px !important;
 }
 
 .sidebar-group-item:hover {
@@ -99,4 +105,38 @@
 
 .sidebar-group-item .MuiListItemText-secondary {
   color: var(--color-text-secondary) !important;
+}
+
+/* Ensure the ListItemText root can shrink in flex layouts and allow wrapping */
+.sidebar-group-item .MuiListItemText-root {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Typography wrapping rules */
+.sidebar-group-item .MuiListItemText-primary,
+.sidebar-group-item .MuiListItemText-secondary {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+/* Badge: position absolutely so it doesn't expand the row width; cap width to avoid horizontal scrollbar */
+.sidebar-badge {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--color-error, #d32f2f);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1;
+  max-width: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  text-align: center;
 }

@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Badge,
   Drawer,
   List,
   ListItemText,
@@ -33,9 +32,9 @@ function Sidebar({
         <Box className="sidebar-header-box">
           <Typography variant="h6" className="sidebar-title">
             💬 Chats
-          </Typography>
-          <Typography variant="caption" className="sidebar-unread-total">
-            Total unread: {totalUnreadCount}
+            {totalUnreadCount && Number(totalUnreadCount) > 0 && (
+              <span className="sidebar-total-unread-badge"> ({totalUnreadCount})</span>
+            )}
           </Typography>
           <Button
             variant="contained"
@@ -95,26 +94,13 @@ function Sidebar({
             <ListItemText
               primary="Public Chat"
               secondary="Everyone"
-              sx={{ flex: 1, minWidth: 0 }}
               primaryTypographyProps={{
                 variant: "body2",
                 className: "sidebar-group-item-primary-text",
-                sx: {
-                  color: "var(--color-text-primary)",
-                  whiteSpace: "normal",
-                  overflowWrap: "anywhere",
-                  wordBreak: "break-word",
-                },
               }}
               secondaryTypographyProps={{
                 variant: "caption",
                 className: "sidebar-group-item-secondary-text",
-                sx: {
-                  color: "var(--color-text-secondary)",
-                  whiteSpace: "normal",
-                  overflowWrap: "anywhere",
-                  wordBreak: "break-word",
-                },
               }}
             />
           </ListItemButton>
@@ -126,40 +112,21 @@ function Sidebar({
               onClick={() => onChatSelect(group.id)}
               className="sidebar-group-item"
             >
-              <Badge
-                color="error"
-                badgeContent={Number(group.unreadCount || 0)}
-                max={9999999}
-                invisible={!group.unreadCount}
-                overlap="rectangular"
-                sx={{ display: "flex", width: "100%" }}
-              >
-                <ListItemText
-                  sx={{ flex: 1, minWidth: 0 }}
-                  primary={group.name}
-                  secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
-                  primaryTypographyProps={{
-                    variant: "body2",
-                    className: "sidebar-group-item-primary-text",
-                    sx: {
-                      color: "var(--color-text-primary)",
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                      wordBreak: "break-word",
-                    },
-                  }}
-                  secondaryTypographyProps={{
-                    variant: "caption",
-                    className: "sidebar-group-item-secondary-text",
-                    sx: {
-                      color: "var(--color-text-secondary)",
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                      wordBreak: "break-word",
-                    },
-                  }}
-                />
-              </Badge>
+              <ListItemText
+                primary={group.name}
+                secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
+                primaryTypographyProps={{
+                  variant: "body2",
+                  className: "sidebar-group-item-primary-text",
+                }}
+                secondaryTypographyProps={{
+                  variant: "caption",
+                  className: "sidebar-group-item-secondary-text",
+                }}
+              />
+              {group.unreadCount ? (
+                <span className="sidebar-badge">{group.unreadCount}</span>
+              ) : null}
             </ListItemButton>
           ))}
         </List>
