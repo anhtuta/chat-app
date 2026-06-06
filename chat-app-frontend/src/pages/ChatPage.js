@@ -10,6 +10,14 @@ import { useWebSocket } from "../context/WebSocketProvider";
 function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOptions }) {
   const GROUP_PAGE_SIZE = 10;
 
+  const toEpochMillis = (value) => {
+    if (!value) {
+      return 0;
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
   const navigate = useNavigate();
   const { groupId } = useParams();
 
@@ -61,8 +69,17 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
           return prev;
         }
 
+        const currentGroup = prev[groupIndex];
+        const incomingTimestamp = toEpochMillis(groupSummaryUpdate.latestMessageAt);
+        const currentTimestamp = toEpochMillis(currentGroup.latestMessageAt);
+
+        // Guard against out-of-order delivery: ignore stale group-summary updates.
+        if (incomingTimestamp < currentTimestamp) {
+          return prev;
+        }
+
         const updatedGroup = {
-          ...prev[groupIndex],
+          ...currentGroup,
           latestMessage: groupSummaryUpdate.latestMessage,
           latestMessageSender: groupSummaryUpdate.latestMessageSender,
           latestMessageAt: groupSummaryUpdate.latestMessageAt,
