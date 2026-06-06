@@ -1,5 +1,6 @@
 package com.hello.chatapp.repository;
 
+import com.hello.chatapp.dto.GroupUnreadCountDto;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import org.springframework.data.domain.Pageable;
@@ -43,13 +44,18 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             Pageable pageable);
 
     @Query("""
-            SELECT COUNT(m) FROM Message m
-            WHERE m.group.id = :groupId
-              AND (:lastReadMessageId IS NULL OR m.id > :lastReadMessageId)
+            SELECT new com.hello.chatapp.dto.GroupUnreadCountDto(
+                gp.group.id,
+                COUNT(m.id)
+            )
+            FROM GroupParticipant gp
+            LEFT JOIN Message m
+                ON m.group.id = gp.group.id
+                AND (gp.lastReadMessageId IS NULL OR m.id > gp.lastReadMessageId)
+            WHERE gp.user.id = :userId
+            GROUP BY gp.group.id
             """)
-    long countUnreadByGroupIdAndLastReadMessageId(
-            @Param("groupId") Long groupId,
-            @Param("lastReadMessageId") Long lastReadMessageId);
+    List<GroupUnreadCountDto> findUnreadCountRowsByUserId(@Param("userId") Long userId);
 
     boolean existsByIdAndGroup_Id(Long id, Long groupId);
 }

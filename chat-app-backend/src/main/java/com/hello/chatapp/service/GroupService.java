@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.dto.GroupUnreadCountDto;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -81,15 +83,16 @@ public class GroupService {
         return groupParticipantRepository.findByUser(user);
     }
 
-    public long getUnreadCountForParticipant(GroupParticipant participant) {
-        return messageRepository.countUnreadByGroupIdAndLastReadMessageId(
-                participant.getGroup().getId(),
-                participant.getLastReadMessageId());
+    public Map<Long, Long> getUnreadCountByGroupId(User user) {
+        Long userId = Objects.requireNonNull(user.getId(), "user id must not be null");
+        List<GroupUnreadCountDto> unreadRows = messageRepository.findUnreadCountRowsByUserId(userId);
+        return unreadRows.stream()
+                .collect(Collectors.toMap(GroupUnreadCountDto::getGroupId, GroupUnreadCountDto::getUnreadCount));
     }
 
     public long getTotalUnreadCount(User user) {
-        return getGroupParticipantsByUser(user).stream()
-                .mapToLong(this::getUnreadCountForParticipant)
+        return getUnreadCountByGroupId(user).values().stream()
+                .mapToLong(Long::longValue)
                 .sum();
     }
 

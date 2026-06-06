@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -64,10 +65,11 @@ public class GroupController {
         }
 
         List<GroupParticipant> participants = groupService.getGroupParticipantsByUser(user);
+        Map<Long, Long> unreadCountByGroupId = groupService.getUnreadCountByGroupId(user);
         List<GroupResponse> groupResponses = participants.stream()
                 .map(participant -> GroupResponse.fromGroup(
                         participant.getGroup(),
-                        groupService.getUnreadCountForParticipant(participant)))
+                unreadCountByGroupId.getOrDefault(participant.getGroup().getId(), 0L)))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(groupResponses);
     }
