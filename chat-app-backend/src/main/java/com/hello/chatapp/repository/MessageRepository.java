@@ -41,5 +41,16 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             @Param("beforeTimestamp") LocalDateTime beforeTimestamp,
             @Param("beforeId") Long beforeId,
             Pageable pageable);
+
+    @Query("""
+            SELECT COUNT(m) FROM Message m
+            WHERE m.group.id = :groupId
+              AND (:lastReadMessageId IS NULL OR m.id > :lastReadMessageId)
+            """)
+    long countUnreadByGroupIdAndLastReadMessageId(
+            @Param("groupId") Long groupId,
+            @Param("lastReadMessageId") Long lastReadMessageId);
+
+    boolean existsByIdAndGroup_Id(Long id, Long groupId);
 }
 

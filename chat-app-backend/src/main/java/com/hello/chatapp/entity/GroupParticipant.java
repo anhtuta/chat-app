@@ -40,6 +40,9 @@ public class GroupParticipant {
     @Column(nullable = false)
     private LocalDateTime joinedAt;
 
+    @Column(name = "last_read_message_id")
+    private Long lastReadMessageId;
+
     @PrePersist
     protected void onCreate() {
         if (joinedAt == null) {

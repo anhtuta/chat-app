@@ -4,7 +4,7 @@ import { Box } from "@mui/material";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
-import { getGroups, getPublicMessages, getGroupMessages } from "../services/api";
+import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
 
 function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOptions }) {
@@ -34,6 +34,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const currentUnsubscribeRef = useRef(null);
   const oldestGroupCursorRef = useRef(null);
   const groupsRef = useRef([]);
+  const lastMarkedMessagePerGroupRef = useRef(new Map());
 
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, subscribePersonal, sendMessage: sendWebSocketMessage } = useWebSocket();
@@ -83,6 +84,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
           latestMessage: groupSummaryUpdate.latestMessage,
           latestMessageSender: groupSummaryUpdate.latestMessageSender,
           latestMessageAt: groupSummaryUpdate.latestMessageAt,
+          unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : (Number(currentGroup.unreadCount || 0) + 1),
         };
 
         return [
@@ -95,6 +97,37 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
 
     return unsubscribe;
   }, [wsConnected, username, subscribePersonal]);
+
+  useEffect(() => {
+    if (currentChatId === "public" || isLoading) {
+      return;
+    }
+
+    const latestVisibleMessage = messages[messages.length - 1];
+    const latestVisibleMessageId = latestVisibleMessage?.id;
+    if (latestVisibleMessageId === undefined || latestVisibleMessageId === null) {
+      return;
+    }
+
+    const groupId = Number(currentChatId);
+    const lastMarkedMessageId = lastMarkedMessagePerGroupRef.current.get(groupId);
+    if (lastMarkedMessageId === latestVisibleMessageId) {
+      return;
+    }
+
+    markGroupAsRead(groupId, latestVisibleMessageId)
+      .then(() => {
+        lastMarkedMessagePerGroupRef.current.set(groupId, latestVisibleMessageId);
+        setGroups((prev) => prev.map((group) => (
+          Number(group.id) === groupId
+            ? { ...group, unreadCount: 0 }
+            : group
+        )));
+      })
+      .catch((error) => {
+        console.error("Error marking group as read:", error);
+      });
+  }, [currentChatId, messages, isLoading]);
 
   useEffect(() => {
     const oldestMessage = messages[0];
@@ -130,11 +163,16 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const loadGroups = async () => {
     try {
       const groupsData = await getGroups();
-      setGroups(groupsData);
+      setGroups(groupsData.map((group) => ({
+        ...group,
+        unreadCount: Number(group.unreadCount || 0),
+      })));
     } catch (error) {
       console.error("Error loading groups:", error);
     }
   };
+
+  const totalUnreadCount = groups.reduce((total, group) => total + Number(group.unreadCount || 0), 0);
 
   const switchToChat = async (chatId, chatName) => {
     // Update ref immediately so subscriptions can use the latest value
@@ -259,6 +297,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       <Box sx={{ display: "flex", height: "100vh" }}>
         <Sidebar
           groups={groups}
+          totalUnreadCount={totalUnreadCount}
           currentChatId={currentChatId}
           onChatSelect={handleChatNavigate}
           onCreateGroupClick={() => setShowCreateGroupModal(true)}

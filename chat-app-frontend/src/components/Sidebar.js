@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  Badge,
   Drawer,
   List,
   ListItemText,
@@ -18,6 +19,7 @@ import "./Sidebar.css";
 
 function Sidebar({
   groups,
+  totalUnreadCount,
   currentChatId,
   onChatSelect,
   onCreateGroupClick,
@@ -31,6 +33,9 @@ function Sidebar({
         <Box className="sidebar-header-box">
           <Typography variant="h6" className="sidebar-title">
             💬 Chats
+          </Typography>
+          <Typography variant="caption" className="sidebar-unread-total">
+            Total unread: {totalUnreadCount}
           </Typography>
           <Button
             variant="contained"
@@ -110,20 +115,27 @@ function Sidebar({
               onClick={() => onChatSelect(group.id)}
               className="sidebar-group-item"
             >
-              <ListItemText
-                primary={group.name}
-                secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
-                primaryTypographyProps={{
-                  variant: "body2",
-                  className: "sidebar-group-item-primary-text",
-                  sx: { color: "var(--color-text-primary)" },
-                }}
-                secondaryTypographyProps={{
-                  variant: "caption",
-                  className: "sidebar-group-item-secondary-text",
-                  sx: { color: "var(--color-text-secondary)" },
-                }}
-              />
+              <Badge
+                color="error"
+                badgeContent={Number(group.unreadCount || 0)}
+                invisible={!group.unreadCount}
+                overlap="rectangular"
+              >
+                <ListItemText
+                  primary={group.name}
+                  secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
+                  primaryTypographyProps={{
+                    variant: "body2",
+                    className: "sidebar-group-item-primary-text",
+                    sx: { color: "var(--color-text-primary)" },
+                  }}
+                  secondaryTypographyProps={{
+                    variant: "caption",
+                    className: "sidebar-group-item-secondary-text",
+                    sx: { color: "var(--color-text-secondary)" },
+                  }}
+                />
+              </Badge>
             </ListItemButton>
           ))}
         </List>

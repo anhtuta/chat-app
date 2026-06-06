@@ -141,6 +141,38 @@ export async function createGroup(name, participantIds) {
   throw new Error(error || "Failed to create group");
 }
 
+/**
+ * Mark a group as read up to the provided latest visible message id.
+ */
+export async function markGroupAsRead(groupId, lastReadMessageId) {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/read`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ lastReadMessageId }),
+  });
+
+  if (response.ok) {
+    return;
+  }
+  handleErrorResponse(response);
+}
+
+/**
+ * Get aggregated unread count across all groups for current user.
+ */
+export async function getTotalUnreadCount() {
+  const response = await fetch(`${API_BASE_URL}/api/groups/unread/total`, {
+    credentials: "include",
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  handleErrorResponse(response);
+}
+
 function handleErrorResponse(response) {
   if (response.status === 403) {
     // redirect to login

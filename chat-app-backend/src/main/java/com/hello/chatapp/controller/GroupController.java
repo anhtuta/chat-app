@@ -2,8 +2,11 @@ package com.hello.chatapp.controller;
 
 import com.hello.chatapp.dto.CreateGroupRequest;
 import com.hello.chatapp.dto.GroupResponse;
+import com.hello.chatapp.dto.MarkGroupReadRequest;
+import com.hello.chatapp.dto.UnreadSummaryResponse;
 import com.hello.chatapp.dto.UserResponse;
 import com.hello.chatapp.entity.Group;
+import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.UnauthorizedException;
 import com.hello.chatapp.service.GroupService;
@@ -11,6 +14,7 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -59,10 +63,38 @@ public class GroupController {
             throw new UnauthorizedException("User is not authenticated");
         }
 
-        List<Group> groups = groupService.getGroupsByUser(user);
-        List<GroupResponse> groupResponses = groups.stream()
-                .map(GroupResponse::fromGroup)
+        List<GroupParticipant> participants = groupService.getGroupParticipantsByUser(user);
+        List<GroupResponse> groupResponses = participants.stream()
+                .map(participant -> GroupResponse.fromGroup(
+                        participant.getGroup(),
+                        groupService.getUnreadCountForParticipant(participant)))
                 .collect(Collectors.toList());
         return ResponseEntity.ok(groupResponses);
+    }
+
+    @PostMapping("/{groupId}/read")
+    public ResponseEntity<Void> markGroupRead(
+            @PathVariable Long groupId,
+            @RequestBody(required = false) MarkGroupReadRequest request,
+            HttpSession session) {
+        User user = (User) session.getAttribute("user");
+        if (user == null) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        Long lastReadMessageId = request == null ? null : request.getLastReadMessageId();
+        groupService.markGroupAsRead(user, groupId, lastReadMessageId);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/unread/total")
+    public ResponseEntity<UnreadSummaryResponse> getTotalUnread(HttpSession session) {
+        User user = (User) session.getAttribute("user");
+        if (user == null) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        long totalUnreadCount = groupService.getTotalUnreadCount(user);
+        return ResponseEntity.ok(UnreadSummaryResponse.builder().totalUnreadCount(totalUnreadCount).build());
     }
 }

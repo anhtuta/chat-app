@@ -21,8 +21,13 @@ public class GroupResponse {
     private String latestMessage;
     private String latestMessageSender;
     private LocalDateTime latestMessageAt;
+    private long unreadCount;
 
     public static GroupResponse fromGroup(Group group) {
+        return fromGroup(group, 0);
+    }
+
+    public static GroupResponse fromGroup(Group group, long unreadCount) {
         if (group == null) {
             return null;
         }
@@ -35,6 +40,7 @@ public class GroupResponse {
                 .latestMessage(group.getLatestMessage())
                 .latestMessageSender(group.getLatestMessageSender())
                 .latestMessageAt(group.getLatestMessageAt())
+                .unreadCount(unreadCount)
                 .build();
     }
 }
