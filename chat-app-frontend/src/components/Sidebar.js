@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import "./Sidebar.css";
+import { useRef, useLayoutEffect } from "react";
 
 function Sidebar({
   groups,
@@ -26,6 +27,52 @@ function Sidebar({
   onThemeChange,
   themeOptions,
 }) {
+  const itemRefs = useRef(new Map());
+  const prevPositions = useRef(null);
+
+  // FLIP animation: measure previous and new positions and animate translateY
+  useLayoutEffect(() => {
+    const newPositions = new Map();
+    // capture new positions
+    groups.forEach((group) => {
+      const el = itemRefs.current.get(String(group.id));
+      if (el) {
+        newPositions.set(String(group.id), el.getBoundingClientRect());
+      }
+    });
+
+    const prev = prevPositions.current;
+    if (prev) {
+      groups.forEach((group) => {
+        const id = String(group.id);
+        const el = itemRefs.current.get(id);
+        const prevRect = prev.get(id);
+        const newRect = newPositions.get(id);
+        if (el && prevRect && newRect) {
+          const deltaY = prevRect.top - newRect.top;
+          if (deltaY) {
+            // apply inverse transform to start at previous position
+            el.style.transition = "none";
+            el.style.transform = `translateY(${deltaY}px)`;
+            // then animate to natural position
+            requestAnimationFrame(() => {
+              el.style.transition = "transform 300ms cubic-bezier(.2,.8,.2,1)";
+              el.style.transform = "";
+            });
+            const cleanup = () => {
+              el.style.transition = "";
+              el.style.transform = "";
+              el.removeEventListener("transitionend", cleanup);
+            };
+            el.addEventListener("transitionend", cleanup);
+          }
+        }
+      });
+    }
+
+    // store positions for next render
+    prevPositions.current = newPositions;
+  }, [groups]);
   return (
     <div className="sidebar-wrapper">
       <Drawer variant="permanent">
@@ -90,6 +137,11 @@ function Sidebar({
             selected={currentChatId === "public"}
             onClick={() => onChatSelect("public")}
             className="sidebar-group-item"
+            ref={(el) => {
+              const id = "public";
+              if (el) itemRefs.current.set(id, el);
+              else itemRefs.current.delete(id);
+            }}
           >
             <ListItemText
               primary="Public Chat"
@@ -111,6 +163,11 @@ function Sidebar({
               selected={currentChatId === group.id}
               onClick={() => onChatSelect(group.id)}
               className="sidebar-group-item"
+              ref={(el) => {
+                const id = String(group.id);
+                if (el) itemRefs.current.set(id, el);
+                else itemRefs.current.delete(id);
+              }}
             >
               <ListItemText
                 primary={group.name}
