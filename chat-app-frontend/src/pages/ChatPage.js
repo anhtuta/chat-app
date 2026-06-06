@@ -44,6 +44,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef(null);
   const oldestGroupCursorRef = useRef(null);
+  const groupsRef = useRef([]);
 
   const currentChatIdRef = useRef("public");
   const { isConnected: wsConnected, subscribe: subscribeTopic, subscribePersonal, sendMessage: sendWebSocketMessage } = useWebSocket();
@@ -59,6 +60,10 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     };
   }, []);
 
+  useEffect(() => {
+    groupsRef.current = groups;
+  }, [groups]);
+
   // Subscribe to personal group-summary updates so the sidebar refreshes in real time
   // when other group members send messages, without requiring a poll or page reload.
   useEffect(() => {
@@ -66,16 +71,17 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
 
     const destination = `/topic/user.${username}.group-updates`;
 
-    const unsubscribe = subscribePersonal(destination, (update) => {
-      const updatedGroupId = Number(update.groupId);
+    // Type of groupSummaryUpdate is defined in backend as com.hello.chatapp.dto.GroupSummaryUpdate.
+    const unsubscribe = subscribePersonal(destination, (groupSummaryUpdate) => {
+      const updatedGroupId = Number(groupSummaryUpdate.groupId);
       setGroups((prev) => {
         const next = prev.map((g) =>
           Number(g.id) === updatedGroupId
             ? {
               ...g,
-              latestMessage: update.latestMessage,
-              latestMessageSender: update.latestMessageSender,
-              latestMessageAt: update.latestMessageAt,
+              latestMessage: groupSummaryUpdate.latestMessage,
+              latestMessageSender: groupSummaryUpdate.latestMessageSender,
+              latestMessageAt: groupSummaryUpdate.latestMessageAt,
             }
             : g
         );
@@ -112,11 +118,9 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       return;
     }
 
-    const group = groups.find((g) => g.id === numericId);
-    if (group) {
-      switchToChat(group.id, group.name);
-    }
-  }, [groupId, groups]);
+    const group = groupsRef.current.find((g) => Number(g.id) === numericId);
+    switchToChat(numericId, group?.name || `Group ${numericId}`);
+  }, [groupId]);
 
 
   const loadGroups = async () => {
