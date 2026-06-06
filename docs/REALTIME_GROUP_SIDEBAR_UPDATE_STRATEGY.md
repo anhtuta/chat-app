@@ -106,7 +106,7 @@ Implementation summary:
 
 - `WebSocketProvider` exposes a new `subscribePersonal(topic, callback)` function that manages persistent subscriptions independent of the chat-switching `subscribe` function.
 - On connect, `ChatPage` subscribes to `/topic/user.<username>.group-updates`.
-- On receiving an update, `ChatPage` patches the matching group in the `groups` state array and then re-sorts the list by latest activity (`latestMessageAt` fallback `createdAt`) so the most recently active group moves to the top.
+- On receiving an update, `ChatPage` patches the matching group in the `groups` state array and moves only that group to the top of the list.
 
 This gives every user real-time sidebar updates with a single extra subscription per user.
 
