@@ -9,9 +9,9 @@ import {
 
 const WebSocketContext = createContext({
   isConnected: false,
-  subscribe: () => () => { },
-  unsubscribe: () => { },
-  subscribePersonal: () => () => { },
+  subscribeSingleGroup: () => () => { },
+  unsubscribeSingleGroup: () => { },
+  subscribeGroupUpdates: () => () => { },
   sendMessage: () => false,
 });
 
@@ -48,10 +48,10 @@ export function WebSocketProvider({ children }) {
 
     return subscription;
   };
-  const subscribe = React.useCallback((topic, callback) => {
+  const subscribeSingleGroup = React.useCallback((topic, callback) => {
     // Unsubscribe from any existing subscription
     if (subscriptionRef.current?.subscription) {
-      console.log("WebSocketProvider.subscribe - tearing down existing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
+      console.log("WebSocketProvider.subscribeSingleGroup - tearing down existing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
       unsubscribeSubscription(subscriptionRef.current.subscription);
     }
 
@@ -62,12 +62,12 @@ export function WebSocketProvider({ children }) {
     }
 
     // Return an unsubscribe function to allow callers to remove interest
-    return () => unsubscribe();
+    return () => unsubscribeSingleGroup();
   }, [isConnected]);
 
-  const unsubscribe = React.useCallback(() => {
+  const unsubscribeSingleGroup = React.useCallback(() => {
     if (subscriptionRef.current?.subscription) {
-      console.log("WebSocketProvider.unsubscribe - unsubscribing chat topic", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
+      console.log("WebSocketProvider.unsubscribeSingleGroup - unsubscribing chat topic", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
       unsubscribeSubscription(subscriptionRef.current.subscription);
     }
     subscriptionRef.current = null;
@@ -78,7 +78,7 @@ export function WebSocketProvider({ children }) {
    * Intended for topics like /user/queue/group-updates.
    * Returns an unsubscribe function.
    */
-  const subscribePersonal = React.useCallback((topic, callback) => {
+  const subscribeGroupUpdates = React.useCallback((topic, callback) => {
     const existing = personalSubscriptionsRef.current.get(topic);
     if (existing) {
       // Reuse existing STOMP subscription for this topic.
@@ -88,7 +88,7 @@ export function WebSocketProvider({ children }) {
         clearTimeout(existing.cleanupTimer);
         existing.cleanupTimer = null;
       }
-      console.log("WebSocketProvider.subscribePersonal - reusing topic", topic, "id:", existing.subscription?.id, "refCount:", existing.refCount);
+      console.log("WebSocketProvider.subscribeGroupUpdates - reusing topic", topic, "id:", existing.subscription?.id, "refCount:", existing.refCount);
 
       let released = false;
       return () => {
@@ -99,7 +99,7 @@ export function WebSocketProvider({ children }) {
         if (!current) return;
 
         current.refCount = Math.max(0, Number(current.refCount || 0) - 1);
-        console.log("WebSocketProvider.subscribePersonal - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
+        console.log("WebSocketProvider.subscribeGroupUpdates - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
 
         if (current.refCount > 0) return;
 
@@ -113,7 +113,7 @@ export function WebSocketProvider({ children }) {
           if (!latest || Number(latest.refCount || 0) > 0) return;
 
           if (latest.subscription) {
-            console.log("WebSocketProvider.subscribePersonal - unsubscribing topic", topic, "id:", latest.subscription?.id);
+            console.log("WebSocketProvider.subscribeGroupUpdates - unsubscribing topic", topic, "id:", latest.subscription?.id);
             unsubscribeSubscription(latest.subscription);
           }
           personalSubscriptionsRef.current.delete(topic);
@@ -130,7 +130,7 @@ export function WebSocketProvider({ children }) {
         if (latest?.callback) latest.callback(message);
       });
       entry.subscription = subscription;
-      console.log("WebSocketProvider.subscribePersonal - subscribed to", topic, "id:", subscription?.id);
+      console.log("WebSocketProvider.subscribeGroupUpdates - subscribed to", topic, "id:", subscription?.id);
     }
 
     let released = false;
@@ -142,7 +142,7 @@ export function WebSocketProvider({ children }) {
       if (!current) return;
 
       current.refCount = Math.max(0, Number(current.refCount || 0) - 1);
-      console.log("WebSocketProvider.subscribePersonal - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
+      console.log("WebSocketProvider.subscribeGroupUpdates - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
 
       if (current.refCount > 0) return;
 
@@ -154,7 +154,7 @@ export function WebSocketProvider({ children }) {
         if (!latest || Number(latest.refCount || 0) > 0) return;
 
         if (latest.subscription) {
-          console.log("WebSocketProvider.subscribePersonal - unsubscribing topic", topic, "id:", latest.subscription?.id);
+          console.log("WebSocketProvider.subscribeGroupUpdates - unsubscribing topic", topic, "id:", latest.subscription?.id);
           unsubscribeSubscription(latest.subscription);
         }
         personalSubscriptionsRef.current.delete(topic);
@@ -224,12 +224,12 @@ export function WebSocketProvider({ children }) {
   const value = useMemo(
     () => ({
       isConnected,
-      subscribe,
-      unsubscribe,
-      subscribePersonal,
+      subscribeSingleGroup,
+      unsubscribeSingleGroup,
+      subscribeGroupUpdates,
       sendMessage: sendWebSocketMessage,
     }),
-    [isConnected, subscribe, unsubscribe, subscribePersonal]
+    [isConnected, subscribeSingleGroup, unsubscribeSingleGroup, subscribeGroupUpdates]
   );
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>;

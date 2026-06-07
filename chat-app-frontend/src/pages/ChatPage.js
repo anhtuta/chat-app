@@ -37,8 +37,14 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const lastMarkedMessagePerGroupRef = useRef(new Map());
 
   const currentChatIdRef = useRef("public");
-  const { isConnected: wsConnected, subscribe: subscribeTopic, subscribePersonal, sendMessage: sendWebSocketMessage } = useWebSocket();
+  const {
+    isConnected: wsConnected,
+    subscribeSingleGroup,
+    subscribeGroupUpdates,
+    sendMessage: sendWebSocketMessage,
+  } = useWebSocket();
 
+  // Initial load of groups and setup cleanup on unmount
   useEffect(() => {
     loadGroups();
 
@@ -50,6 +56,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     };
   }, []);
 
+  // Keep a ref copy of groups for use in subscriptions to avoid stale closures
   useEffect(() => {
     groupsRef.current = groups;
   }, [groups]);
@@ -62,7 +69,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     const destination = `/topic/user.${username}.group-updates`;
 
     // Type of groupSummaryUpdate is defined in backend as com.hello.chatapp.dto.GroupSummaryUpdate.
-    const unsubscribe = subscribePersonal(destination, (groupSummaryUpdate) => {
+    const unsubscribe = subscribeGroupUpdates(destination, (groupSummaryUpdate) => {
       const updatedGroupId = Number(groupSummaryUpdate.groupId);
       setGroups((prev) => {
         const groupIndex = prev.findIndex((g) => Number(g.id) === updatedGroupId);
@@ -96,8 +103,9 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     });
 
     return unsubscribe;
-  }, [wsConnected, username, subscribePersonal]);
+  }, [wsConnected, username, subscribeGroupUpdates]);
 
+  // Whenever the user switches to a different chat or new messages arrive, mark the current group as read up to the latest visible message.
   useEffect(() => {
     if (currentChatId === "public" || isLoading) {
       return;
@@ -193,7 +201,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
 
     // Subscribe to new topic (works for both public and groups)
     const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
-    const unsubscribe = subscribeTopic(topicPath, (message) => {
+    const unsubscribe = subscribeSingleGroup(topicPath, (message) => {
       if (currentChatIdRef.current === chatId) {
         setMessages((prev) => [...prev, message]);
       }

@@ -64,7 +64,7 @@ Implemented a deeper fix that should stop the unnecessary `group-updates` unsubs
 
 What I found
 
-- Your logs prove the personal unsubscribe is being triggered by the cleanup function returned from `subscribePersonal` (`"2. unsubscribe called..."`).
+- Your logs prove the personal unsubscribe is being triggered by the cleanup function returned from `subscribeGroupUpdates` (`"2. unsubscribe called..."`).
 - That means a cleanup/re-subscribe lifecycle is happening on chat switch (effect rerun or remount-like transition).
 - Previous fixes were too brittle because they still unsubscribed immediately on cleanup.
 
@@ -75,7 +75,7 @@ What I changed
   - Added delayed cleanup (`cleanupTimer`) before actual unsubscribe.
   - If the same topic is re-subscribed quickly (common during route/effect churn), cleanup timer is canceled and existing subscription is reused.
   - This prevents STOMP UNSUBSCRIBE/SUBSCRIBE flapping for `/topic/user.<username>.group-updates`.
-- Also improved context value memo dependencies to include `subscribe`, `unsubscribe`, and `subscribePersonal` references.
+- Also improved context value memo dependencies to include `subscribeSingleGroup`, `unsubscribeSingleGroup`, and `subscribeGroupUpdates` references.
 - Verified the edited file has no syntax errors using diagnostics.
 
 Why this should work now
