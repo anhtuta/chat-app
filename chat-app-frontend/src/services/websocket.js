@@ -112,7 +112,7 @@ export function subscribeToTopic(topic, callback) {
 export function unsubscribeSubscription(subscription) {
   if (!subscription) return;
   try {
-    console.log("Unsubscribing subscription...");
+    console.log("Unsubscribing subscription id:", subscription?.id, "topic:", subscription?.destination);
     subscription.unsubscribe();
   } catch (e) {
     console.warn("Failed to unsubscribe subscription:", e);

@@ -25,7 +25,8 @@ export function WebSocketProvider({ children }) {
   // Store single chat-topic subscription: { topic, callback, subscription }
   const subscriptionRef = useRef(null);
 
-  // Store persistent personal-queue subscriptions: Map<topic, { callback, subscription }>
+  // Store persistent personal-queue subscriptions:
+  // Map<topic, { callback, subscription, refCount, cleanupTimer }>
   // These survive chat-switching (e.g. /user/queue/group-updates).
   const personalSubscriptionsRef = useRef(new Map());
 
@@ -42,15 +43,16 @@ export function WebSocketProvider({ children }) {
 
     if (subscription) {
       subscriptionRef.current.subscription = subscription;
+      console.log("WebSocketProvider.internalSubscribe - subscribed to", topic, "id:", subscription?.id);
     }
 
     return subscription;
   };
-
-  const subscribe = (topic, callback) => {
+  const subscribe = React.useCallback((topic, callback) => {
     // Unsubscribe from any existing subscription
     if (subscriptionRef.current?.subscription) {
-      subscriptionRef.current.subscription.unsubscribe();
+      console.log("WebSocketProvider.subscribe - tearing down existing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
+      unsubscribeSubscription(subscriptionRef.current.subscription);
     }
 
     subscriptionRef.current = { topic, callback, subscription: null };
@@ -61,28 +63,65 @@ export function WebSocketProvider({ children }) {
 
     // Return an unsubscribe function to allow callers to remove interest
     return () => unsubscribe();
-  };
+  }, [isConnected]);
 
-  const unsubscribe = () => {
+  const unsubscribe = React.useCallback(() => {
     if (subscriptionRef.current?.subscription) {
+      console.log("WebSocketProvider.unsubscribe - unsubscribing chat topic", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
       unsubscribeSubscription(subscriptionRef.current.subscription);
     }
     subscriptionRef.current = null;
-  };
+  }, []);
 
   /**
    * Subscribe to a personal (user-specific) topic that survives chat switching.
    * Intended for topics like /user/queue/group-updates.
    * Returns an unsubscribe function.
    */
-  const subscribePersonal = (topic, callback) => {
-    // Tear down any previous subscription on the same topic
+  const subscribePersonal = React.useCallback((topic, callback) => {
     const existing = personalSubscriptionsRef.current.get(topic);
-    if (existing?.subscription) {
-      unsubscribeSubscription(existing.subscription);
+    if (existing) {
+      // Reuse existing STOMP subscription for this topic.
+      existing.callback = callback;
+      existing.refCount = Number(existing.refCount || 0) + 1;
+      if (existing.cleanupTimer) {
+        clearTimeout(existing.cleanupTimer);
+        existing.cleanupTimer = null;
+      }
+      console.log("WebSocketProvider.subscribePersonal - reusing topic", topic, "id:", existing.subscription?.id, "refCount:", existing.refCount);
+
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+
+        const current = personalSubscriptionsRef.current.get(topic);
+        if (!current) return;
+
+        current.refCount = Math.max(0, Number(current.refCount || 0) - 1);
+        console.log("WebSocketProvider.subscribePersonal - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
+
+        if (current.refCount > 0) return;
+
+        // Delay cleanup briefly so rapid effect cleanup/re-subscribe cycles
+        // during route transitions do not flap STOMP subscriptions.
+        if (current.cleanupTimer) {
+          clearTimeout(current.cleanupTimer);
+        }
+        current.cleanupTimer = setTimeout(() => {
+          const latest = personalSubscriptionsRef.current.get(topic);
+          if (!latest || Number(latest.refCount || 0) > 0) return;
+
+          if (latest.subscription) {
+            console.log("WebSocketProvider.subscribePersonal - unsubscribing topic", topic, "id:", latest.subscription?.id);
+            unsubscribeSubscription(latest.subscription);
+          }
+          personalSubscriptionsRef.current.delete(topic);
+        }, 250);
+      };
     }
 
-    const entry = { callback, subscription: null };
+    const entry = { callback, subscription: null, refCount: 1, cleanupTimer: null };
     personalSubscriptionsRef.current.set(topic, entry);
 
     if (isConnected) {
@@ -91,16 +130,37 @@ export function WebSocketProvider({ children }) {
         if (latest?.callback) latest.callback(message);
       });
       entry.subscription = subscription;
+      console.log("WebSocketProvider.subscribePersonal - subscribed to", topic, "id:", subscription?.id);
     }
 
+    let released = false;
     return () => {
+      if (released) return;
+      released = true;
+
       const current = personalSubscriptionsRef.current.get(topic);
-      if (current?.subscription) {
-        unsubscribeSubscription(current.subscription);
+      if (!current) return;
+
+      current.refCount = Math.max(0, Number(current.refCount || 0) - 1);
+      console.log("WebSocketProvider.subscribePersonal - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
+
+      if (current.refCount > 0) return;
+
+      if (current.cleanupTimer) {
+        clearTimeout(current.cleanupTimer);
       }
-      personalSubscriptionsRef.current.delete(topic);
+      current.cleanupTimer = setTimeout(() => {
+        const latest = personalSubscriptionsRef.current.get(topic);
+        if (!latest || Number(latest.refCount || 0) > 0) return;
+
+        if (latest.subscription) {
+          console.log("WebSocketProvider.subscribePersonal - unsubscribing topic", topic, "id:", latest.subscription?.id);
+          unsubscribeSubscription(latest.subscription);
+        }
+        personalSubscriptionsRef.current.delete(topic);
+      }, 250);
     };
-  };
+  }, [isConnected]);
 
   // Re-subscribe after a reconnect
   const resubscribeAll = () => {
@@ -109,11 +169,17 @@ export function WebSocketProvider({ children }) {
     }
     // Re-subscribe all personal queues after reconnect
     for (const [topic, entry] of personalSubscriptionsRef.current.entries()) {
+      if (entry.cleanupTimer) {
+        clearTimeout(entry.cleanupTimer);
+        entry.cleanupTimer = null;
+      }
+      console.log("WebSocketProvider.resubscribeAll - re-subscribing personal topic", topic);
       const subscription = subscribeToTopic(topic, (message) => {
         const latest = personalSubscriptionsRef.current.get(topic);
         if (latest?.callback) latest.callback(message);
       });
       entry.subscription = subscription;
+      console.log("WebSocketProvider.resubscribeAll - subscribed", topic, "id:", subscription?.id);
     }
   };
 
@@ -135,12 +201,20 @@ export function WebSocketProvider({ children }) {
       setIsConnected(false);
       // Clean up chat subscription
       if (subscriptionRef.current?.subscription) {
+        console.log("WebSocketProvider.cleanup - unsubscribing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
         unsubscribeSubscription(subscriptionRef.current.subscription);
       }
       subscriptionRef.current = null;
       // Clean up personal subscriptions
-      for (const entry of personalSubscriptionsRef.current.values()) {
-        if (entry.subscription) unsubscribeSubscription(entry.subscription);
+      for (const [topic, entry] of personalSubscriptionsRef.current.entries()) {
+        if (entry.cleanupTimer) {
+          clearTimeout(entry.cleanupTimer);
+          entry.cleanupTimer = null;
+        }
+        if (entry.subscription) {
+          console.log("WebSocketProvider.cleanup - unsubscribing personal subscription", topic, "id:", entry.subscription?.id);
+          unsubscribeSubscription(entry.subscription);
+        }
       }
       personalSubscriptionsRef.current.clear();
       disconnectWebSocket();
@@ -155,7 +229,7 @@ export function WebSocketProvider({ children }) {
       subscribePersonal,
       sendMessage: sendWebSocketMessage,
     }),
-    [isConnected]
+    [isConnected, subscribe, unsubscribe, subscribePersonal]
   );
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>;
