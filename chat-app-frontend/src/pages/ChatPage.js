@@ -44,7 +44,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     sendMessage: sendWebSocketMessage,
   } = useWebSocket();
 
-  // Initial load of groups and setup cleanup on unmount
+  // Load groups once on mount; cleanup any active subscription on unmount
   useEffect(() => {
     loadGroups();
 
@@ -56,13 +56,13 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     };
   }, []);
 
-  // Keep a ref copy of groups for use in subscriptions to avoid stale closures
+  // Keep a ref copy of groups so subscription handlers can read the latest value
   useEffect(() => {
     groupsRef.current = groups;
   }, [groups]);
 
-  // Subscribe to personal group-summary updates so the sidebar refreshes in real time
-  // when other group members send messages, without requiring a poll or page reload.
+  // Subscribe to the user's group-summary topic to update the sidebar in real time.
+  // Ignored when WS disconnected or username missing; returns an unsubscribe.
   useEffect(() => {
     if (!wsConnected || !username) return;
 
@@ -105,7 +105,8 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     return unsubscribe;
   }, [wsConnected, username, subscribeGroupUpdates]);
 
-  // Whenever the user switches to a different chat or new messages arrive, mark the current group as read up to the latest visible message.
+  // For group chats (not public): when messages settle, mark the group as read
+  // on the server up to the latest visible message. Guards against duplicates.
   useEffect(() => {
     if (currentChatId === "public" || isLoading) {
       return;
@@ -137,6 +138,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       });
   }, [currentChatId, messages, isLoading]);
 
+  // Maintain a cursor for the oldest loaded message so "load older" can page correctly.
   useEffect(() => {
     const oldestMessage = messages[0];
     if (!oldestMessage?.timestamp || oldestMessage?.id === undefined || oldestMessage?.id === null) {
@@ -151,7 +153,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   }, [messages]);
 
   useEffect(() => {
-    // Handle route changes
+    // Sync URL `groupId` param to the selected chat. Falls back to public on missing/invalid id.
     if (!groupId || groupId === "public") {
       switchToChat("public", "Public Chat");
       return;
