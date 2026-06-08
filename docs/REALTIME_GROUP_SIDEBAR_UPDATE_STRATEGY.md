@@ -112,6 +112,8 @@ Implementation summary:
 
 This gives every user real-time sidebar updates with a single extra subscription per user.
 
+The bot simulator also subscribes to the same `group-updates` topic so simulated clients keep consuming the real-time sidebar traffic pattern during load tests.
+
 ## Future Higher-Scale Path
 
 If fan-out to many members per message becomes a bottleneck (e.g. very large groups):

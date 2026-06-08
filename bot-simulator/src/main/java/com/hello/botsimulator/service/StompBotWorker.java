@@ -170,6 +170,19 @@ public class StompBotWorker implements Runnable {
                 }
             });
         }
+
+        String groupUpdatesDestination = "/topic/user." + username + ".group-updates";
+        session.subscribe(groupUpdatesDestination, new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return byte[].class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                // The simulator sends load traffic; consuming sidebar updates is optional.
+            }
+        });
     }
 
     private Map<String, Object> buildMessagePayload(Long groupId) {
