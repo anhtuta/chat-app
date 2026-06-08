@@ -2,6 +2,7 @@
 .PHONY: build.fe run.local run.be run.fe run.bot
 .PHONY: stop restart logs clean status check.env
 .PHONY: db.migrate db.info db.clean db.repair
+.PHONY: e2e.test
 
 # Check and create .env file if it doesn't exist
 check.env:
@@ -87,6 +88,10 @@ run.fe:
 run.bot:
 	@echo "🚀 Running Bot simulator..."
 	cd ../bot-simulator && ./mvnw spring-boot:run
+
+e2e.test:
+	@echo "🚀 Running E2E tests..."
+	@cd ../e2e && E2E_BASE_URL=http://localhost:9010 E2E_SKIP_WEBSERVER=1 pnpm test
 
 stop:
 	@echo "🛑 Stopping Chat App with Docker..."
