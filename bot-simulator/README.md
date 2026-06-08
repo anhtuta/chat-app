@@ -2,6 +2,8 @@
 
 Standalone Spring Boot app that load-tests your chat backend with WebSocket STOMP bots using Java virtual threads.
 
+**Full documentation:** [docs/BOT_SIMULATOR.md](../docs/BOT_SIMULATOR.md) — design, STOMP subscriptions, seed prerequisites, and configuration.
+
 ## What it does
 
 - Logs in existing users through `/api/auth/login`.
@@ -15,6 +17,7 @@ Standalone Spring Boot app that load-tests your chat backend with WebSocket STOM
 - Java 25
 - Maven
 - Main chat app running and reachable (default http://localhost:9010)
+- **Seed data applied first** — run `UserSeeder` then `GroupSeeder` in `chat-app-backend` before starting bots (see [docs/BOT_SIMULATOR.md](../docs/BOT_SIMULATOR.md#prerequisites-seed-data-first))
 
 ## Run
 
