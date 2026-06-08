@@ -1,6 +1,6 @@
 ---
 description: "Use when implementing, changing, or refactoring any feature. Ensure feature documentation in docs is created or updated, with one markdown file per feature."
-applyTo: "**"
+alwaysApply: true
 ---
 
 # Keep Feature Docs In Sync

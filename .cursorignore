@@ -1,0 +1,35 @@
+# ----------------------------------------------------
+# SYSTEM, CHAT HISTORY & IDE METADATA
+# ----------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+chat-app.code-workspace
+.specstory/
+
+# ----------------------------------------------------
+# REPO/INFRA METADATA (Hides workflow logs)
+# ----------------------------------------------------
+.git/
+.github/
+
+# ----------------------------------------------------
+# SENSITIVE DATA & LOCAL CREDENTIALS
+# ----------------------------------------------------
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/src/main/resources/application-local.*
+**/src/main/resources/application-prod.*
+
+# ----------------------------------------------------
+# NODE DEPENDENCY BLOAT
+# ----------------------------------------------------
+**/node_modules/
+**/.pnpm-store/
+**/node/
+**/npm/

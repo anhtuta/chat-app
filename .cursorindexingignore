@@ -1,0 +1,43 @@
+# Don't index SpecStory auto-save files, but allow explicit context inclusion via @ references
+.specstory/**
+
+# ----------------------------------------------------
+# TOP-LEVEL ROOT BUILD OUTPUTS
+# ----------------------------------------------------
+out/
+target/
+
+# ----------------------------------------------------
+# SPRING BOOT BUILDS (Within sub-modules)
+# ----------------------------------------------------
+**/target/
+**/build/
+**/out/
+**/*.class
+**/*.jar
+**/*.war
+**/.mvn/
+.gradle/
+
+# ----------------------------------------------------
+# REACT BUILDS & LOGS (chat-app-frontend)
+# ----------------------------------------------------
+**/chat-app-frontend/dist/
+**/chat-app-frontend/build/
+**/.vite/
+*.log
+**/logs/
+**/*.log.*
+
+# ----------------------------------------------------
+# LOCAL DATABASES & STATIC MEDIA (Skip text indexing)
+# ----------------------------------------------------
+**/*.db
+**/*.sqlite
+**/docs/**/*.pdf
+**/src/main/resources/static/assets/
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.svg
+**/*.ico

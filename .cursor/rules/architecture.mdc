@@ -1,0 +1,15 @@
+---
+description: Applies architectural rules when editing components in the chat application ecosystem
+globs:
+  - "chat-app-backend/**"
+  - "chat-app-frontend/**"
+  - "bot-simulator/**"
+  - "src/**"
+  - "pom.xml"
+  - "package.json"
+---
+
+# Project Architecture Rules
+
+- **Backend (`chat-app-backend` & `bot-simulator`):** Written in Java Spring Boot using Maven. Follow strict controller-service-repository patterns.
+- **Frontend (`chat-app-frontend`):** Written in ReactJS.
