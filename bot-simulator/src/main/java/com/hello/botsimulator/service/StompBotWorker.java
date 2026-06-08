@@ -185,15 +185,46 @@ public class StompBotWorker implements Runnable {
         });
     }
 
+    private static final int TOPIC_COUNT = 10;
+    private static final int MAX_MESSAGE_LENGTH = 100;
+
     private Map<String, Object> buildMessagePayload(Long groupId) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("groupId", groupId);
-        payload.put("content", properties.getMessagePrefix() + " | bot=" + botNumber + " | " + hackerSentence());
+        payload.put("content", properties.getMessagePrefix() + " | bot=" + botNumber + " | " + randomTopicContent());
         return payload;
     }
 
-    private String hackerSentence() {
-        return faker.hacker().ingverb() + " " + faker.hacker().adjective() + " " + faker.hacker().noun();
+    private String randomTopicContent() {
+        int topicIndex = ThreadLocalRandom.current().nextInt(TOPIC_COUNT);
+        int targetLength = ThreadLocalRandom.current().nextInt(1, MAX_MESSAGE_LENGTH + 1);
+
+        StringBuilder content = new StringBuilder(generateTopicPhrase(topicIndex));
+        while (content.length() < targetLength) {
+            content.append(' ');
+            content.append(generateTopicPhrase(topicIndex));
+        }
+
+        if (content.length() > targetLength) {
+            String truncated = content.substring(0, targetLength).trim();
+            return truncated.isEmpty() ? generateTopicPhrase(topicIndex) : truncated;
+        }
+        return content.toString().trim();
+    }
+
+    private String generateTopicPhrase(int topicIndex) {
+        return switch (topicIndex) {
+            case 0 -> faker.hacker().ingverb() + " " + faker.hacker().adjective() + " " + faker.hacker().noun();
+            case 1 -> faker.lorem().sentence(3);
+            case 2 -> faker.company().catchPhrase();
+            case 3 -> faker.book().title() + " by " + faker.book().author();
+            case 4 -> faker.food().dish() + " with " + faker.food().ingredient();
+            case 5 -> faker.music().instrument() + " " + faker.music().genre();
+            case 6 -> faker.animal().name();
+            case 7 -> faker.cat().name() + " the " + faker.cat().breed();
+            case 8 -> faker.programmingLanguage().name();
+            default -> faker.weather().description();
+        };
     }
 
     private Long pickRandomGroupId() {
