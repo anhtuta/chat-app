@@ -167,6 +167,8 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
 
     const group = groupsRef.current.find((g) => Number(g.id) === numericId);
     switchToChat(numericId, group?.name || `Group ${numericId}`);
+    // groupsRef is stable; switchToChat is intentionally omitted to avoid re-syncing on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL param changes
   }, [groupId]);
 
 
