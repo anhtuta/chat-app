@@ -1,5 +1,6 @@
 package com.hello.chatapp.listener;
 
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -13,10 +14,11 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Dynamic message listener that consumes from per-subscription queues.
+ * Dynamic message listener that consumes from the per-instance inbound queue.
  * 
  * This class is responsible for:
  * - Creating and managing RabbitMQ listeners (SimpleMessageListenerContainer objects)
@@ -50,21 +52,29 @@ public class DynamicRabbitMQListener {
     }
 
     /**
-     * Starts listening to a queue for a specific destination.
-     * Called when a subscription is created.
+     * Starts listening to a queue.
+     * Called once when the instance queue is created.
      */
-    public void startListening(String queueName, String destination) {
+    public void startListening(String queueName) {
+        startListening(queueName, null);
+    }
+
+    /**
+     * Compatibility overload for older call sites. The destination is carried per message
+     * in a header, not fixed per queue.
+     */
+    public void startListening(String queueName, String ignoredDestination) {
         // Don't create duplicate listeners
         if (activeListeners.containsKey(queueName)) {
             logger.debug("Listener already exists for queue: {}", queueName);
             return;
         }
 
-        logger.debug("Starting listener for queue: {}, destination: {}, instanceId: {}", queueName, destination, instanceId);
+        logger.debug("Starting listener for queue: {}, instanceId: {}", queueName, instanceId);
 
         // Create a new listener/consumer for this queue
         SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
-        container.setConnectionFactory(connectionFactory);
+        container.setConnectionFactory(Objects.requireNonNull(connectionFactory));
         container.setQueueNames(queueName);
         container.setMessageListener(new MessageListener() {
             @Override
@@ -79,6 +89,12 @@ public class DynamicRabbitMQListener {
 
                     // Deserialize payload using the configured MessageConverter
                     Object payload = messageConverter.fromMessage(message);
+                    String destination = (String) message.getMessageProperties().getHeaders()
+                            .get(CustomRabbitMQBrokerHandler.getDestinationHeader());
+                    if (destination == null) {
+                        logger.warn("Skipping RabbitMQ message without STOMP destination header: queue={}", queueName);
+                        return;
+                    }
 
                     logger.info("Received message from queue: {}, destination: {}, instanceId: {}",
                             queueName, destination, instanceId);
@@ -122,7 +138,7 @@ public class DynamicRabbitMQListener {
     private void forwardToLocalSubscribers(String destination, Object payload) {
         if (messagingTemplate != null) {
             logger.debug("Forwarding to local subscribers: destination={}, instanceId={}", destination, instanceId);
-            messagingTemplate.convertAndSend(destination, payload);
+            messagingTemplate.convertAndSend(Objects.requireNonNull(destination), Objects.requireNonNull(payload));
         } else {
             logger.warn("SimpMessagingTemplate is not set, cannot forward message to local subscribers");
         }

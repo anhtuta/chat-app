@@ -11,6 +11,7 @@ import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
+import com.hello.chatapp.service.GroupSummaryUpdatePublisher;
 import com.hello.chatapp.service.MessageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +23,6 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -36,17 +36,20 @@ public class WebSocketController {
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
     private final MessageService messageService;
+    private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
     public WebSocketController(GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
-            MessageService messageService) {
+            MessageService messageService,
+            GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
         this.messageService = messageService;
+        this.groupSummaryUpdatePublisher = groupSummaryUpdatePublisher;
     }
 
     @MessageMapping("/chat.send")
@@ -122,32 +125,15 @@ public class WebSocketController {
 
     /**
      * Pushes a lightweight group-summary update to every member of the group
-     * via their personal WebSocket queue (/user/queue/group-updates).
+     * via their personal WebSocket topic.
      * The frontend uses this to refresh the sidebar in real time.
      */
     private void pushGroupSummaryUpdate(Group group, Message savedMessage) {
         Long groupId = Objects.requireNonNull(group.getId());
         String preview = MessageService.buildLatestMessagePreview(savedMessage.getContent());
-        GroupSummaryUpdate update = GroupSummaryUpdate.fromMessage(groupId, savedMessage, preview);
-
-        // If we use: participants = groupParticipantRepository.findByGroup(group); participant.getUser().getUsername(); then we will have error: org.hibernate.LazyInitializationException: Could not initialize proxy [com.hello.chatapp.entity.User#1] - no session
-        // Why: findByGroup returns GroupParticipant entities with lazy User relation, and at that point Hibernate session was not open. So participant.user.username access fails. Solution: query repository for usernames directly without loading the User entities.
-        List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
-        for (String username : usernames) {
-            String safeUsername = Objects.requireNonNull(username);
-            String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
-
-            // Local delivery on current instance.
-            messagingTemplate.convertAndSend(userScopedTopicDestination, Objects.requireNonNull((Object) update));
-
-            // Cross-instance delivery via RabbitMQ fanout.
-            rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, update);
-
-            logger.debug("[pushGroupSummaryUpdate] Pushed group summary update to user={}, groupId={}, destination={}",
-                    safeUsername,
-                    groupId,
-                    userScopedTopicDestination);
-        }
+        groupSummaryUpdatePublisher.publishToGroupMembers(
+                groupId,
+                GroupSummaryUpdate.fromMessage(groupId, savedMessage, preview));
     }
 
     /**

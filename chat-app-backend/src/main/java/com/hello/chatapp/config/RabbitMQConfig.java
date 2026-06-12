@@ -6,9 +6,9 @@ import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 
 /**
  * Configuration for RabbitMQ integration.
@@ -21,21 +21,18 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    @Value("${spring.application.instance-id:${random.uuid}}")
-    private String instanceId;
-
     /**
      * AmqpAdmin bean for managing RabbitMQ resources (queues, exchanges, bindings).
      * 
      * Used by: CustomRabbitMQBrokerHandler
-     * - Declares exchanges when publishing messages
-     * - Creates/deletes queues when clients subscribe/unsubscribe
-     * - Creates/removes bindings between queues and exchanges
+     * - Declares fixed topic exchanges at startup
+     * - Creates/deletes the per-instance inbound queue
+     * - Creates/removes destination bindings on the instance queue
      * 
      * Spring Framework: Automatically injected into beans that need it
      */
     @Bean
-    public AmqpAdmin amqpAdmin(ConnectionFactory connectionFactory) {
+    public AmqpAdmin amqpAdmin(@NonNull ConnectionFactory connectionFactory) {
         return new RabbitAdmin(connectionFactory);
     }
 
@@ -62,7 +59,8 @@ public class RabbitMQConfig {
      * Spring Framework: Automatically injected into beans that need it
      */
     @Bean
-    public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
+    public RabbitTemplate rabbitTemplate(@NonNull ConnectionFactory connectionFactory,
+            @NonNull MessageConverter messageConverter) {
         RabbitTemplate template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter);
         return template;
@@ -88,15 +86,11 @@ public class RabbitMQConfig {
     // }
 
     /**
-     * With DirectExchange approach:
-     * - Each subscription (both public and group) creates its own queue: "ws.instance-id.session-id.destination"
-     * - Each destination gets its own exchange (e.g., "topic.public", "topic.group.1")
-     * - Exchanges are created dynamically by CustomRabbitMQBrokerHandler.ensureExchangeExists()
-     * - Per-subscription queues are consumed by DynamicRabbitMQListener
-     * 
-     * Update: We now use FanoutExchange instead of DirectExchange
-     * 
-     * This eliminates the need for a static publicTopicQueue per instance.
-     * All messages (public and group) are handled uniformly via per-subscription queues.
+     * Current topology:
+     * - Fixed TopicExchanges: chat.public, chat.groups, chat.user-updates
+     * - One queue per backend instance: ws.{instance-id}.inbound
+     * - SUBSCRIBE/UNSUBSCRIBE add and remove bindings on that instance queue
+     * - DynamicRabbitMQListener consumes the instance queue and forwards messages to the
+     * original STOMP destination stored in the message header
      */
 }

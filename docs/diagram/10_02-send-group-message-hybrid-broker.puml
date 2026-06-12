@@ -1,0 +1,72 @@
+@startuml
+
+header "Private Group Message Flow (Phase 1+2: chat.groups Topic Exchange)"
+footer "Author: Tuzaku | 2 users, 2 instances | Group 42"
+
+actor "User1\n(Instance 1)" as User1
+actor "User2\n(Instance 2)" as User2
+participant "WebApp 1" as WebApp1
+participant "WebApp 2" as WebApp2
+participant "Instance 1" as App1
+participant "Instance 2" as App2
+participant "SimpleBroker 1" as Broker1
+participant "SimpleBroker 2" as Broker2
+participant "RabbitMQ\nBrokerHandler" as RabbitHandler
+participant "RabbitMQ" as RabbitMQ
+participant "Listener 1" as Listener1
+participant "Listener 2" as Listener2
+database PostgreSQL
+
+note over User1, User2
+  Both users are members of **group 42**.
+  User1 is connected to Instance 1 (sender).
+  User2 is connected to Instance 2 (receiver).
+  RabbitMQ topology per instance:
+  - exchange: chat.groups
+  - queue: ws.{instance-id}.inbound
+  - binding added when a user subscribes to /topic/group.42
+end note
+
+== 1. User2 subscribes to group chat ==
+
+User2 -> WebApp2: Open group 42 chat
+WebApp2 -> App2: STOMP SUBSCRIBE /topic/group.42
+App2 -> App2: validateSubscription()\n(user is group member)
+App2 -> RabbitHandler: handleSubscribe(..., "/topic/group.42")
+RabbitHandler -> RabbitMQ: bind ws.instance-2.inbound\nto chat.groups, key "group.42"
+App2 -> Broker2: Register local subscription
+App2 -> WebApp2: SUBSCRIBE confirmed
+
+== 2. User1 sends a group message ==
+
+User1 -> WebApp1: Type and send message
+WebApp1 -> App1: STOMP SEND /app/group.send\n{ groupId: 42, content: "..." }
+App1 -> App1: validateGroup()\n(user is group member)
+App1 -> PostgreSQL: saveGroupMessage()
+PostgreSQL --> App1: saved
+
+note over App1
+  Delivery path (hybrid broker):
+  1. SimpleBroker — local subscribers on Instance 1
+  2. RabbitMQ — subscribers on other instances
+end note
+
+App1 -> Broker1: convertAndSend("/topic/group.42", response)
+Broker1 -> WebApp1: MESSAGE (if User1 is subscribed locally)
+
+App1 -> RabbitHandler: publishToRabbitMQ("/topic/group.42", response)
+RabbitHandler -> RabbitMQ: publish chat.groups\nkey "group.42"\nheaders: source-instance-id, stomp-destination
+
+== 3. Cross-instance delivery to User2 ==
+
+RabbitMQ -> Listener1: ws.instance-1.inbound
+Listener1 -> Listener1: source-instance-id = instance-1\n→ skip (same instance)
+
+RabbitMQ -> Listener2: ws.instance-2.inbound
+Listener2 -> Listener2: source-instance-id = instance-1\n→ forward
+Listener2 -> Listener2: read stomp-destination\n→ /topic/group.42
+Listener2 -> Broker2: convertAndSend("/topic/group.42", payload)
+Broker2 -> WebApp2: MESSAGE
+WebApp2 -> User2: Display message
+
+@enduml

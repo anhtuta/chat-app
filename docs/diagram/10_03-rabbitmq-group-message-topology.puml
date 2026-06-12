@@ -1,0 +1,120 @@
+@startuml
+
+header "RabbitMQ Middle-Man: Private Group Message (Instance 1 → Instance 2)"
+footer "Author: Tuzaku | User2=group 42, User3=group 45 (same instance)"
+
+actor "User1\n(Instance 1,\ngroup 42)" as User1
+actor "User2\n(Instance 2,\ngroup 42)" as User2
+actor "User3\n(Instance 2,\ngroup 45)" as User3
+
+box "Spring Boot Instance 1" #AliceBlue
+  participant "WebSocketController" as Ctrl1
+  participant "CustomRabbitMQ\nBrokerHandler" as Handler1
+  participant "DynamicRabbitMQ\nListener" as Listener1
+  queue "ws.instance-1.inbound" as Q1
+end box
+
+box "RabbitMQ Broker" #LightYellow
+  participant "Topic Exchange\n**chat.groups**" as Exchange
+end box
+
+box "Spring Boot Instance 2" #HoneyDew
+  queue "ws.instance-2.inbound" as Q2
+  participant "DynamicRabbitMQ\nListener" as Listener2
+  participant "CustomRabbitMQ\nBrokerHandler" as Handler2
+  participant "SimpleBroker" as SimpleBroker2
+end box
+
+note over Handler1, Handler2
+  **RabbitMQ mapping (group chat):**
+  | STOMP destination   | Exchange      | Routing key |
+  | /topic/group.42     | chat.groups   | group.42    |
+  | /topic/group.45     | chat.groups   | group.45    |
+
+  **Per-instance queue (fixed, created at startup):**
+  - Instance 1: ws.instance-1.inbound
+  - Instance 2: ws.instance-2.inbound
+  **Bindings are dynamic** — one binding per active STOMP destination on that instance queue.
+end note
+
+== A. Topology before any subscriptions ==
+
+note over Exchange, Q2
+  At startup (both instances):
+  - Exchange **chat.groups** is declared (durable topic exchange)
+  - Queue **ws.instance-1.inbound** exists, consumer running
+  - Queue **ws.instance-2.inbound** exists, consumer running
+  - **No bindings yet** → publish to chat.groups would match nothing
+end note
+
+== B. Users on Instance 2 subscribe to their groups ==
+
+User2 -> Handler2: STOMP SUBSCRIBE /topic/group.42
+Handler2 -> Exchange: **declareBinding**\nchat.groups --[**group.42**]--> ws.instance-2.inbound
+Handler2 -> SimpleBroker2: register User2 on /topic/group.42
+
+User3 -> Handler2: STOMP SUBSCRIBE /topic/group.45
+Handler2 -> Exchange: **declareBinding**\nchat.groups --[**group.45**]--> ws.instance-2.inbound
+Handler2 -> SimpleBroker2: register User3 on /topic/group.45
+
+note over Q2
+  Same queue, **two bindings** (different routing keys):
+  - chat.groups --[group.42]--> ws.instance-2.inbound
+  - chat.groups --[group.45]--> ws.instance-2.inbound
+end note
+
+note over Q1
+  Instance 1 queue has **no bindings** in this example.
+end note
+
+== C. User1 on Instance 1 sends a group-42 message (PUBLISH) ==
+
+User1 -> Ctrl1: send message to group 42
+Ctrl1 -> Handler1: publishToRabbitMQ("/topic/group.42", payload)
+Handler1 -> Handler1: routing key = **group.42**
+Handler1 -> Handler1: headers:\nsource-instance-id = instance-1\nstomp-destination = /topic/group.42
+Handler1 -> Exchange: **basic.publish**\nexchange = chat.groups\nrouting key = **group.42**
+
+note over Exchange
+  Topic exchange matches **group.42** only against bindings.
+  - binding **group.42** on ws.instance-2.inbound → **MATCH** ✓
+  - binding **group.45** on ws.instance-2.inbound → **no match** ✗
+end note
+
+Exchange -> Q2: deliver message\n(matched: group.42 binding only)
+note over Q1 #White
+  ws.instance-1.inbound: no group.42 binding\n→ **not delivered**
+end note
+
+== D. Instance 2 consumes — only group-42 subscribers receive it ==
+
+Q2 -> Listener2: onMessage()
+Listener2 -> Listener2: source-instance-id = instance-1\n≠ instance-2 → forward
+Listener2 -> Listener2: stomp-destination = /topic/group.42
+Listener2 -> SimpleBroker2: convertAndSend("/topic/group.42", payload)
+
+SimpleBroker2 -> User2: MESSAGE ✓\n(subscribed to /topic/group.42)
+
+note over User3 #MistyRose
+  User3 does **NOT** receive this message.
+  Two independent reasons:
+  1. **RabbitMQ:** routing key group.42 did not match\nthe group.45 binding (User3's group).
+  2. **SimpleBroker:** even after consume, delivery goes only\nto /topic/group.42 subscribers — User3 is on /topic/group.45.
+end note
+
+User3 -> User3: no message ✗
+
+== E. What if Instance 1 also had a group-42 binding? ==
+
+note over Exchange, Listener1
+  If a user on Instance 1 were also subscribed to /topic/group.42,
+  RabbitMQ would also deliver a copy to **ws.instance-1.inbound**
+  (matched binding: group.42).
+
+  Instance 1 listener checks **source-instance-id**:
+  - source = instance-1 → **skip** (local users already got it via SimpleBroker)
+
+  User3 on Instance 2 is still unaffected — group.45 binding\nnever matches a group.42 publish.
+end note
+
+@enduml

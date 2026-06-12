@@ -24,11 +24,15 @@ Example with 3 instances, 100 groups, 1,000 users (all connected):
 | Exchanges | 1 + 100 + 1,000 = **1,101**       | Same (exchanges persist)                             |
 | Queues    | 3 × (1 + 100 + 1,000) = **3,303** | 3 × (1 + ~concurrent_group_views + ~connected_users) |
 
-Example with 1 instance, 100 groups, 1,000 users, here is the rabbitMQ exchanges and queues:
+RabbitMQ topology with 1 instance, 100 groups, 1,000 users, here is the rabbitMQ exchanges and queues:
 
-![](./photo/exchange-list-retest.webp)
+- Exchanges are durable and persist across restarts. That's why we have so many exchanges, even after all users and groups are disconnected:
 
-![](./photo/queue-list-retest.webp)
+  ![](./photo/exchange-list-retest.webp)
+
+- Queues will be deleted when the last subscription is removed. Currently we have 12 active users, 30 active groups:
+
+  ![](./photo/queue-list-retest.webp)
 
 Important nuances:
 
@@ -186,9 +190,9 @@ The group-updates feature made the exchange problem **worse** because it added *
 
 ## Recommendation
 
-**Short term (low risk):** Solution **6** (declare cache, async fan-out) + Solution **5** (consolidate group-updates into one Topic exchange).
+**Short term (implemented):** Solution **6** (declare once at startup, async fan-out) + Solution **5** (consolidate group-updates into one Topic exchange).
 
-**Medium term (proper fix):** Solution **1** (fixed Topic exchanges + dynamic per-instance bindings) for all destination types.
+**Medium term (implemented):** Solution **1** (fixed Topic exchanges + dynamic per-instance bindings) for all destination types.
 
 **Long term (if custom broker code becomes a maintenance burden):** Evaluate Solution **3** (STOMP Broker Relay).
 
@@ -196,22 +200,51 @@ Avoid relying on Solution **2** (single fanout envelope) beyond a small fixed in
 
 ## Chosen Solution
 
-**Not implemented yet.** This document is analysis only.
+Implementation summary:
 
-When implementing, the recommended path is:
+1. Phase 1: Consolidated `group-updates` onto `chat.user-updates` with binding-per-subscription; moved group-summary fan-out to `GroupSummaryUpdatePublisher` using an async executor.
+2. Phase 2: Migrated `public` and `group.{id}` to fixed topic exchanges (`chat.public`, `chat.groups`) with one per-instance queue.
+3. Subscription cleanup: tracked STOMP subscriptions by `sessionId + subscriptionId`, because `UNSUBSCRIBE` frames usually do not include the original destination.
+4. Phase 3 (optional): Evaluate STOMP Broker Relay if custom code remains costly or if higher-scale validation shows the custom bridge is the bottleneck.
 
-1. Phase 1: Consolidate `group-updates` onto one Topic exchange + binding-per-subscription; add declare cache and async fan-out.
-2. Phase 2: Migrate `public` and `group.{id}` to the same Topic-exchange model.
-3. Phase 3 (optional): Evaluate STOMP Broker Relay if custom code remains costly.
+Phase 1 + 2 are now implemented in `CustomRabbitMQBrokerHandler`:
+
+| STOMP destination                 | RabbitMQ exchange   | Routing key                | Queue model                |
+| --------------------------------- | ------------------- | -------------------------- | -------------------------- |
+| `/topic/public`                   | `chat.public`       | `public`                   | `ws.{instance-id}.inbound` |
+| `/topic/group.42`                 | `chat.groups`       | `group.42`                 | `ws.{instance-id}.inbound` |
+| `/topic/user.alice.group-updates` | `chat.user-updates` | `user.alice.group-updates` | `ws.{instance-id}.inbound` |
+
+Sequence diagrams for the implemented flow:
+
+- Full topology (public + group + sidebar): [10_01-send-message-hybrid-broker-topic-exchange.puml](./diagram/10_01-send-message-hybrid-broker-topic-exchange.puml) (replaces the per-destination fanout model in [03-send-message-hybrid-broker.puml](./diagram/03-send-message-hybrid-broker.puml))
+- **Private group message only** (2 users, 2 instances): [10_02-send-group-message-hybrid-broker.puml](./diagram/10_02-send-group-message-hybrid-broker.puml)
+- **RabbitMQ topology focus** (exchanges, queues, routing keys as middle-man): [10_03-rabbitmq-group-message-topology.puml](./diagram/10_03-rabbitmq-group-message-topology.puml)
+
+How does it work under the hood? See [rabbitmq.md](./rabbitmq.md) for more details.
+
+The current active topology is:
+
+- **Exchanges:** fixed at 3 topic exchanges.
+- **Queues:** one inbound queue per backend instance.
+- **Bindings:** one binding per active destination per instance, added on first local subscription and removed on the last local unsubscribe/disconnect.
+- **Message forwarding:** RabbitMQ messages carry the original STOMP destination in a `stomp-destination` header; `DynamicRabbitMQListener` forwards to the local SimpleBroker.
+- **Group-summary fan-out:** per-member publishes now run asynchronously through `GroupSummaryUpdatePublisher`, so a 100+ member group does not block the group chat send path while all sidebar updates are published.
+
+Scaling review:
+
+- For 100k+ users: this **removes the RabbitMQ topology explosion** and is the right minimum step, but it is NOT the whole scaling story.
+- Next bottlenecks will likely be **sidebar update publish volume**, **WebSocket connection capacity per instance**, **broker throughput**, and **lack of batching/backpressure**.
 
 ## Future Higher-Scale Path
 
-| Scale                                         | Suggested approach                                                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| &lt; 500 groups, &lt; 2k users, ≤ 5 instances | Phase 1 + 2 may be sufficient                                                               |
-| Large groups (100+ members)                   | Async fan-out + debounce summary events                                                     |
-| 10k+ users, many instances                    | STOMP Broker Relay or Redis Streams; avoid per-destination FanoutExchanges                  |
-| Very large clusters                           | Dedicated messaging service; consider CQRS read models for sidebar instead of push-per-user |
+| Scale                                         | Suggested approach                                                                                     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| &lt; 500 groups, &lt; 2k users, ≤ 5 instances | Implemented Phase 1 + 2 should be sufficient after basic load testing                                  |
+| Large groups (100+ members)                   | Implemented async fan-out; add **debounce/batch summary events** if publish volume is high             |
+| 10k+ users, many instances                    | Load test Phase 1 + 2; consider **STOMP Broker Relay** or **Redis Streams** if custom bridge limits    |
+| 100k+ users                                   | Treat Phase 1 + 2 as the minimum topology fix; add backpressure, batching, metrics, and capacity tests |
+| Very large clusters                           | Dedicated messaging service; consider CQRS read models for sidebar instead of push-per-user            |
 
 ### Target topology (Solution 1 — end state)
 

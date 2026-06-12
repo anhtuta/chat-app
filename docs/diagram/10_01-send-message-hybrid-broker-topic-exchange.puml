@@ -1,0 +1,240 @@
+@startuml
+
+header "Send message flow with Hybrid Broker (Phase 1+2: Fixed Topic Exchanges)"
+footer "Author: Tuzaku | Topology: chat.public / chat.groups / chat.user-updates"
+
+actor User1
+participant "WebApp 1\n(Client)" as WebApp1
+participant "Spring Boot\nInstance 1" as App1
+participant "SimpleBroker\n(In-Memory)" as SimpleBroker
+participant "RabbitMQ\nSubscription\nInterceptor" as SubInterceptor
+participant "CustomRabbitMQ\nBrokerHandler" as RabbitHandler
+participant "RabbitMQ\nBroker" as RabbitMQ
+participant "DynamicRabbitMQ\nListener" as RabbitListener
+participant "Spring Boot\nInstance 2" as App2
+participant "DynamicRabbitMQ\nListener 2" as RabbitListener2
+participant "SimpleBroker 2\n(In-Memory)" as SimpleBroker2
+participant "WebApp 2\n(Client)" as WebApp2
+database PostgreSQL
+
+== Instance Startup (once per backend instance) ==
+
+note over App1, RabbitMQ
+  Fixed topology (declared at startup):
+  - Topic exchanges: chat.public, chat.groups, chat.user-updates
+  - One durable queue per instance: ws.instance-1.inbound
+  - One consumer (DynamicRabbitMQListener) per instance queue
+  Exchanges are declared once; no per-destination exchange creation on publish/subscribe.
+end note
+
+App1 -> RabbitHandler: @PostConstruct init()
+RabbitHandler -> RabbitMQ: declareExchange(chat.public)
+RabbitHandler -> RabbitMQ: declareExchange(chat.groups)
+RabbitHandler -> RabbitMQ: declareExchange(chat.user-updates)
+RabbitHandler -> RabbitMQ: declareQueue(ws.instance-1.inbound)
+RabbitHandler -> RabbitListener: startListening(ws.instance-1.inbound)
+RabbitListener -> RabbitMQ: Start consuming from ws.instance-1.inbound
+
+== STOMP SUBSCRIBE (Hybrid Approach) ==
+
+note over WebApp1, RabbitMQ
+  Subscription is registered in BOTH SimpleBroker (local) and RabbitMQ (cross-instance).
+  RabbitMQ sync adds/removes **bindings** on the per-instance inbound queue.
+  No per-destination queue is created anymore.
+end note
+
+WebApp1 -> App1: STOMP SUBSCRIBE to /topic/public\n(subscriptionId=sub-1)
+App1 -> SubInterceptor: preSend() - SUBSCRIBE
+SubInterceptor -> RabbitHandler: handleSubscribe(sessionId, sub-1, "/topic/public")
+RabbitHandler -> RabbitHandler: sessionSubscriptions[sessionId][sub-1] = "/topic/public"
+RabbitHandler -> RabbitHandler: destinationSubscriptionCount["/topic/public"] = 1
+
+alt First local subscription to this destination
+  note right of RabbitHandler
+    Only add binding when ref-count reaches 1.
+    Route: /topic/public -> chat.public / routing key "public"
+  end note
+  RabbitHandler -> RabbitMQ: bind ws.instance-1.inbound\nto chat.public with key "public"
+end
+
+SubInterceptor -> App1: Allow SUBSCRIBE
+App1 -> SimpleBroker: Register subscription (local)
+SimpleBroker -> SimpleBroker: Add client to /topic/public subscribers
+App1 -> WebApp1: Subscription confirmed
+
+note over WebApp2, RabbitMQ
+  Group chat uses the same binding model on chat.groups.
+  Example: /topic/group.42 -> routing key "group.42"
+end note
+
+WebApp2 -> App2: STOMP SUBSCRIBE to /topic/group.42\n(subscriptionId=sub-2)
+App2 -> SubInterceptor: preSend() - SUBSCRIBE
+SubInterceptor -> App2: validateSubscription() - user is group member
+SubInterceptor -> RabbitHandler: handleSubscribe(sessionId, sub-2, "/topic/group.42")
+
+alt First local subscription to /topic/group.42 on Instance 2
+  RabbitHandler -> RabbitMQ: bind ws.instance-2.inbound\nto chat.groups with key "group.42"
+end
+
+App2 -> SimpleBroker2: Register subscription (local)
+App2 -> WebApp2: Subscription confirmed
+
+== STOMP UNSUBSCRIBE / DISCONNECT ==
+
+WebApp1 -> App1: STOMP UNSUBSCRIBE (subscriptionId=sub-1)\n(destination header is absent)
+App1 -> SubInterceptor: preSend() - UNSUBSCRIBE
+SubInterceptor -> RabbitHandler: handleUnsubscribe(sessionId, sub-1)
+RabbitHandler -> RabbitHandler: lookup destination from sessionSubscriptions
+RabbitHandler -> RabbitHandler: destinationSubscriptionCount["/topic/public"] = 0
+
+alt Last local subscription to this destination
+  RabbitHandler -> RabbitMQ: remove binding\nws.instance-1.inbound -> chat.public / "public"
+end
+
+note over RabbitHandler
+  On DISCONNECT or SessionDisconnectEvent, all tracked subscriptions for the session are cleaned up the same way.
+end note
+
+== Send Public Message (Hybrid Approach) ==
+
+User1 -> WebApp1: Type and send message
+WebApp1 -> App1: STOMP SEND to /app/chat.send
+App1 -> App1: @MessageMapping("/chat.send")
+App1 -> PostgreSQL: Save message
+PostgreSQL -> App1: Saved message
+App1 -> App1: Create MessageResponse
+
+note over App1
+  Message is sent to BOTH:
+  1. SimpleBroker (local subscribers on this instance)
+  2. RabbitMQ (cross-instance via fixed topic exchange)
+end note
+
+App1 -> SimpleBroker: @SendTo("/topic/public") - MessageResponse
+SimpleBroker -> WebApp1: Broadcast MessageResponse (local clients)
+
+App1 -> RabbitHandler: publishToRabbitMQ("/topic/public", MessageResponse)
+RabbitHandler -> RabbitHandler: route -> chat.public / "public"
+RabbitHandler -> RabbitHandler: headers:\nsource-instance-id=instance-1\nstomp-destination=/topic/public
+RabbitHandler -> RabbitMQ: publish chat.public, key "public"
+
+note right of RabbitMQ
+  Topic exchange routes only to queues with a matching binding.
+  Instance 2 receives only if it has bound ws.instance-2.inbound to "public".
+end note
+
+RabbitMQ -> RabbitListener: Message on ws.instance-1.inbound
+RabbitListener -> RabbitListener: source-instance-id = instance-1\n(current = instance-1) -> skip
+note right of RabbitListener
+  Same-instance echo is skipped to avoid duplicate delivery.
+end note
+
+RabbitMQ -> RabbitListener2: Message on ws.instance-2.inbound
+RabbitListener2 -> RabbitListener2: source-instance-id = instance-1\n(current = instance-2) -> forward
+RabbitListener2 -> RabbitListener2: read stomp-destination header\n-> /topic/public
+RabbitListener2 -> RabbitListener2: Deserialize payload
+RabbitListener2 -> SimpleBroker2: convertAndSend("/topic/public", payload)
+SimpleBroker2 -> WebApp2: Broadcast MessageResponse (Instance 2 clients)
+
+== Send Group Message (Hybrid Approach) ==
+
+actor User2
+note over User1, User2
+  User1 is connected to Instance 1 and is a member of group 42.
+  User2 is connected to Instance 2 and subscribed to /topic/group.42.
+  Only group members can subscribe (validated by WebSocketSecurityChannelInterceptor).
+end note
+
+User1 -> WebApp1: Type and send group message
+WebApp1 -> App1: STOMP SEND to /app/group.send\n(groupId=42)
+App1 -> App1: @MessageMapping("/group.send")
+App1 -> App1: validateGroup() - user is member
+App1 -> PostgreSQL: saveGroupMessage(group, user, content)
+PostgreSQL -> App1: Saved message
+App1 -> App1: Create MessageResponse\ndestination = /topic/group.42
+
+note over App1
+  Group message is sent to BOTH:
+  1. SimpleBroker (local subscribers on this instance)
+  2. RabbitMQ via chat.groups (cross-instance)
+  Unlike public chat, group send uses convertAndSend() instead of @SendTo.
+end note
+
+App1 -> SimpleBroker: convertAndSend("/topic/group.42", MessageResponse)
+SimpleBroker -> WebApp1: Broadcast MessageResponse\n(local group subscribers on Instance 1)
+
+App1 -> RabbitHandler: publishToRabbitMQ("/topic/group.42", MessageResponse)
+RabbitHandler -> RabbitHandler: route -> chat.groups / "group.42"
+RabbitHandler -> RabbitHandler: headers:\nsource-instance-id=instance-1\nstomp-destination=/topic/group.42
+RabbitHandler -> RabbitMQ: publish chat.groups, key "group.42"
+
+note right of RabbitMQ
+  Topic exchange routes only to instances that have bound their inbound queue to "group.42".
+  Instance 3 with no local subscribers to group 42 receives nothing.
+end note
+
+RabbitMQ -> RabbitListener: Message on ws.instance-1.inbound
+RabbitListener -> RabbitListener: source-instance-id = instance-1\n(current = instance-1) -> skip
+
+RabbitMQ -> RabbitListener2: Message on ws.instance-2.inbound
+RabbitListener2 -> RabbitListener2: source-instance-id = instance-1\n(current = instance-2) -> forward
+RabbitListener2 -> RabbitListener2: read stomp-destination header\n-> /topic/group.42
+RabbitListener2 -> RabbitListener2: Deserialize payload
+RabbitListener2 -> SimpleBroker2: convertAndSend("/topic/group.42", payload)
+SimpleBroker2 -> WebApp2: Broadcast MessageResponse (Instance 2 clients)
+WebApp2 -> User2: Display group message
+
+== Async Group Summary Update (Sidebar) ==
+
+participant "GroupSummaryUpdate\nPublisher (@Async)" as SummaryPublisher
+
+note over App1, SummaryPublisher
+  After a non-system group message is saved, the controller triggers an async sidebar refresh for every group member (even if they are not currently viewing this group chat).
+end note
+
+App1 -> SummaryPublisher: publishToGroupMembers(groupId, update) [async]
+note right of SummaryPublisher
+  Runs on groupSummaryUpdateExecutor. Does not block the group send handler.
+end note
+
+loop For each group member username
+  SummaryPublisher -> SimpleBroker: convertAndSend("/topic/user.{username}.group-updates")
+  SummaryPublisher -> RabbitHandler: publishToRabbitMQ("/topic/user.{username}.group-updates", update)
+  RabbitHandler -> RabbitMQ: publish chat.user-updates,\nkey "user.{username}.group-updates"
+end
+
+== Key Points (Phase 1+2) ==
+
+note right of SimpleBroker
+  SimpleBroker handles:
+  - Local WebSocket connections
+  - Fast local message delivery
+  - Per-instance subscription registry
+end note
+
+note right of RabbitMQ
+  RabbitMQ handles:
+  - Cross-instance message distribution
+  - **3 fixed topic exchanges** (O(1) exchange count)
+  - **1 inbound queue per instance** (O(instances) queue count)
+  - **Dynamic bindings** per active destination
+  - Topic routing by routing key
+end note
+
+note right of RabbitHandler
+  CustomRabbitMQBrokerHandler:
+  - Declares fixed exchanges + instance queue at startup
+  - Tracks subscriptions by sessionId + subscriptionId
+  - Adds/removes bindings on first/last local subscribe/unsubscribe
+  - Publishes with routing key + stomp-destination header
+end note
+
+note right of RabbitListener
+  DynamicRabbitMQListener:
+  - **One consumer** per instance inbound queue
+  - Filters self-delivery (source-instance-id)
+  - Reads stomp-destination header to forward to correct STOMP topic
+  - Forwards to SimpleBroker for local delivery
+end note
+
+@enduml

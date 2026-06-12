@@ -35,6 +35,7 @@ public class RabbitMQSubscriptionInterceptor implements ChannelInterceptor {
             StompCommand command = accessor.getCommand();
             String sessionId = accessor.getSessionId();
             String destination = accessor.getDestination();
+            String subscriptionId = accessor.getSubscriptionId();
 
             // Skip null commands (heartbeats) and outbound MESSAGE commands
             if (command == null || StompCommand.MESSAGE.equals(command)) {
@@ -43,13 +44,21 @@ public class RabbitMQSubscriptionInterceptor implements ChannelInterceptor {
 
             // Handle SUBSCRIBE command
             if (StompCommand.SUBSCRIBE.equals(command) && destination != null) {
-                logger.debug("Intercepting SUBSCRIBE: sessionId={}, destination={}", sessionId, destination);
-                brokerHandler.handleSubscribe(destination);
+                logger.debug("Intercepting SUBSCRIBE: sessionId={}, subscriptionId={}, destination={}",
+                        sessionId, subscriptionId, destination);
+                brokerHandler.handleSubscribe(sessionId, subscriptionId, destination);
             }
-            // Handle UNSUBSCRIBE command
-            else if (StompCommand.UNSUBSCRIBE.equals(command) && destination != null) {
-                logger.debug("Intercepting UNSUBSCRIBE: sessionId={}, destination={}", sessionId, destination);
-                brokerHandler.handleUnsubscribe(destination);
+
+            // Handle UNSUBSCRIBE command: the destination always = null (see brokerHandler for more details).
+            else if (StompCommand.UNSUBSCRIBE.equals(command)) {
+                logger.debug("Intercepting UNSUBSCRIBE: sessionId={}, subscriptionId={}", sessionId, subscriptionId);
+                brokerHandler.handleUnsubscribe(sessionId, subscriptionId);
+            }
+
+            // Handle DISCONNECT command
+            else if (StompCommand.DISCONNECT.equals(command)) {
+                logger.debug("Intercepting DISCONNECT: sessionId={}", sessionId);
+                brokerHandler.handleDisconnect(sessionId);
             }
         }
 

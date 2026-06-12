@@ -14,6 +14,7 @@ import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 public class WebSocketEventListener {
@@ -41,6 +42,7 @@ public class WebSocketEventListener {
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId(); // websocket session id
+        rabbitMQBrokerHandler.handleDisconnect(sessionId);
 
         Map<String, Object> sessionAttributes = headerAccessor.getSessionAttributes();
         if (sessionAttributes != null) {
@@ -50,7 +52,7 @@ public class WebSocketEventListener {
                 // Create disconnect notification (not saved to DB)
                 Message disconnectMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " disconnected");
                 MessageResponse response = MessageResponse.fromMessage(disconnectMessage);
-                messagingTemplate.convertAndSend("/topic/public", response);
+                messagingTemplate.convertAndSend("/topic/public", Objects.requireNonNull((Object) response));
                 rabbitMQBrokerHandler.publishToRabbitMQ("/topic/public", response);
             }
         } else {

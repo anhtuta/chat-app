@@ -18,5 +18,6 @@
     ],
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "automatic",
+    "java.import.maven.enabled": true,
     "specstory.cloudSync.enabled": "never"
 }

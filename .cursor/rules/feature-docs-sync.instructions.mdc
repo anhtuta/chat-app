@@ -38,6 +38,8 @@ alwaysApply: true
 
   ## Recommendation (optional)
 
+  (Recommendation path)
+
   (First, go with which solution and why, then can go with which option if we need scalability later.)
 
   ## Chosen Solution
