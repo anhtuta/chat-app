@@ -231,7 +231,25 @@ The current active topology is:
 - **Message forwarding:** RabbitMQ messages carry the original STOMP destination in a `stomp-destination` header; `DynamicRabbitMQListener` forwards to the local SimpleBroker.
 - **Group-summary fan-out:** per-member publishes now run asynchronously through `GroupSummaryUpdatePublisher`, so a 100+ member group does not block the group chat send path while all sidebar updates are published.
 
-Scaling review:
+### RabbitMQ topology
+
+Exchanges:
+
+![](./photo/10_exchange-list.webp)
+
+![](./photo/10_exchange-bindings-1.webp)
+
+![](./photo/10_exchange-bindings-2.webp)
+
+Queues:
+
+![](./photo/10_queue-list.webp)
+
+![](./photo/10_queue-bindings-1.webp)
+
+![](./photo/10_queue-bindings-2.webp)
+
+### Scaling review
 
 - For 100k+ users: this **removes the RabbitMQ topology explosion** and is the right minimum step, but it is NOT the whole scaling story.
 - Next bottlenecks will likely be **sidebar update publish volume**, **WebSocket connection capacity per instance**, **broker throughput**, and **lack of batching/backpressure**.

@@ -214,3 +214,181 @@ An instance with no group-42 subscribers is blocked at **Filter 1** — and that
 - **Topic exchange + per-group routing keys** lets RabbitMQ do the first filter cheaply: only instances with local subscribers to that group receive the message.
 
 If you only ever run **2–3 instances**, the simple single-binding approach might be fine. At **many instances + many groups**, the topic + dynamic binding model is why Phase 1+2 was chosen.
+
+# RabbitMQ topology comparison
+
+(Explain current implementation in [10_RABBITMQ_TOPOLOGY_OPTIMIZATION.md](./10_RABBITMQ_TOPOLOGY_OPTIMIZATION.md))
+
+Here is a focused comparison for **our** problem: cross-instance WebSocket delivery with **one queue per instance** and **many destinations** (public, group.42, group.45, user sidebar updates, …).
+
+## What we need from RabbitMQ
+
+RabbitMQ is the **middle-man between instances**. It must answer:
+
+> “Which **backend instances** should receive this message for destination X?”
+
+It does **not** answer which user gets it — that is SimpleBroker’s job after the message arrives on the instance.
+
+We want:
+
+1. **Fixed topology** — few exchanges, one queue per instance (not thousands of objects)
+2. **Selective cross-instance delivery** — don’t send group 42 to instances with no group-42 subscribers
+3. **Many destinations** — public, every group, every user sidebar topic
+4. **Dynamic interest** — bindings appear when users subscribe, disappear when they leave
+
+## The three exchange types (for our case)
+
+### 1. Fanout exchange
+
+**Rule:** Ignores routing key. Every queue bound to the exchange gets **every** message.
+
+#### Pattern A — old design (what we had before Phase 1+2)
+
+```text
+One FanoutExchange per destination:
+  topic.group.42  →  ws.instance-1.topic.group.42
+                 →  ws.instance-2.topic.group.42
+  topic.group.45  →  ws.instance-1.topic.group.45
+                 →  ...
+```
+
+|          |                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Pros** | Simple routing (no key needed); correct targeting per destination                                                         |
+| **Cons** | **Exchange explosion** — one exchange per group/user/public; queue explosion — one queue per instance **per destination** |
+
+Good for correctness, bad for scale (your doc’s main pain point).
+
+#### Pattern B — single fanout per traffic class (Solution 2 in doc)
+
+```text
+chat.groups (fanout)
+  → ws.instance-1.inbound  (always bound)
+  → ws.instance-2.inbound  (always bound)
+  → ws.instance-N.inbound  (always bound)
+```
+
+Publish group 42 → **all instances** receive it → listener filters in Java.
+
+|          |                                                                                  |
+| -------- | -------------------------------------------------------------------------------- |
+| **Pros** | Simplest: 1 exchange, 1 queue/instance, 1 binding, no dynamic binding management |
+| **Cons** | **No instance-level filtering** — waste grows as `messages × all instances`      |
+
+Fine for 2–3 instances; poor for many instances + many groups.
+
+### 2. Direct exchange
+
+**Rule:** Routing key must **match exactly** (case-sensitive) the binding key.
+
+#### Pattern A — one direct exchange, one routing key
+
+```text
+chat.groups (direct)
+  all instances bind with same key e.g. "groups"
+```
+
+Same problem as fanout Pattern B: **every instance gets every group message**.
+
+#### Pattern B — one direct exchange, one routing key per destination
+
+```text
+chat.groups (direct)
+  ws.instance-2.inbound  bound with "group.42"
+  ws.instance-2.inbound  bound with "group.45"
+  ws.instance-3.inbound  bound with "group.99"
+```
+
+Publish with key `group.42` → only queues bound to **exactly** `group.42` receive it.
+
+|          |                                                                                                                 |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| **Pros** | Fixed topology; selective instance delivery; same idea as our current design                                    |
+| **Cons** | **Exact match only** — no wildcards; keys like `user.alice.group-updates` work but you lose pattern flexibility |
+
+For our exact keys (`group.42`, `public`, `user.alice.group-updates`), Direct **can work**.
+
+#### Pattern C — old “one direct/fanout exchange per destination”
+
+Same exchange explosion as fanout Pattern A — not viable at scale.
+
+### 3. Topic exchange ✅ (what we chose)
+
+**Rule:** Routing key is matched against binding key with **patterns** (`*` = one word, `#` = zero or more words). Exact keys like `group.42` also work (exact match is a valid topic match).
+
+```text
+chat.groups (topic)
+  ws.instance-2.inbound  bound with "group.42"
+  ws.instance-2.inbound  bound with "group.45"
+
+Publish routing key "group.42"
+  → only queues with matching binding receive message
+```
+
+|          |                                                                                                                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Pros** | Fixed topology (3 exchanges total); selective instance delivery; one queue per instance; supports exact keys today; room for patterns later (e.g. `group.*`, `user.*.group-updates`) |
+| **Cons** | Must manage dynamic bindings on subscribe/unsubscribe; slightly more complex than fanout envelope                                                                                    |
+
+## Side-by-side for our problem
+
+| Criterion                            | Fanout (per destination)       | Fanout (single envelope) | Direct (per-destination keys) | **Topic (chosen)**         |
+| ------------------------------------ | ------------------------------ | ------------------------ | ----------------------------- | -------------------------- |
+| Exchanges                            | O(destinations) ❌             | O(1) ✅                  | O(1) ✅                       | **O(1) ✅**                |
+| Queues                               | O(instances × destinations) ❌ | O(instances) ✅          | O(instances) ✅               | **O(instances) ✅**        |
+| Instance gets only relevant messages | ✅                             | ❌ (all instances)       | ✅                            | **✅**                     |
+| Dynamic subscribe/unsubscribe        | Per queue create/delete        | No bindings needed       | Per binding add/remove        | **Per binding add/remove** |
+| Routing key on publish               | Ignored                        | Ignored (filter in app)  | Exact match                   | **Pattern or exact match** |
+| Fits 100k+ / many instances          | ❌                             | ⚠️ small clusters only   | ✅                            | **✅**                     |
+
+## Concrete example: User1 sends to group 42
+
+**3 instances**, subscribers:
+
+- Instance 1: User1 (group 42)
+- Instance 2: User2 (group 42), User3 (group 45)
+- Instance 3: nobody viewing any group
+
+| Exchange type       | Who receives from RabbitMQ?                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Fanout (old)**    | Only instances with queue bound to `topic.group.42` — but needs **separate exchange + queues per group** |
+| **Fanout (single)** | Instance 1, 2, **and 3** — all deserialize, Instance 3 throws away                                       |
+| **Direct (keys)**   | Instance 1 + 2 only (have `group.42` binding)                                                            |
+| **Topic (keys)**    | Instance 1 + 2 only (same behavior for exact keys)                                                       |
+
+User2 vs User3 on Instance 2 is **unchanged** across all designs — that split happens in **SimpleBroker**, not in RabbitMQ.
+
+## Why Topic over Direct? (both are viable; Topic wins slightly)
+
+For **exact keys only**, Direct and Topic behave the same:
+
+```text
+publish "group.42"  +  binding "group.42"  →  match
+```
+
+We still picked **Topic** because:
+
+1. **Same benefits as Direct** for our current keys (`group.42`, `public`, `user.alice.group-updates`).
+2. **Future flexibility** — one exchange `chat.user-updates` with patterns if we ever need them; hierarchical keys fit naturally.
+3. **Industry habit** for “many channels, selective routing” (pub/sub with keys).
+4. **Direct doesn’t simplify** our design — we still need dynamic bindings per destination; Direct doesn’t remove that complexity.
+5. **Fanout doesn’t give selective routing** unless we go back to one exchange per destination (scale disaster) or accept all-instance fanout (cluster waste).
+
+## Why not Fanout? (summary)
+
+| Fanout variant                       | Why not for us                                                                                |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- |
+| **One fanout per destination** (old) | Solves routing, causes **exchange/queue explosion** — the problem Phase 1+2 fixed             |
+| **One fanout, all instances bound**  | Solves object count, **broadcasts every message to every instance** — bad with many instances |
+
+Fanout is the right tool when you truly want **every bound queue to get every message**. We don’t — we want **only instances that care about group 42**.
+
+## One-line decision
+
+```text
+Fanout  → "everyone bound gets everything"     → too many objects OR too much waste
+Direct  → "exact key match"                    → works, but no extra flexibility
+Topic   → "exact OR pattern match"             → works now, scales later → chosen
+```
+
+**Topic is chosen** because it gives **fixed topology + selective instance-level routing** for many groups/users, without recreating the old per-destination fanout exchange model and without broadcasting all group traffic to every backend instance.
