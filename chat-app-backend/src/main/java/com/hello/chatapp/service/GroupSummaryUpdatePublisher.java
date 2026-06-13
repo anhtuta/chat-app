@@ -33,6 +33,11 @@ public class GroupSummaryUpdatePublisher {
     public void publishToGroupMembers(Long groupId, GroupSummaryUpdate update) {
         try {
             List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
+            logger.debug(
+                    "[publishToGroupMembers] Pushed group summary update to {} users in groupId={}, message={}",
+                    usernames.size(),
+                    groupId,
+                    update);
             for (String username : usernames) {
                 String safeUsername = Objects.requireNonNull(username);
                 String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
@@ -42,13 +47,6 @@ public class GroupSummaryUpdatePublisher {
 
                 // Cross-instance delivery via RabbitMQ.
                 rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, update);
-
-                logger.debug(
-                        "[publishToGroupMembers] Pushed group summary update to user={}, groupId={}, destination={}, message={}",
-                        safeUsername,
-                        groupId,
-                        userScopedTopicDestination,
-                        update.toString());
             }
         } catch (Exception e) {
             logger.error("Failed to publish group summary update asynchronously: groupId={}", groupId, e);

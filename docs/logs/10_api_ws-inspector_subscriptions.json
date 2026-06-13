@@ -1,0 +1,1267 @@
+{
+  "totalDestinations": 32,
+  "destinations": [
+    {
+      "destination": "/topic/group.2",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "1"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "1"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.3",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "2"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "2"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.1",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "0"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "0"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.6",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "5"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "5"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.7",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "6"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "6"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.4",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "3"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "3"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.5",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "4"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "4"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.10",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "9"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "9"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.8",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "7"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "7"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.9",
+      "subscriberCount": 11,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "vegeta",
+          "sessionId": "vqljbz53",
+          "subscriptionId": "sub-0"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "8"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "8"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u5.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.12",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "11"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "11"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.11",
+      "subscriberCount": 11,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "anhtu",
+          "sessionId": "jd0ci2cx",
+          "subscriptionId": "sub-2"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "10"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "10"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.14",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "13"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "13"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.13",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "12"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "12"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.16",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "15"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "15"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.15",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "14"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "14"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.18",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "17"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "17"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.17",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "16"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "16"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.20",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "19"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "19"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/group.19",
+      "subscriberCount": 10,
+      "subscribers": [
+        {
+          "user": "u5",
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "18"
+        },
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "18"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.vegeta.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "vegeta",
+          "sessionId": "vqljbz53",
+          "subscriptionId": "sub-1"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u6.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u6",
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u7.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u7",
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u8.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u8",
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u9.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u9",
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u10.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u10",
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.anhtu.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "anhtu",
+          "sessionId": "jd0ci2cx",
+          "subscriptionId": "sub-1"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u1.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u1",
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u2.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u2",
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u3.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u3",
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptionId": "20"
+        }
+      ]
+    },
+    {
+      "destination": "/topic/user.u4.group-updates",
+      "subscriberCount": 1,
+      "subscribers": [
+        {
+          "user": "u4",
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptionId": "20"
+        }
+      ]
+    }
+  ]
+}

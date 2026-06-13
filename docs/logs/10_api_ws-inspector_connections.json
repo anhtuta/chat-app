@@ -1,0 +1,404 @@
+{
+  "totalUsers": 12,
+  "totalSubscriptions": 214,
+  "destinations": [
+    "/topic/group.4",
+    "/topic/group.15",
+    "/topic/group.5",
+    "/topic/group.16",
+    "/topic/group.2",
+    "/topic/group.13",
+    "/topic/user.u10.group-updates",
+    "/topic/group.3",
+    "/topic/group.14",
+    "/topic/user.u8.group-updates",
+    "/topic/group.19",
+    "/topic/group.1",
+    "/topic/group.17",
+    "/topic/group.18",
+    "/topic/group.8",
+    "/topic/user.u6.group-updates",
+    "/topic/group.9",
+    "/topic/group.6",
+    "/topic/group.7",
+    "/topic/user.anhtu.group-updates",
+    "/topic/user.u4.group-updates",
+    "/topic/group.20",
+    "/topic/user.u2.group-updates",
+    "/topic/user.vegeta.group-updates",
+    "/topic/user.u9.group-updates",
+    "/topic/user.u7.group-updates",
+    "/topic/user.u5.group-updates",
+    "/topic/user.u1.group-updates",
+    "/topic/group.11",
+    "/topic/group.12",
+    "/topic/user.u3.group-updates",
+    "/topic/group.10"
+  ],
+  "users": [
+    {
+      "user": "u5",
+      "sessions": [
+        {
+          "sessionId": "eab2224d74ee49099515ccea8fc4de8c",
+          "subscriptions": [
+            "/topic/group.2",
+            "/topic/group.3",
+            "/topic/group.1",
+            "/topic/group.6",
+            "/topic/group.7",
+            "/topic/group.4",
+            "/topic/group.5",
+            "/topic/group.10",
+            "/topic/group.8",
+            "/topic/group.9",
+            "/topic/user.u5.group-updates",
+            "/topic/group.12",
+            "/topic/group.11",
+            "/topic/group.14",
+            "/topic/group.13",
+            "/topic/group.16",
+            "/topic/group.15",
+            "/topic/group.18",
+            "/topic/group.17",
+            "/topic/group.20",
+            "/topic/group.19"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "vegeta",
+      "sessions": [
+        {
+          "sessionId": "vqljbz53",
+          "subscriptions": ["/topic/group.9", "/topic/user.vegeta.group-updates"],
+          "subscriptionCount": 2,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u6",
+      "sessions": [
+        {
+          "sessionId": "0cb066094f444747b183d7be2efd9e09",
+          "subscriptions": [
+            "/topic/group.3",
+            "/topic/group.2",
+            "/topic/group.5",
+            "/topic/group.4",
+            "/topic/group.7",
+            "/topic/group.6",
+            "/topic/group.9",
+            "/topic/group.8",
+            "/topic/group.1",
+            "/topic/group.13",
+            "/topic/group.14",
+            "/topic/group.15",
+            "/topic/group.16",
+            "/topic/group.17",
+            "/topic/group.18",
+            "/topic/group.19",
+            "/topic/group.20",
+            "/topic/group.10",
+            "/topic/user.u6.group-updates",
+            "/topic/group.11",
+            "/topic/group.12"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u7",
+      "sessions": [
+        {
+          "sessionId": "fb86df03e6ee49c082510978ab421a1b",
+          "subscriptions": [
+            "/topic/group.3",
+            "/topic/group.2",
+            "/topic/group.1",
+            "/topic/group.19",
+            "/topic/group.20",
+            "/topic/group.17",
+            "/topic/group.18",
+            "/topic/group.15",
+            "/topic/group.16",
+            "/topic/group.13",
+            "/topic/group.14",
+            "/topic/group.11",
+            "/topic/group.12",
+            "/topic/user.u7.group-updates",
+            "/topic/group.10",
+            "/topic/group.9",
+            "/topic/group.8",
+            "/topic/group.7",
+            "/topic/group.6",
+            "/topic/group.5",
+            "/topic/group.4"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u8",
+      "sessions": [
+        {
+          "sessionId": "d17b213dfdf84ba3b5852d270b772f6b",
+          "subscriptions": [
+            "/topic/group.6",
+            "/topic/group.5",
+            "/topic/group.4",
+            "/topic/group.3",
+            "/topic/group.10",
+            "/topic/group.9",
+            "/topic/group.8",
+            "/topic/group.7",
+            "/topic/group.13",
+            "/topic/group.12",
+            "/topic/group.11",
+            "/topic/user.u8.group-updates",
+            "/topic/group.17",
+            "/topic/group.16",
+            "/topic/group.15",
+            "/topic/group.14",
+            "/topic/group.20",
+            "/topic/group.19",
+            "/topic/group.18",
+            "/topic/group.2",
+            "/topic/group.1"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u9",
+      "sessions": [
+        {
+          "sessionId": "3ce06da76d1a4e80a4265d75df1131a0",
+          "subscriptions": [
+            "/topic/group.2",
+            "/topic/group.1",
+            "/topic/group.10",
+            "/topic/group.9",
+            "/topic/group.8",
+            "/topic/group.7",
+            "/topic/group.6",
+            "/topic/group.5",
+            "/topic/group.4",
+            "/topic/group.3",
+            "/topic/group.12",
+            "/topic/group.13",
+            "/topic/user.u9.group-updates",
+            "/topic/group.11",
+            "/topic/group.20",
+            "/topic/group.18",
+            "/topic/group.19",
+            "/topic/group.16",
+            "/topic/group.17",
+            "/topic/group.14",
+            "/topic/group.15"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u10",
+      "sessions": [
+        {
+          "sessionId": "360c7767be2047269648ffdf5ac8e1a3",
+          "subscriptions": [
+            "/topic/group.3",
+            "/topic/group.4",
+            "/topic/group.5",
+            "/topic/group.6",
+            "/topic/group.7",
+            "/topic/group.8",
+            "/topic/group.9",
+            "/topic/group.10",
+            "/topic/user.u10.group-updates",
+            "/topic/group.11",
+            "/topic/group.12",
+            "/topic/group.13",
+            "/topic/group.14",
+            "/topic/group.15",
+            "/topic/group.16",
+            "/topic/group.17",
+            "/topic/group.18",
+            "/topic/group.19",
+            "/topic/group.20",
+            "/topic/group.1",
+            "/topic/group.2"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "anhtu",
+      "sessions": [
+        {
+          "sessionId": "jd0ci2cx",
+          "subscriptions": ["/topic/user.anhtu.group-updates", "/topic/group.11"],
+          "subscriptionCount": 2,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u1",
+      "sessions": [
+        {
+          "sessionId": "2d25d91fb04c4d7ba70cfdf3549249d2",
+          "subscriptions": [
+            "/topic/user.u1.group-updates",
+            "/topic/group.10",
+            "/topic/group.8",
+            "/topic/group.9",
+            "/topic/group.17",
+            "/topic/group.18",
+            "/topic/group.15",
+            "/topic/group.16",
+            "/topic/group.13",
+            "/topic/group.14",
+            "/topic/group.11",
+            "/topic/group.12",
+            "/topic/group.19",
+            "/topic/group.20",
+            "/topic/group.6",
+            "/topic/group.7",
+            "/topic/group.4",
+            "/topic/group.5",
+            "/topic/group.2",
+            "/topic/group.3",
+            "/topic/group.1"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u2",
+      "sessions": [
+        {
+          "sessionId": "f7363d0e8ed648b9ae53a817851a6601",
+          "subscriptions": [
+            "/topic/group.11",
+            "/topic/user.u2.group-updates",
+            "/topic/group.13",
+            "/topic/group.12",
+            "/topic/group.9",
+            "/topic/group.10",
+            "/topic/group.7",
+            "/topic/group.8",
+            "/topic/group.5",
+            "/topic/group.6",
+            "/topic/group.3",
+            "/topic/group.4",
+            "/topic/group.1",
+            "/topic/group.2",
+            "/topic/group.19",
+            "/topic/group.18",
+            "/topic/group.20",
+            "/topic/group.15",
+            "/topic/group.14",
+            "/topic/group.17",
+            "/topic/group.16"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u3",
+      "sessions": [
+        {
+          "sessionId": "fb3b547452a44b049b841a960f461beb",
+          "subscriptions": [
+            "/topic/group.2",
+            "/topic/group.1",
+            "/topic/group.19",
+            "/topic/group.18",
+            "/topic/group.20",
+            "/topic/group.15",
+            "/topic/group.14",
+            "/topic/group.17",
+            "/topic/group.16",
+            "/topic/group.11",
+            "/topic/user.u3.group-updates",
+            "/topic/group.13",
+            "/topic/group.12",
+            "/topic/group.8",
+            "/topic/group.7",
+            "/topic/group.10",
+            "/topic/group.9",
+            "/topic/group.4",
+            "/topic/group.3",
+            "/topic/group.6",
+            "/topic/group.5"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    },
+    {
+      "user": "u4",
+      "sessions": [
+        {
+          "sessionId": "b4b6ae1fa4df4dbb8c00a56f14e1581b",
+          "subscriptions": [
+            "/topic/user.u4.group-updates",
+            "/topic/group.10",
+            "/topic/group.8",
+            "/topic/group.9",
+            "/topic/group.17",
+            "/topic/group.18",
+            "/topic/group.15",
+            "/topic/group.16",
+            "/topic/group.13",
+            "/topic/group.14",
+            "/topic/group.11",
+            "/topic/group.12",
+            "/topic/group.19",
+            "/topic/group.20",
+            "/topic/group.6",
+            "/topic/group.7",
+            "/topic/group.4",
+            "/topic/group.5",
+            "/topic/group.2",
+            "/topic/group.3",
+            "/topic/group.1"
+          ],
+          "subscriptionCount": 21,
+          "estimatedMemoryBytes": null
+        }
+      ],
+      "sessionsCount": 1
+    }
+  ]
+}
