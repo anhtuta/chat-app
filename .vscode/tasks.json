@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "backend: make debug.prepare",
+      "type": "shell",
+      "command": "make debug.prepare",
+      "options": {
+        "cwd": "${workspaceFolder}/chat-app-backend"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

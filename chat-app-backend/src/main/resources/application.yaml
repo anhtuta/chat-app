@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5434/chatdb
     username: postgres
-    password: ${POSTGRES_PASSWORD:-5555}
+    password: ${POSTGRES_PASSWORD:5555}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -20,12 +20,12 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: ${RABBITMQ_USER:-guest}
-    password: ${RABBITMQ_PASSWORD:-guest}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   data:
     redis:
       host: localhost
-      password: ${REDIS_PASSWORD:-redis123}
+      password: ${REDIS_PASSWORD:redis123}
       port: 6379
   session:
     redis:
@@ -65,7 +65,7 @@ server:
 
 logging:
   level:
-    com.hello.chatapp: DEBUG
+    com.hello.chatapp: ${LOG_LEVEL:DEBUG}
   file:
     path: ./docker/logs
     max-history: 30

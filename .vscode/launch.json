@@ -1,0 +1,32 @@
+{
+  "configurations": [
+    // Simple debug config: Cursor/VSCode use it when we click to Debug button in the main app
+    {
+      "type": "java",
+      "name": "ChatAppApplication",
+      "request": "launch",
+      "mainClass": "com.hello.chatapp.ChatAppApplication",
+      "projectName": "chat-app"
+    },
+    // // Run using .env
+    // {
+    //   "type": "java",
+    //   "name": "Debug Backend (make run.be)",
+    //   "request": "launch",
+    //   "mainClass": "com.hello.chatapp.ChatAppApplication",
+    //   "projectName": "chat-app",
+    //   "cwd": "${workspaceFolder}/chat-app-backend",
+    //   "envFile": "${workspaceFolder}/chat-app-backend/.env",
+    //   "preLaunchTask": "backend: make debug.prepare"
+    // },
+    // // Currently this one doesn't work
+    // {
+    //   "type": "java",
+    //   "name": "Attach: Chat Backend (port 5005)",
+    //   "request": "attach",
+    //   "hostName": "localhost",
+    //   "port": 5005,
+    //   "projectName": "chat-app"
+    // },
+  ]
+}

@@ -1,5 +1,5 @@
 .PHONY: help start start.all start.deps 
-.PHONY: build.fe run.local run.be run.fe run.bot
+.PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
 .PHONY: stop restart logs clean status check.env
 .PHONY: db.migrate db.info db.clean db.repair
 .PHONY: e2e.test
@@ -79,6 +79,13 @@ run.local: check.env build.fe
 run.be: check.env
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
+
+# Used by Cursor "Debug Backend (make run.be)" launch config.
+# Ensures .env exists and compiles with the same env vars as make run.be.
+debug.prepare: check.env
+	@echo "🔧 Preparing backend for IDE debug (load .env + compile)..."
+	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw -q -DskipTests compile
+	@echo "✅ Ready — start Debug Backend (make run.be) in Cursor"
 
 run.fe:
 	@echo "🚀 Running React dev server (Terminal 2)..."
