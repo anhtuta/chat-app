@@ -18,16 +18,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledFuture;
 
+/**
+ * Debounces group-summary fan-out per {@code groupId}.
+ * <p>
+ * Buffering is per-group, not global: each group keeps its own {@code latestUpdate} and flush
+ * timer. {@link #GROUP_SUMMARY_BUFFER_INTERVAL} is measured from the first update in a burst for
+ * that group only. Groups do not share flush timestamps — e.g. group1 may flush at 10:01:04 while
+ * group2 flushes at 10:01:05 if its first buffered update arrived at 10:01:02.
+ */
 @Service
 public class GroupSummaryUpdatePublisher {
 
     private static final Logger logger = LoggerFactory.getLogger(GroupSummaryUpdatePublisher.class);
-    private static final Duration GROUP_SUMMARY_DEBOUNCE_WINDOW = Duration.ofMillis(10000);
+    /** Debounce delay applied independently per group after the first update in a burst. */
+    private static final Duration GROUP_SUMMARY_BUFFER_INTERVAL = Duration.ofMillis(3000);
 
     private final GroupParticipantRepository groupParticipantRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
     private final TaskScheduler groupSummaryUpdateScheduler;
+    /** Per-group debounce state; map keys are not synchronized to a shared flush clock. */
     private final ConcurrentMap<Long, PendingGroupSummaryUpdate> pendingUpdates = new ConcurrentHashMap<>();
 
     public GroupSummaryUpdatePublisher(GroupParticipantRepository groupParticipantRepository,
@@ -40,6 +50,12 @@ public class GroupSummaryUpdatePublisher {
         this.groupSummaryUpdateScheduler = groupSummaryUpdateScheduler;
     }
 
+    /**
+     * Using pendingUpdate as the lock gives per-group serialization:
+     * - different groups run in parallel;
+     * - only the same groupId is serialized.
+     * (See spring.md for more details)
+     */
     public void publishToGroupMembers(Long groupId, GroupSummaryUpdate update) {
         Long safeGroupId = Objects.requireNonNull(groupId);
         GroupSummaryUpdate safeUpdate = Objects.requireNonNull(update);
@@ -50,22 +66,27 @@ public class GroupSummaryUpdatePublisher {
 
         synchronized (pendingUpdate) {
             pendingUpdate.latestUpdate = safeUpdate;
-
-            if (pendingUpdate.scheduledFlush != null) {
-                pendingUpdate.scheduledFlush.cancel(false);
-            }
-
-            Instant flushAt = Objects.requireNonNull(Instant.now().plus(GROUP_SUMMARY_DEBOUNCE_WINDOW));
-            pendingUpdate.scheduledFlush = groupSummaryUpdateScheduler.schedule(
-                    () -> flushGroupMembers(safeGroupId, pendingUpdate),
-                    flushAt);
+            scheduleFlushIfAbsent(safeGroupId, pendingUpdate);
         }
 
-        logger.debug(
-                "[publishToGroupMembers] Buffered group summary update for groupId={} with debounce={}ms, message={}",
+        logger.trace(
+                "[publishToGroupMembers] Buffered group summary update for groupId={} with bufferInterval={}ms, message={}",
                 safeGroupId,
-                GROUP_SUMMARY_DEBOUNCE_WINDOW.toMillis(),
+                GROUP_SUMMARY_BUFFER_INTERVAL.toMillis(),
                 safeUpdate);
+    }
+
+    /** Schedules one flush for this group; further updates before flush only coalesce into {@code latestUpdate}. */
+    private void scheduleFlushIfAbsent(Long groupId, PendingGroupSummaryUpdate pendingUpdate) {
+        if (pendingUpdate.scheduledFlush != null || pendingUpdate.latestUpdate == null) {
+            return;
+        }
+
+        // Relative to this group's first update in the current burst, not a global tick.
+        Instant flushAt = Objects.requireNonNull(Instant.now().plus(GROUP_SUMMARY_BUFFER_INTERVAL));
+        pendingUpdate.scheduledFlush = groupSummaryUpdateScheduler.schedule(
+                () -> flushGroupMembers(groupId, pendingUpdate),
+                flushAt);
     }
 
     private void flushGroupMembers(Long groupId, PendingGroupSummaryUpdate pendingUpdate) {
@@ -84,7 +105,7 @@ public class GroupSummaryUpdatePublisher {
         try {
             List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
             logger.debug(
-                    "[flushGroupMembers] Flushed debounced group summary update to {} users in groupId={}, message={}",
+                    "[flushGroupMembers] Flushed buffered group summary update to {} users in groupId={}, message={}",
                     usernames.size(),
                     groupId,
                     updateToPublish);
@@ -99,11 +120,14 @@ public class GroupSummaryUpdatePublisher {
                 rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, updateToPublish);
             }
         } catch (Exception e) {
-            logger.error("Failed to flush debounced group summary update: groupId={}", groupId, e);
+            logger.error("Failed to flush buffered group summary update: groupId={}", groupId, e);
         } finally {
             synchronized (pendingUpdate) {
-                if (pendingUpdate.scheduledFlush == null
-                        && Objects.equals(pendingUpdate.latestUpdate, updateToPublish)) {
+                boolean hasUnpublishedUpdate = pendingUpdate.latestUpdate != null
+                        && !Objects.equals(pendingUpdate.latestUpdate, updateToPublish);
+                if (hasUnpublishedUpdate) {
+                    scheduleFlushIfAbsent(groupId, pendingUpdate);
+                } else if (pendingUpdate.scheduledFlush == null) {
                     pendingUpdate.latestUpdate = null;
                     pendingUpdates.remove(groupId, pendingUpdate);
                 }

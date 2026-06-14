@@ -367,3 +367,58 @@ Suppose `window_time` = 1.5 seconds.
 
 - **Throttling / Buffering:** _"I don't care how much you talk, I will take a snapshot and update the sidebar exactly every 1.5 seconds."_ It guarantees a steady, predictable heartbeat of updates.
 - **Debouncing:** _"I will wait until you **stop** talking for 1.5 seconds before I update the sidebar."_ Every time a new message arrives, the 1.5-second timer **resets**.
+
+## Explain why we lock `latestUpdate` in `GroupSummaryUpdatePublisher.java`
+
+### Why `synchronized (pendingUpdate)`?
+
+`ConcurrentHashMap` only protects **map** operations (`computeIfAbsent`, `remove`). Each `PendingGroupSummaryUpdate` holds mutable, non-volatile fields:
+
+```java
+private static final class PendingGroupSummaryUpdate {
+   private GroupSummaryUpdate latestUpdate;
+   private ScheduledFuture<?> scheduledFlush;
+}
+```
+
+Those fields are touched from **different threads**:
+
+| Thread                | What it does                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| Request/async threads | `publishToGroupMembers` — writes `latestUpdate`, may schedule a flush               |
+| Scheduler thread      | `flushGroupMembers` — reads `latestUpdate`, clears `scheduledFlush`, may reschedule |
+
+Without synchronization you get:
+
+1. **Visibility** — writes on one thread might not be seen on another (no `volatile`, no happens-before).
+2. **Lost or torn updates** — two publishes for the same group can interleave on `latestUpdate`.
+3. **Double scheduling** — two threads can both see `scheduledFlush == null` in `scheduleFlushIfAbsent` and schedule two flushes for the same buffer window.
+4. **Inconsistent flush/cleanup** — e.g. flush clears `scheduledFlush` while another thread is still scheduling, or cleanup removes the entry while a new update is being buffered.
+
+Using `pendingUpdate` as the lock gives **per-group** serialization:
+
+- different groups run in parallel
+- only the same `groupId` is serialized
+
+**Note:** `groupSummaryUpdateScheduler.schedule(...)` runs the **callback** later on another thread. Only the assignment to `scheduledFlush` happens under the lock. The actual `flushGroupMembers` work runs outside the lock (by design — you don’t want to hold the lock during DB/RabbitMQ I/O), and re-enters the lock only for the short read/cleanup sections at the start and in `finally`.
+
+```mermaid
+sequenceDiagram
+   participant Pub as publishToGroupMembers
+   participant Lock as pendingUpdate lock
+   participant Sched as TaskScheduler
+   participant Flush as flushGroupMembers
+
+   Pub->>Lock: acquire
+   Pub->>Pub: latestUpdate = update
+   Pub->>Pub: scheduleFlushIfAbsent (still holding lock)
+   Pub->>Sched: schedule(callback, +3s)
+   Pub->>Lock: release
+   Note over Sched: 3s later
+   Sched->>Flush: run callback
+   Flush->>Lock: acquire (read latest, clear scheduledFlush)
+   Flush->>Lock: release
+   Flush->>Flush: DB + WebSocket + RabbitMQ (no lock)
+   Flush->>Lock: acquire (reschedule or cleanup)
+   Flush->>Lock: release
+```

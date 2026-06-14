@@ -10,7 +10,7 @@ public class AsyncConfig {
     @Bean(name = "groupSummaryUpdateScheduler")
     public ThreadPoolTaskScheduler groupSummaryUpdateScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setThreadNamePrefix("group-summary-debounce-");
+        scheduler.setThreadNamePrefix("group-summary-buffer-");
         scheduler.setPoolSize(4);
         scheduler.initialize();
         return scheduler;

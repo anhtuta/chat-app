@@ -108,7 +108,7 @@ This **does** remove the application fan-out issue on one instance.
 
 For a **1,000-member group**, per-group topic is clearly better on the publisher side. The cost moves to **each member subscribing** to that group's summary topic (only while connected / while group is in their list).
 
-**Recommendation for single instance:** **Yes** — prefer **one publish to `/topic/group.{groupId}.summary`** over a per-member loop. Debounce (below) is still useful for busy chats but is no longer required just to avoid melting the publisher.
+**Recommendation for single instance:** **Yes** — prefer **one publish to `/topic/group.{groupId}.summary`** over a per-member loop. Buffering (below) is still useful for busy chats but is no longer required just to avoid melting the publisher.
 
 ## Add RabbitMQ Back (multi-instance)
 
@@ -154,28 +154,30 @@ Frontend: on load (after `GET /api/groups`), subscribe to `/topic/group.{id}.sum
 
 Solutions below are ordered from **simplest** to **largest architectural change**. Numbers are reused from the first draft where they still apply; single-instance analysis above should be read first.
 
-### 1. Debounce summary updates per group
+### 1. Buffer summary updates per group (fixed-interval throttle)
 
 **How it works**
 
 - Keep the current per-user destination contract: `/topic/user.{username}.group-updates`.
-- Instead of publishing immediately for every saved group message, buffer by `groupId` for a short window (for example 200ms to 1000ms).
-- During the window, keep only the **latest** `GroupSummaryUpdate`.
+- Instead of publishing immediately for every saved group message, buffer by `groupId` on a **fixed interval** (for example 200ms to 1000ms).
+- During each interval, keep only the **latest** `GroupSummaryUpdate`.
 - When the timer fires, publish one round of per-member updates for the latest state.
+- If new messages arrive during or after a flush, schedule the **next** flush without resetting the in-flight timer (unlike debounce).
 
 In short:
 
-- Buffer by `groupId` for a short window (e.g. 200–1000ms); keep only the latest `GroupSummaryUpdate`; then publish once (per chosen destination model).
+- Buffer by `groupId` on a fixed clock; keep only the latest `GroupSummaryUpdate`; flush at most once per interval while activity continues.
 
 **Pros**
 
 - Smallest change; works with current per-user topics or future per-group topics.
 - Cuts burst traffic sharply.
+- Sidebar stays fresh during sustained chat (bounded staleness ≈ one interval), not only after a pause.
 
 **Cons**
 
 - With **per-user loop**, still **O(members)** per flush.
-- With **per-group topic**, debounce reduces WebSocket/RabbitMQ message rate but publisher was already O(1).
+- With **per-group topic**, buffering reduces WebSocket/RabbitMQ message rate but publisher was already O(1).
 
 **Recommendation:** **Yes** as a complement, especially for busy chats. **Not sufficient alone** if still using per-member loop.
 
@@ -185,7 +187,7 @@ In short:
 
 - **STOMP destination:** `/topic/group.{groupId}.summary`
 - **RabbitMQ:** exchange `chat.groups` / routing key `group.{groupId}.summary`
-- **Publish:** once per summary update (after debounce optional).
+- **Publish:** once per summary update (after buffering optional).
 - **Subscribe:** each client subscribes to summary topics for groups they belong to; `WebSocketSecurityChannelInterceptor` validates membership.
 - **Instance binding:** add `group.{id}.summary` binding when the first local user subscribes; remove when last unsubscribes.
 - Each backend instance tracks whether it currently has **any connected user who is a member of that group**.
@@ -206,7 +208,7 @@ In short:
 - Frontend change: **M subscriptions** per user (M = groups in sidebar), not 1 personal stream.
 - Must secure summary topics same as group chat topics.
 - Unread/badge logic stays in frontend (already today).
-- More complex than simple debounce.
+- More complex than simple buffering.
 
 **Recommendation for our problem:** **Yes** — best balance after single-instance analysis. Supersedes “per-user topic + per-instance local fan-out to personal destinations” (old Solution 2), which kept O(members) work on the publishing instance.
 
@@ -238,11 +240,11 @@ Là sao?
 
 **Recommendation:** **Maybe** as a migration step only; **No** as end state for large groups.
 
-### 4. Keep per-user topics + debounce only
+### 4. Keep per-user topics + buffer only
 
 **How it works**
 
-- No destination model change; debounce the existing loop.
+- No destination model change; buffer the existing loop on a fixed interval per `groupId`.
 
 **Pros**
 
@@ -390,13 +392,14 @@ large_group_size × message_rate
 
 Example: 1,000-member group × 10 msg/s = 10,000 publishes/s. That is where Option 2 wins.
 
-### Option 1 + debounce: yes, I think that is a good fit for your case
+### Option 1 + buffering: yes, I think that is a good fit for your case
 
-For mostly small groups, **Option 1 + debounce** is a sensible, pragmatic choice.
+For mostly small groups, **Option 1 + buffering** is a sensible, pragmatic choice.
 
-Debounce helps with:
+Buffering helps with:
 
 - burst traffic in active chats (“ok”, “yeah”, “lol” in 300ms)
+- sustained chat where the sidebar should refresh on a predictable cadence, not only after a pause
 - reducing RabbitMQ + `convertAndSend` spikes
 - keeping one simple client subscription model
 
@@ -410,15 +413,15 @@ Move to per-group summary if you later see:
 - publisher/RabbitMQ metrics climbing with group size
 - need to support community/server-style chats
 
-Until then, Option 1 + debounce is a good **low-risk** path.
+Until then, Option 1 + buffering is a good **low-risk** path.
 
 ### Practical recommendation
 
-1. **Short/medium term:** keep per-user summary + add debounce per `groupId`.
+1. **Short/medium term:** keep per-user summary + add fixed-interval buffering per `groupId`.
 2. **Add metrics:** max/avg group size, publishes per summary flush, flush rate.
 3. **Revisit Option 2** only when large-group traffic shows up in metrics.
 
-So yes — for “many small groups, few giants,” **Option 1 + debounce is a suitable solution**, and the large refactor to per-group subscriptions is probably not worth it yet.
+So yes — for “many small groups, few giants,” **Option 1 + buffering is a suitable solution**, and the large refactor to per-group subscriptions is probably not worth it yet.
 
 ## Recommendation
 
@@ -427,7 +430,7 @@ Think in two layers:
 1. **Single instance:** remove application fan-out → **one publish to `/topic/group.{groupId}.summary`** (Solution **2**).
 2. **Multi-instance:** same single publish → **one RabbitMQ message** per summary update on `chat.groups` / `group.{groupId}.summary`, then **one local `convertAndSend` per instance** (not per member).
 
-**Short term (optional patch):** Solution **4** (debounce + current per-user loop) if we need relief before frontend subscription changes.
+**Short term (optional patch):** Solution **4** (buffer + current per-user loop) if we need relief before frontend subscription changes.
 
 **Medium term (recommended):** Solution **2** (per-group summary topic end-to-end).
 
@@ -440,21 +443,28 @@ Think in two layers:
 Phase 1 is now implemented:
 
 1. Keep the current personal summary topic contract: `/topic/user.{username}.group-updates`.
-2. Add **debounce per `groupId`** inside `GroupSummaryUpdatePublisher`.
-3. During the debounce window, keep only the latest `GroupSummaryUpdate` for that group.
+2. Add **fixed-interval buffering per `groupId`** inside `GroupSummaryUpdatePublisher`.
+3. During each buffer interval, keep only the latest `GroupSummaryUpdate` for that group.
 4. When the timer fires, run one per-member flush for the latest state.
+5. If new messages arrive during or after a flush, schedule the next flush without resetting the in-flight timer.
 
-Current debounce behavior:
+Current buffering behavior:
 
-- Window: **300ms**
+- Interval: **300ms** (fixed clock per group, not reset on every message)
 - Scope: **per `groupId`**
 - Payload policy: **latest update wins**
-- Delivery contract: unchanged personal topic fan-out after the debounce flush
+- Delivery contract: unchanged personal topic fan-out after each buffer flush
+
+Why buffering instead of debounce:
+
+- Sidebar is a live summary: users expect it to stay reasonably fresh during sustained chat, not only after a pause.
+- Debounce resets the timer on every message, so continuous traffic can delay sidebar updates indefinitely.
+- Buffering caps staleness at roughly one interval while still coalescing many messages into one flush.
 
 Why we chose this first:
 
 - It is the smallest backend-only change.
-- It reduces bursty fan-out spikes for active groups without a frontend subscription migration.
+- It reduces fan-out spikes for active groups without a frontend subscription migration.
 - It fits the expected near-term traffic shape better: many small groups, few large ones.
 
 What did **not** change yet:
@@ -481,7 +491,7 @@ Next implementation path:
 - `publishToGroupMembers()` call rate and loop size
 - RabbitMQ publishes to `chat.user-updates` vs `chat.groups` (summary keys)
 - Subscriptions per client (group summary topics)
-- Debounce flush rate and coalescing ratio
+- Buffer flush rate and coalescing ratio
 
 ## Future Higher-Scale Path
 
@@ -489,7 +499,7 @@ Next implementation path:
 | ----------------------------------- | --------------------------------------------------------- |
 | Single instance, any group size     | **One publish** to `/topic/group.{id}.summary`            |
 | Multi-instance, small groups        | Per-group summary topic + one RabbitMQ publish per update |
-| Large groups (1000+), bursty chat   | Above + **debounce** per group                            |
+| Large groups (1000+), bursty chat   | Above + **buffering** per group                           |
 | Many instances, sustained high rate | Dedicated summary worker (Solution 7)                     |
 | Very large product                  | CQRS read model (Solution 8)                              |
 
@@ -499,4 +509,4 @@ Next implementation path:
 | ---------------------------- | ----------------------------- | ------------------------------------ | ------------------------- |
 | **Current (per-user loop)**  | O(members)                    | O(members)                           | **1**                     |
 | **Per-group summary topic**  | **O(1)**                      | **O(instances with online members)** | O(groups user belongs to) |
-| **Per-user loop + debounce** | O(members) / burst factor     | same / burst factor                  | **1**                     |
+| **Per-user loop + buffering** | O(members) / interval factor  | same / interval factor               | **1**                     |
