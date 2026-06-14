@@ -360,3 +360,10 @@ for (String username : usernames) {
    // access username directly without loading User entities...
 }
 ```
+
+## The difference between Throttle/Buffering vs. Debounce
+
+Suppose `window_time` = 1.5 seconds.
+
+- **Throttling / Buffering:** _"I don't care how much you talk, I will take a snapshot and update the sidebar exactly every 1.5 seconds."_ It guarantees a steady, predictable heartbeat of updates.
+- **Debouncing:** _"I will wait until you **stop** talking for 1.5 seconds before I update the sidebar."_ Every time a new message arrives, the 1.5-second timer **resets**.

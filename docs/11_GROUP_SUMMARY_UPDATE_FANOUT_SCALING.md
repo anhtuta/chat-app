@@ -437,27 +437,51 @@ Think in two layers:
 
 ## Chosen Solution
 
-**Not implemented yet.** This document is analysis only.
+Phase 1 is now implemented:
 
-Proposed implementation path:
+1. Keep the current personal summary topic contract: `/topic/user.{username}.group-updates`.
+2. Add **debounce per `groupId`** inside `GroupSummaryUpdatePublisher`.
+3. During the debounce window, keep only the latest `GroupSummaryUpdate` for that group.
+4. When the timer fires, run one per-member flush for the latest state.
 
-1. Phase 1: Add **debounce per `groupId`** in `GroupSummaryUpdatePublisher`.
-2. Phase 2: Move to **per-group RabbitMQ summary publish + per-instance local fan-out**.
-3. Phase 3 (optional): Introduce a **dedicated summary worker / queue** if update volume is still high.
-4. Phase 4 (optional): Revisit **CQRS / read model** if sidebar semantics outgrow event-push delivery.
+Current debounce behavior:
+
+- Window: **300ms**
+- Scope: **per `groupId`**
+- Payload policy: **latest update wins**
+- Delivery contract: unchanged personal topic fan-out after the debounce flush
+
+Why we chose this first:
+
+- It is the smallest backend-only change.
+- It reduces bursty fan-out spikes for active groups without a frontend subscription migration.
+- It fits the expected near-term traffic shape better: many small groups, few large ones.
+
+What did **not** change yet:
+
+- No move to `/topic/group.{groupId}.summary`
+- No frontend subscription model change
+- No removal of the per-member loop during each flush
+
+Next implementation path:
+
+1. Phase 2: Move to **per-group RabbitMQ summary publish + per-instance local fan-out** if metrics show large-group pressure.
+2. Phase 3 (optional): Introduce a **dedicated summary worker / queue** if update volume is still high.
+3. Phase 4 (optional): Revisit **CQRS / read model** if sidebar semantics outgrow event-push delivery.
 
 ### Migration / backward compatibility
 
-- Run both personal and per-group summary streams briefly if needed.
-- Ensure `validateSubscription` allows `/topic/group.{id}.summary` only for members.
+- No client/API contract change in Phase 1; existing personal summary subscribers continue to work unchanged.
+- If we later move to per-group summary topics, we can run both personal and per-group streams briefly if needed.
+- Ensure `validateSubscription` allows `/topic/group.{id}.summary` only for members before any Phase 2 rollout.
 
-### Metrics to add before implementation
+### Metrics to validate after Phase 1
 
 - Group member count distribution
 - `publishToGroupMembers()` call rate and loop size
 - RabbitMQ publishes to `chat.user-updates` vs `chat.groups` (summary keys)
 - Subscriptions per client (group summary topics)
-- Debounce flush rate (if used)
+- Debounce flush rate and coalescing ratio
 
 ## Future Higher-Scale Path
 

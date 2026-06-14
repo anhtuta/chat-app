@@ -110,8 +110,8 @@ public class WebSocketController {
         logger.debug("[sendGroupMessage] Publishing to RabbitMQ for cross-instance distribution: destination={}", destination);
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
 
-        // Fan-out group summary update to every member's personal queue so their
-        // sidebar refreshes without polling, even when they are not in this group chat.
+        // Debounce group-summary updates per group before fan-out so bursty chats
+        // do not immediately trigger one personal-topic publish per saved message.
         if (savedMessage != null) {
             pushGroupSummaryUpdate(group, savedMessage);
         }
@@ -124,8 +124,8 @@ public class WebSocketController {
     }
 
     /**
-     * Pushes a lightweight group-summary update to every member of the group
-     * via their personal WebSocket topic.
+     * Pushes a lightweight group-summary update through the debounced publisher,
+     * which later fans out to every member via their personal WebSocket topic.
      * The frontend uses this to refresh the sidebar in real time.
      */
     private void pushGroupSummaryUpdate(Group group, Message savedMessage) {
