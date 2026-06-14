@@ -110,7 +110,7 @@ public class DynamicRabbitMQListener {
         container.start();
         activeListeners.put(queueName, container);
 
-        logger.debug("Started listener for queue: {}", queueName);
+        logger.info("Started listener for queue: {}", queueName);
     }
 
     /**
@@ -124,7 +124,7 @@ public class DynamicRabbitMQListener {
             // Stop the consumer before deleting the queue, otherwise the container may throw errors
             // trying to consume from a non-existent queue
             container.stop();
-            logger.debug("Stopped listener for queue: {}", queueName);
+            logger.info("Stopped listener for queue: {}", queueName);
         }
     }
 

@@ -185,7 +185,7 @@ public class CustomRabbitMQBrokerHandler {
             }
             if (instanceQueueName != null) {
                 amqpAdmin.deleteQueue(instanceQueueName);
-                logger.debug("Deleted instance queue: {}", instanceQueueName);
+                logger.info("Deleted instance queue: {}", instanceQueueName);
             }
         } catch (Exception e) {
             logger.warn("Error deleting instance queue {}: {}", instanceQueueName, e.getMessage());
@@ -254,7 +254,7 @@ public class CustomRabbitMQBrokerHandler {
 
     private String createInstanceQueueName(String instanceId) {
         String queueName = "ws." + instanceId + ".inbound";
-        logger.debug("[createInstanceQueueName] Creating queue name: queueName={}", queueName);
+        logger.info("[createInstanceQueueName] Creating queue name: queueName={}", queueName);
         return queueName;
     }
 
