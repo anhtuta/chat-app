@@ -38,11 +38,20 @@ alwaysApply: true
 
   ## Recommendation (optional)
 
-  (Recommendation path)
+  (Just a recommendation path, do NOT implement anything in this section)
 
-  (First, go with which solution and why, then can go with which option if we need scalability later.)
+  Recommendation path:
 
-  ## Chosen Solution
+  1. Phase 1: Implement the solution
+  2. Phase 2: Implement the solution
+
+  ...
+
+  N. Phase N: Implement the solution
+
+  ## Chosen Solution + Implementation
+
+  (Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section.)
 
   ## Future Higher-Scale Path
   ```
