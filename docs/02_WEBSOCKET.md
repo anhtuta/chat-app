@@ -273,3 +273,31 @@ While the raw registry entries take up less than 250 MB, running 1 million subsc
   > _Fix:_ Keep your `maxTextMessageBufferSize` and `maxBinaryMessageBufferSize` restricted to standard sizes like 8KB or 16KB.
 
 - **The Slow Consumer Accumulation:** When a group receives a massive burst of chat traffic, Spring places those messages into an **in-memory outbound queue** for each subscriber. If 50 users are on slow or unstable mobile networks, Spring will continue buffering messages in the JVM heap waiting for those clients to read them. If left unchecked, these unconsumed message payloads can quickly consume gigabytes of RAM and trigger an Out of Memory (OOM) crash.
+
+# Can we only have one type of subscription, per-user channel?
+
+Ở phần trên đã thảo luận tại sao ko nên dùng duy nhất 1 subscription `/topic/group.id` (per-group channel) (mỗi user phải subscribe tới tất cả các group mà họ tham gia).
+
+Phần này giải thích tại sao ko nên dùng duy nhất 1 subscription `/topic/user.id.group-updates` (per-user channel). Nếu dùng cách này thì mỗi user chỉ cần subscribe tới 1 channel duy nhất.
+
+Channel ở đây có thể hiểu như là destination/subscription, tức là:
+
+- 1 user sẽ có 1 websocket connection
+- trong 1 websocket connection đó, user có thể subscribe tới nhiều channel/description
+
+T vừa đọc lại bài viết này: https://centrifugal.dev/docs/tutorial/centrifugo#subscribing-on-personal-channel, thì t tóm tắt nó như sau:
+
+- Solution "subscribe to all room channels" chỉ có thể áp dụng cho trường hợp người dùng có ít nhóm
+- Nếu 1 người có quá nhiều nhóm -> subscribe tới hàng ngàn channel 1 lúc ngay khi vào app -> "make the UI less efficient"
+- Do đó, họ đã nghĩ tới cách là chỉ dùng 1 channel duy nhất: websocket của 1 user chỉ subscribe tới 1 channel duy nhất, họ đặt tên là `'personal:' + userInfo.id` (tương tự với `/topic/user.id.group-updates` của mình)
+- Đọc tiếp tới đoạn "Publish real-time messages" ngay dưới đó, họ nói flow 1 tin nhắn khi đc gửi: "If user1 sends a messages to chat room, we need to find all current members of this room and publish real-time message to each personal channel"
+- "If three users with IDs 1, 2 and 3 are members of some room – then we need to publish message to three channels `personal:1`, `personal:2` and `personal:3`."
+- Theo như t hiểu: mỗi khi user1 gửi tin nhắn, BE sẽ phải query trong DB để lấy danh sách các member có trong group đó. Giả sử group có 1000 người, nhiều người nhắn tin liên tục, thì việc này sẽ rất chậm. Chưa kể, các group khác cũng sẽ làm tương tự.
+- Nếu như người đó có 100 group, và cả 100 group đó đều đang có người nhắn tin, thì BE sẽ phải query tới DB để get list member liên tục --> bị overhead
+
+Do đó cách dùng duy nhất 1 channel như này là ko tối ưu.
+
+Tốt nhất là phải dùng 2 channel/destination:
+
+- 1 cái dành cho group mà user đang open (per-group channel): channel này sẽ nhận đc tin nhắn tức thì khi có ai đó gửi tin
+- 1 cái dành cho summary của các group còn lại (per-user channel): channel này sẽ nhận đc tin nhắn chậm hơn để tối ưu. Vì user có thể ko cần nhận đc update mới nhất của tất cả các group họ tham gia, như vậy quá là loạn!!!
