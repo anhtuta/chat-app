@@ -30,12 +30,14 @@ import java.util.concurrent.ScheduledFuture;
 public class GroupSummaryUpdatePublisher {
 
     private static final Logger logger = LoggerFactory.getLogger(GroupSummaryUpdatePublisher.class);
+    // todo is 3s enough? should we cache the member list in redis?
     /** Debounce delay applied independently per group after the first update in a burst. */
     private static final Duration GROUP_SUMMARY_BUFFER_INTERVAL = Duration.ofMillis(3000);
 
     private final GroupParticipantRepository groupParticipantRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final GroupUpdatesSubscriptionRegistry groupUpdatesSubscriptionRegistry;
     private final TaskScheduler groupSummaryUpdateScheduler;
     /** Per-group debounce state; map keys are not synchronized to a shared flush clock. */
     private final ConcurrentMap<Long, PendingGroupSummaryUpdate> pendingUpdates = new ConcurrentHashMap<>();
@@ -43,10 +45,12 @@ public class GroupSummaryUpdatePublisher {
     public GroupSummaryUpdatePublisher(GroupParticipantRepository groupParticipantRepository,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            GroupUpdatesSubscriptionRegistry groupUpdatesSubscriptionRegistry,
             @Qualifier("groupSummaryUpdateScheduler") TaskScheduler groupSummaryUpdateScheduler) {
         this.groupParticipantRepository = groupParticipantRepository;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.groupUpdatesSubscriptionRegistry = groupUpdatesSubscriptionRegistry;
         this.groupSummaryUpdateScheduler = groupSummaryUpdateScheduler;
     }
 
@@ -104,21 +108,33 @@ public class GroupSummaryUpdatePublisher {
 
         try {
             List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
-            logger.debug(
-                    "[flushGroupMembers] Flushed buffered group summary update to {} users in groupId={}, message={}",
-                    usernames.size(),
-                    groupId,
-                    updateToPublish);
+            int deliveredCount = 0;
             for (String username : usernames) {
                 String safeUsername = Objects.requireNonNull(username);
+
+                // Check if the user is online on any instance
+                if (!groupUpdatesSubscriptionRegistry.hasClusterSubscriber(safeUsername)) {
+                    continue;
+                }
+
                 String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
+                deliveredCount++;
 
                 // Local delivery on current instance.
-                messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
+                // Check if the user is online on this instance (current instance that runs this code)
+                if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
+                    messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
+                }
 
                 // Cross-instance delivery via RabbitMQ.
                 rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, updateToPublish);
             }
+            logger.debug(
+                    "[flushGroupMembers] Flushed buffered group summary update to {}/{} subscribed users in groupId={}, message={}",
+                    deliveredCount,
+                    usernames.size(),
+                    groupId,
+                    updateToPublish);
         } catch (Exception e) {
             logger.error("Failed to flush buffered group summary update: groupId={}", groupId, e);
         } finally {

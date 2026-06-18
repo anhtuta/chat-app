@@ -301,3 +301,78 @@ Tốt nhất là phải dùng 2 channel/destination:
 
 - 1 cái dành cho group mà user đang open (per-group channel): channel này sẽ nhận đc tin nhắn tức thì khi có ai đó gửi tin
 - 1 cái dành cho summary của các group còn lại (per-user channel): channel này sẽ nhận đc tin nhắn chậm hơn để tối ưu. Vì user có thể ko cần nhận đc update mới nhất của tất cả các group họ tham gia, như vậy quá là loạn!!!
+
+# How to check if a user is online? Why don't we use `SimpUserRegistry`?
+
+This question is for Feature-11, Phase 1b.
+
+Why we use Redis instead of `SimpUserRegistry`?
+
+## What we actually need to check
+
+It is not quite “is the user online?” It is: **does anyone in the cluster have an active STOMP subscription to** `/topic/user.{username}.group-updates`?
+
+A user can be connected but only subscribed to `/topic/group.5` (current chat). They would not receive sidebar updates unless they also subscribe to their personal `group-updates` topic. So the check should be **subscription-specific**, not just presence.
+
+`WebSocketInspectorController` does exactly that — it walks `SimpUserRegistry` and lists each session’s subscription destinations:
+
+```java
+// WebSocketInspectorController
+List<String> destinations = session.getSubscriptions().stream()
+    .map(SimpSubscription::getDestination)
+    .collect(Collectors.toList());
+```
+
+That is the right _kind_ of signal. The issue is **scope**.
+
+## `SimpUserRegistry` vs Redis — comparison
+
+|                        | `SimpUserRegistry`                      | Redis (`GroupUpdatesSubscriptionRegistry`)         | `destinationSubscriptionCount` (already in broker handler) |
+| ---------------------- | --------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| **Scope**              | This JVM only                           | Whole cluster                                      | This JVM only                                              |
+| **What it knows**      | Connected users + their subscriptions   | Refcount of `group-updates` subs cluster-wide      | Refcount per STOMP destination                             |
+| **Lookup**             | O(sessions × subs) per user             | O(1) Redis GET per user                            | O(1) map lookup per destination                            |
+| **Multi-instance**     | Instance A cannot see Bob on Instance B | Any instance can ask “is Bob subscribed anywhere?” | Same local-only limit as registry                          |
+| **Already maintained** | By Spring                               | We added on subscribe/unsubscribe                  | Already synced with RabbitMQ bindings                      |
+
+## Why `SimpUserRegistry` alone is not enough
+
+Your app runs **multiple instances** (`instance-1`, `instance-2`, `instance-3` in docker-compose). `SimpUserRegistry` is in-memory per node.
+
+Example:
+
+```text
+Bob is connected on instance-2, subscribed to /topic/user.bob.group-updates
+Alice sends a message on instance-1 → flush runs on instance-1
+
+SimpUserRegistry.getUser("bob") on instance-1 → null
+→ skip Bob → no RabbitMQ publish → Bob never gets the update
+```
+
+So if we used `SimpUserRegistry` for the **cluster-wide skip** in `flushGroupMembers`, we would break cross-instance delivery.
+
+That is the main reason Redis was added: a **shared** refcount so any instance can skip offline users _and_ still publish to RabbitMQ **when the user is online on another node**.
+
+## Why not use `SimpUserRegistry` even for the local part?
+
+For local delivery we already use `hasLocalSubscribers(destination)` from `destinationSubscriptionCount` — same idea as the inspector, but keyed by destination:
+
+```java
+// GroupSummaryUpdatePublisher
+if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
+    messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
+}
+```
+
+That map is updated in the same subscribe/unsubscribe path that syncs RabbitMQ bindings, so it stays aligned with “does this instance have a local subscriber?”
+
+`SimpUserRegistry` would work for that local gate too, e.g.:
+
+```java
+SimpUser user = userRegistry.getUser(username);
+boolean subscribed = user != null && user.getSessions().stream()
+    .flatMap(s -> s.getSubscriptions().stream())
+    .anyMatch(sub -> destination.equals(sub.getDestination()));
+```
+
+But it would duplicate what `destinationSubscriptionCount` already tracks, with a slower scan per user per flush.

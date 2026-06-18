@@ -181,6 +181,31 @@ In short:
 
 **Recommendation:** **Yes** as a complement, especially for busy chats. **Not sufficient alone** if still using per-member loop.
 
+### 1b. Online-only fan-out (skip offline users)
+
+**How it works**
+
+- Keep the current per-user destination contract: `/topic/user.{username}.group-updates`.
+- Before each flush, skip users who have **no active `group-updates` subscription anywhere in the cluster**.
+- Track cluster-wide subscription presence in Redis (`ws:group-updates:count:{username}`): each instance increments on first local subscribe and decrements on last local unsubscribe (`GroupUpdatesSubscriptionRegistry`).
+- Per-instance local delivery uses `CustomRabbitMQBrokerHandler.hasLocalSubscribers(destination)` so `convertAndSend` runs only when this node hosts a subscriber; RabbitMQ publish still runs for online users on other instances.
+- If Redis is unavailable, fail open (`hasClusterSubscriber` returns `true`) so sidebar updates are not silently dropped.
+
+**Pros**
+
+- Smallest incremental change; no frontend or destination-model migration.
+- Cuts wasted RabbitMQ publishes and `convertAndSend` calls when most group members are offline (typical for large groups).
+- Works with Phase 1 buffering and multi-instance deployment.
+- Handles multi-tab and multi-instance sessions via Redis refcount.
+
+**Cons**
+
+- Still **O(members)** loop per flush (DB username scan unchanged); only skips the publish step for offline users.
+- Depends on Redis for accurate skip behavior (degrades to full fan-out when Redis is down).
+- Offline users do not receive real-time sidebar events until they reconnect (sidebar state still correct on next `GET /api/groups`).
+
+**Recommendation:** **Yes** — implemented as Phase 1b alongside buffering. Complements Solution 1; does not replace per-group summary topics for very large active groups.
+
 ### 2. Per-group summary topic — single publish, subscribers on each instance (recommended structural fix)
 
 **How it works**
@@ -417,11 +442,11 @@ Until then, Option 1 + buffering is a good **low-risk** path.
 
 ### Practical recommendation
 
-1. **Short/medium term:** keep per-user summary + add fixed-interval buffering per `groupId`.
-2. **Add metrics:** max/avg group size, publishes per summary flush, flush rate.
+1. **Short/medium term:** keep per-user summary + fixed-interval buffering per `groupId` + **online-only fan-out** (Phase 1 + 1b, implemented).
+2. **Add metrics:** max/avg group size, publishes per summary flush, subscribed/total members ratio, flush rate.
 3. **Revisit Option 2** only when large-group traffic shows up in metrics.
 
-So yes — for “many small groups, few giants,” **Option 1 + buffering is a suitable solution**, and the large refactor to per-group subscriptions is probably not worth it yet.
+So yes — for “many small groups, few giants,” **Option 1 + buffering + online-only fan-out is a suitable solution**, and the large refactor to per-group subscriptions is probably not worth it yet.
 
 ## Recommendation
 
@@ -438,9 +463,16 @@ Think in two layers:
 
 **Long term:** Solutions **7** / **8** if product scale outgrows push-based summaries.
 
-## Chosen Solution
+Recommendation path:
 
-Phase 1 is now implemented:
+1. Phase 1: Add **buffering per `groupId`** in `GroupSummaryUpdatePublisher`.
+2. Phase 2: Move to **per-group RabbitMQ summary publish + per-instance local fan-out** if metrics show large-group pressure.
+3. Phase 3 (optional): Introduce a **dedicated summary worker / queue** if update volume is still high.
+4. Phase 4 (optional): Revisit **CQRS / read model** if sidebar semantics outgrow event-push delivery.
+
+## Chosen Solution + Implementation
+
+### Phase 1 — fixed-interval buffering (implemented)
 
 1. Keep the current personal summary topic contract: `/topic/user.{username}.group-updates`.
 2. Add **fixed-interval buffering per `groupId`** inside `GroupSummaryUpdatePublisher`.
@@ -450,7 +482,7 @@ Phase 1 is now implemented:
 
 Current buffering behavior:
 
-- Interval: **300ms** (fixed clock per group, not reset on every message)
+- Interval: **3000ms** (fixed clock per group, not reset on every message)
 - Scope: **per `groupId`**
 - Payload policy: **latest update wins**
 - Delivery contract: unchanged personal topic fan-out after each buffer flush
@@ -461,37 +493,53 @@ Why buffering instead of debounce:
 - Debounce resets the timer on every message, so continuous traffic can delay sidebar updates indefinitely.
 - Buffering caps staleness at roughly one interval while still coalescing many messages into one flush.
 
-Why we chose this first:
+### Phase 1b — online-only fan-out (implemented)
 
-- It is the smallest backend-only change.
-- It reduces fan-out spikes for active groups without a frontend subscription migration.
-- It fits the expected near-term traffic shape better: many small groups, few large ones.
+**What changed**
+
+- `GroupSummaryUpdatePublisher.flushGroupMembers` skips users with no active `/topic/user.{username}.group-updates` subscription in the cluster before publishing.
+- New `GroupUpdatesSubscriptionRegistry` stores a Redis refcount per username (`ws:group-updates:count:{username}`).
+- `CustomRabbitMQBrokerHandler` updates the registry when the first/last local client subscribes or unsubscribes to a `group-updates` destination (reuses existing `destinationSubscriptionCount` transitions).
+- Local `convertAndSend` is gated by `hasLocalSubscribers(destination)`; RabbitMQ publish still runs when the user is online on another instance.
+
+**Why it changed**
+
+- Large groups often have few online members at any moment; fanning out to every member on every flush wasted RabbitMQ publishes and broker work.
+- Subscription existence is a better signal than “user exists in group” for real-time sidebar delivery.
+- Why don't we use `SimpUserRegistry`? See [02_WEBSOCKET.md](02_WEBSOCKET.md#how-to-check-if-a-user-is-online-why-dont-we-use-simpuserregistry)
+
+**API / contract impacts**
+
+- No client or STOMP destination change.
+- New Redis keys: `ws:group-updates:count:{username}` (integer refcount, deleted at zero).
+- Debug log reports `deliveredCount/totalMembers` per flush.
+
+**Rollout / backward compatibility**
+
+- Requires Redis (already used for Spring Session). If Redis is unavailable, fan-out fails open to all members (same as pre-1b behavior).
+- Offline users miss real-time sidebar events while disconnected; sidebar is still correct after reconnect via HTTP group list load.
 
 What did **not** change yet:
 
 - No move to `/topic/group.{groupId}.summary`
 - No frontend subscription model change
-- No removal of the per-member loop during each flush
-
-Next implementation path:
-
-1. Phase 2: Move to **per-group RabbitMQ summary publish + per-instance local fan-out** if metrics show large-group pressure.
-2. Phase 3 (optional): Introduce a **dedicated summary worker / queue** if update volume is still high.
-3. Phase 4 (optional): Revisit **CQRS / read model** if sidebar semantics outgrow event-push delivery.
+- Per-member **loop and DB username scan** still run on each flush (publish step is skipped for offline users only)
 
 ### Migration / backward compatibility
 
-- No client/API contract change in Phase 1; existing personal summary subscribers continue to work unchanged.
+- No client/API contract change in Phase 1 or 1b; existing personal summary subscribers continue to work unchanged.
 - If we later move to per-group summary topics, we can run both personal and per-group streams briefly if needed.
 - Ensure `validateSubscription` allows `/topic/group.{id}.summary` only for members before any Phase 2 rollout.
 
-### Metrics to validate after Phase 1
+### Metrics to validate after Phase 1 + 1b
 
 - Group member count distribution
 - `publishToGroupMembers()` call rate and loop size
+- **Subscribed vs total members per flush** (`deliveredCount/totalMembers` in logs)
 - RabbitMQ publishes to `chat.user-updates` vs `chat.groups` (summary keys)
 - Subscriptions per client (group summary topics)
 - Buffer flush rate and coalescing ratio
+- Redis `ws:group-updates:count:*` key count vs connected clients
 
 ## Future Higher-Scale Path
 
@@ -505,8 +553,9 @@ Next implementation path:
 
 ### Comparison summary
 
-| Model                        | 1 instance: publish calls/msg | Multi-instance: RabbitMQ msgs/msg    | Client subscriptions/user |
-| ---------------------------- | ----------------------------- | ------------------------------------ | ------------------------- |
-| **Current (per-user loop)**  | O(members)                    | O(members)                           | **1**                     |
-| **Per-group summary topic**  | **O(1)**                      | **O(instances with online members)** | O(groups user belongs to) |
-| **Per-user loop + buffering** | O(members) / interval factor  | same / interval factor               | **1**                     |
+| Model                           | 1 instance: publish calls/msg | Multi-instance: RabbitMQ msgs/msg    | Client subscriptions/user |
+| ------------------------------- | ----------------------------- | ------------------------------------ | ------------------------- |
+| **Current (per-user loop)**     | O(members)                    | O(members)                           | **1**                     |
+| **Per-group summary topic**     | **O(1)**                      | **O(instances with online members)** | O(groups user belongs to) |
+| **Per-user loop + buffering**   | O(members) / interval factor  | same / interval factor               | **1**                     |
+| **Per-user loop + online-only** | O(online_members) / flush     | O(online_members) / flush            | **1**                     |

@@ -1,6 +1,7 @@
 package com.hello.chatapp.config;
 
 import com.hello.chatapp.listener.DynamicRabbitMQListener;
+import com.hello.chatapp.service.GroupUpdatesSubscriptionRegistry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -54,6 +56,7 @@ public class CustomRabbitMQBrokerHandler {
     private final RabbitTemplate rabbitTemplate;
     private final AmqpAdmin amqpAdmin;
     private final DynamicRabbitMQListener dynamicListener;
+    private final GroupUpdatesSubscriptionRegistry groupUpdatesSubscriptionRegistry;
 
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
@@ -61,10 +64,33 @@ public class CustomRabbitMQBrokerHandler {
     private String instanceQueueName;
 
     public CustomRabbitMQBrokerHandler(RabbitTemplate rabbitTemplate, AmqpAdmin amqpAdmin,
-            DynamicRabbitMQListener dynamicListener) {
+            DynamicRabbitMQListener dynamicListener,
+            GroupUpdatesSubscriptionRegistry groupUpdatesSubscriptionRegistry) {
         this.rabbitTemplate = rabbitTemplate;
         this.amqpAdmin = amqpAdmin;
         this.dynamicListener = dynamicListener;
+        this.groupUpdatesSubscriptionRegistry = groupUpdatesSubscriptionRegistry;
+    }
+
+    public static String getDestinationHeader() {
+        return DESTINATION_HEADER;
+    }
+
+    /**
+     * Extracts the username from the group updates destination.
+     * Example: "/topic/user.john.group-updates" -> "john"
+     */
+    public static Optional<String> extractGroupUpdatesUsername(String destination) {
+        if (destination != null && destination.startsWith("/topic/user.") && destination.endsWith(".group-updates")) {
+            return Optional.of(destination.substring(
+                    "/topic/user.".length(),
+                    destination.length() - ".group-updates".length()));
+        }
+        return Optional.empty();
+    }
+
+    public boolean hasLocalSubscribers(String destination) {
+        return destinationSubscriptionCount.getOrDefault(destination, 0) > 0;
     }
 
     @PostConstruct
@@ -195,6 +221,19 @@ public class CustomRabbitMQBrokerHandler {
         }
     }
 
+    /**
+     * Sync the subscription to RabbitMQ.
+     * <p>
+     * In the first time of subscribing to destination (on each instance), it will:
+     * 1. create a binding between the instance queue and the exchange.
+     * 2. track the group-updates subscription for the user (in Redis).
+     * 
+     * In the last time of unsubscribing to destination (on each instance), it will:
+     * 1. remove the binding between the instance queue and the exchange.
+     * 2. remove the group-updates subscription for the user (in Redis). If all instances have unsubscribed,
+     * the user will be removed from Redis.
+     * </p>
+     */
     private synchronized void syncSubscriptionToRabbitMQ(String destination, boolean subscribe) {
         try {
             DestinationRoute route = routeForDestination(destination);
@@ -207,6 +246,7 @@ public class CustomRabbitMQBrokerHandler {
                     amqpAdmin.declareBinding(BindingBuilder.bind(queue).to(exchange).with(route.routingKey()));
                     logger.debug("Created RabbitMQ binding: queue={}, exchange={}, routingKey={}, destination={}",
                             instanceQueueName, route.exchange(), route.routingKey(), destination);
+                    trackGroupUpdatesClusterSubscription(destination, true);
                 }
             } else {
                 int count = destinationSubscriptionCount.compute(destination,
@@ -217,6 +257,7 @@ public class CustomRabbitMQBrokerHandler {
                     amqpAdmin.removeBinding(binding);
                     logger.debug("Removed RabbitMQ binding: queue={}, exchange={}, routingKey={}, destination={}",
                             instanceQueueName, route.exchange(), route.routingKey(), destination);
+                    trackGroupUpdatesClusterSubscription(destination, false);
                 }
             }
         } catch (Exception e) {
@@ -232,17 +273,21 @@ public class CustomRabbitMQBrokerHandler {
     }
 
     private DestinationRoute routeForDestination(String destination) {
+        // Public group channel
         if ("/topic/public".equals(destination)) {
             return new DestinationRoute(PUBLIC_EXCHANGE, "public");
         }
+
+        // Private group channel
         if (destination != null && destination.startsWith("/topic/group.")) {
             String groupId = destination.substring("/topic/group.".length());
             return new DestinationRoute(GROUPS_EXCHANGE, "group." + groupId);
         }
-        if (destination != null && destination.startsWith("/topic/user.") && destination.endsWith(".group-updates")) {
-            String username = destination.substring(
-                    "/topic/user.".length(),
-                    destination.length() - ".group-updates".length());
+
+        // Group-updates channel
+        Optional<String> groupUpdatesUsername = extractGroupUpdatesUsername(destination);
+        if (groupUpdatesUsername.isPresent()) {
+            String username = groupUpdatesUsername.get();
             return new DestinationRoute(USER_UPDATES_EXCHANGE, "user." + username + ".group-updates");
         }
         throw new IllegalArgumentException("Unsupported RabbitMQ-backed STOMP destination: " + destination);
@@ -258,10 +303,26 @@ public class CustomRabbitMQBrokerHandler {
         return queueName;
     }
 
-    public static String getDestinationHeader() {
-        return DESTINATION_HEADER;
+    /**
+     * Track the cluster subscription for group-updates destination.
+     * Basically: it stores users in Redis that have a group-updates subscription on any instance in the cluster.
+     */
+    private void trackGroupUpdatesClusterSubscription(String destination, boolean subscribed) {
+        extractGroupUpdatesUsername(destination).ifPresent(username -> {
+            if (subscribed) {
+                groupUpdatesSubscriptionRegistry.trackLocalSubscriptionOpened(username);
+            } else {
+                groupUpdatesSubscriptionRegistry.trackLocalSubscriptionClosed(username);
+            }
+        });
     }
 
+    /**
+     * A record to represent a destination route in RabbitMQ.
+     * 
+     * @param exchange The name of the exchange to publish to.
+     * @param routingKey The routing key to use for the message.
+     */
     private record DestinationRoute(String exchange, String routingKey) {
     }
 }
