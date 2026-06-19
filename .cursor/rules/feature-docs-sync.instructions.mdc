@@ -36,6 +36,24 @@ alwaysApply: true
 
   ### 2. Solution B
 
+  ## High level Architecture/Design (optional)
+
+  ### Use cases
+
+  List all use cases. Keep them short and concise.
+
+  ### Component Diagram
+
+  Draw a component diagram and show how they interact with each other.
+
+  ### Core entities/models
+
+  List core entities/models and their relationships.
+
+  ### API Draft
+
+  Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
+
   ## Recommendation (optional)
 
   (Just a recommendation path, do NOT implement anything in this section)
@@ -51,7 +69,9 @@ alwaysApply: true
 
   ## Chosen Solution + Implementation
 
-  (Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section.)
+  (Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
 
   ## Future Higher-Scale Path
+
+  ## (Other sections you can add if needed)
   ```
