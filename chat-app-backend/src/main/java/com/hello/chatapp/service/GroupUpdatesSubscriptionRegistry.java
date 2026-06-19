@@ -3,6 +3,7 @@ package com.hello.chatapp.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 
 /**
@@ -23,7 +24,7 @@ public class GroupUpdatesSubscriptionRegistry {
         this.redisTemplate = redisTemplate;
     }
 
-    public void trackLocalSubscriptionOpened(String username) {
+    public void trackLocalSubscriptionOpened(@NonNull String username) {
         try {
             redisTemplate.opsForValue().increment(redisKey(username));
         } catch (Exception e) {
@@ -31,7 +32,7 @@ public class GroupUpdatesSubscriptionRegistry {
         }
     }
 
-    public void trackLocalSubscriptionClosed(String username) {
+    public void trackLocalSubscriptionClosed(@NonNull String username) {
         try {
             Long remaining = redisTemplate.opsForValue().decrement(redisKey(username));
             if (remaining != null && remaining <= 0) {
@@ -46,7 +47,7 @@ public class GroupUpdatesSubscriptionRegistry {
      * Returns {@code true} when at least one connected client in the cluster is subscribed.
      * Fails open (returns {@code true}) if Redis is unavailable so sidebar updates are not dropped.
      */
-    public boolean hasClusterSubscriber(String username) {
+    public boolean hasClusterSubscriber(@NonNull String username) {
         try {
             String count = redisTemplate.opsForValue().get(redisKey(username));
             return count != null && Long.parseLong(count) > 0;
@@ -57,7 +58,8 @@ public class GroupUpdatesSubscriptionRegistry {
         }
     }
 
-    private static String redisKey(String username) {
+    @NonNull
+    private static String redisKey(@NonNull String username) {
         return REDIS_COUNT_KEY_PREFIX + username;
     }
 }

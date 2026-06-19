@@ -20,6 +20,7 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Channel interceptor that validates WebSocket messages come from authenticated users.
@@ -86,7 +87,7 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
      */
     private void handleConnect(User user) {
         Message joinMessage = new Message(user, "[SYSTEM] " + user.getUsername() + " connected");
-        MessageResponse response = MessageResponse.fromMessage(joinMessage);
+        MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(joinMessage));
         messagingTemplate.convertAndSend("/topic/public", response);
         rabbitMQBrokerHandler.publishToRabbitMQ("/topic/public", response);
     }

@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.lang.NonNull;
 
 /**
  * Should NOT print sensitive information like password in production.
@@ -13,7 +14,7 @@ public class EarlyPropertyPrinter implements ApplicationContextInitializer<Confi
     private static final Logger log = LoggerFactory.getLogger(EarlyPropertyPrinter.class);
 
     @Override
-    public void initialize(ConfigurableApplicationContext applicationContext) {
+    public void initialize(@NonNull ConfigurableApplicationContext applicationContext) {
         ConfigurableEnvironment env = applicationContext.getEnvironment();
 
         log.info("=================================================");
