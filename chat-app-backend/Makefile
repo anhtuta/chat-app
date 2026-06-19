@@ -1,4 +1,4 @@
-.PHONY: help start start.all start.deps 
+.PHONY: help start start.all upd upbd
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
 .PHONY: stop restart logs clean status check.env
 .PHONY: db.migrate db.info db.clean db.repair
@@ -18,7 +18,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make start       - Build and start all services (alias of start.all)"
 	@echo "  make start.all   - Build and start all services"
-	@echo "  make start.deps  - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
+	@echo "  make upd         - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
 	@echo "  make build.fe    - Build frontend and copy to Spring Boot static resources"
 	@echo "  make run.local   - Run Spring Boot app locally with .env variables loaded"
 	@echo "  make run.be      - Run Spring Boot backend only (Terminal 1)"
@@ -38,8 +38,8 @@ help:
 	@echo "  make help        - Show this help message"
 	@echo ""
 	@echo "Development Workflow:"
-	@echo "  1. make start.deps  - Start infrastructure"
-	@echo "  2. make db.migrate  - Run database migrations"
+	@echo "  1. make upd           - Start infrastructure"
+	@echo "  2. make db.migrate    - Run database migrations"
 	@echo "  3. Start BE and FE: use one of these:"
 	@echo "  3.1. make run.be      - Terminal 1: Start Backend (http://localhost:9010)"
 	@echo "       make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
@@ -57,10 +57,16 @@ start.all: check.env
 	docker-compose --profile multi-instance up -d --build
 	@echo "✅ Services started!"
 
-start.deps: check.env
+upd: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d postgres redis rabbitmq prometheus grafana
+	docker-compose up -d postgres redis rabbitmq prometheus grafana instance-2
+	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
+
+upbd: check.env
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
+	@echo "Bringing up infrastructure containers without chat instances..."
+	docker-compose up -d --build postgres redis rabbitmq prometheus grafana
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 # Build FE and copy to BE static resources
