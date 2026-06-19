@@ -27,13 +27,27 @@ The main design goal is to support media messages without turning the backend in
   - Video
   - Audio
   - File
-- Users can optionally add a caption/text body to a media message
+- Media support is required for both:
+  - public chat
+  - group chat
+- Users can optionally add a caption/text body to any media message
+- One message can contain:
+  - multiple image attachments in a single message
+  - exactly one attachment for video, audio, or generic file messages
+- Mixed attachment types in one message are not required in the first version
 - Users can upload large files with resumable or multipart upload behavior
 - Frontend shows upload progress for large uploads
 - Frontend renders thumbnails / previews when applicable
+- Frontend supports inline playback for video and audio in phase 1
 - Messages remain ordered in chat history alongside text messages
 - Media messages can be loaded through existing message-history APIs with extra media metadata
 - Download/view access remains limited to authorized chat participants
+- Media messages become visible to other users only after:
+  - upload completes
+  - malware scan passes
+  - required synchronous processing finishes
+- Captions do not need post-send editing in phase 1
+- Attachment deletion independent of message deletion is not required in phase 1
 - Failed, canceled, or abandoned uploads do not create broken permanent messages
 
 ## Non-Functional Requirements
@@ -44,43 +58,20 @@ The main design goal is to support media messages without turning the backend in
   - Audio: up to 50 MB
   - Video: up to 200 MB
   - Generic files: up to 20 MB
+- There is no separate video-duration or audio-duration limit in phase 1; size limits are the only hard cap
 - Validate both declared MIME type and server-detected content type
+- Do not expose uploaded media to other users until malware scanning succeeds
+- Perform required image/video compression synchronously before message delivery
 - Rate limit upload initiation and completion to reduce abuse
+- Use Redis-backed controls for upload rate limiting and abuse protection
 - Support local object storage via MinIO and cloud object storage in production
-- Allow asynchronous scanning and media processing without blocking the full app
-- Make processing failures visible and recoverable
+- Allow optional asynchronous post-processing only for follow-up optimizations that are not required before delivery
+- Make upload, scan, and processing failures visible and recoverable
 - Keep storage/provider-specific details behind an abstraction layer
+- Current retention assumption:
+  - uploaded media is retained for at least 30 days
+  - uploaded media is deleted after 60 days
 - Preserve backward compatibility for existing text messages
-
-## Clarifying Questions
-
-- Should one message support **multiple attachments**, or exactly **one attachment per message** in the first version?
-  - Answer: Users can send multiple photos in one message, but other types of media: only one attachment per message.
-- Should captions be supported for all media types, or only for image/video?
-  - Answer: Yes, captions should be supported for all media types, but it's optional.
-- Should an uploaded media message become visible to other users:
-  - only after upload completes,
-  - only after malware scan passes,
-  - or immediately with a temporary "processing" state?
-  - Answer: only after upload completes, and only after malware scan passes.
-- Do we want inline playback for video/audio in phase 1, or only download/open behavior?
-  - Answer: inline playback for video/audio in phase 1.
-- Do we need message editing for captions after upload?
-  - Answer: No, we do not need message editing for captions after upload.
-- Do we need attachment deletion independent of message deletion?
-  - Answer: No, we do not need attachment deletion independent of message deletion.
-- Should some file types be blocked even if they pass malware scan, for example executable or script formats?
-  - Answer: No, we do not need to block any file types after they pass malware scan.
-- Do we need image/video compression to happen synchronously before message delivery, or can users see the original first and optimized derivatives later?
-  - Answer: Yes, image/video compression should happen synchronously before message delivery.
-- What retention policy should apply to uploaded media and orphaned uploads?
-  - Answer: We should keep uploaded media for at least 30 days, and delete them after 60 days.
-- Do we need tenant/region-specific storage residency later?
-  - Answer: No, we do not need tenant/region-specific storage residency later.
-- Should public chat also support media, or only group chat in phase 1?
-  - Answer: Yes, public chat should support media in phase 1.
-- What are the maximum video duration and audio duration limits, if any?
-  - Answer: No limitation on duration, only size limits.
 
 ## Possible Solutions
 
@@ -160,22 +151,95 @@ The main design goal is to support media messages without turning the backend in
 
 Recommendation path:
 
-1. Phase 1: Add a provider-agnostic object storage abstraction and direct-upload design using presigned URLs
-2. Phase 2: Support images and generic files first, with upload progress, short-lived signed download URLs, and basic thumbnails for images
-3. Phase 3: Add video/audio processing, generated thumbnails/waveforms, and optimized derivative delivery
-4. Phase 4: Add stricter abuse controls, moderation workflows, lifecycle cleanup, and CDN-backed caching
+1. Phase 0: Lock the v1 product rules
+   - confirm allowed message shapes:
+     - image gallery message
+     - single video message
+     - single audio message
+     - single generic file message
+   - confirm media is supported in both public chat and group chat
+   - confirm visibility rule: upload complete + malware scan pass + required synchronous processing complete before publish
+   - confirm retention semantics, especially what users should see after day 60 deletion
+2. Phase 1: Add storage-provider abstraction and environment configuration
+   - define a storage contract that works with MinIO locally and cloud object storage later
+   - add provider-specific config for buckets/prefixes, signed URL TTL, multipart threshold, and per-type size limits
+   - keep provider details behind backend interfaces
+3. Phase 2: Add data model and message contract changes
+   - add `messageType` to `messages`
+   - add `message_media` for attachment metadata
+   - add `media_uploads` or equivalent upload-session tracking
+   - extend message DTOs so history APIs can return media metadata safely
+4. Phase 3: Add upload-session APIs
+   - create upload-session preparation endpoint
+   - support batch upload preparation for multi-image messages
+   - support single-attachment preparation for video/audio/file
+   - add multipart support for large uploads
+5. Phase 4: Add upload completion and final message creation
+   - verify uploaded objects exist and belong to the caller
+   - run malware scan gate
+   - run required synchronous image/video compression
+   - create the final message only after all required checks pass
+6. Phase 5: Add history and delivery contract updates
+   - return media-aware message payloads from public and group message APIs
+   - update latest-message preview behavior for non-text messages
+   - ensure WebSocket-delivered messages use the same media contract as REST history
+7. Phase 6: Deliver phase-1 UI capabilities
+   - upload progress
+   - image gallery rendering
+   - inline video/audio playback
+   - file download/open UI
+   - sender-side placeholder and retry/cancel behavior before publish
+8. Phase 7: Add abuse protection and operational hardening
+   - Redis-based rate limiting
+   - orphan upload cleanup
+   - audit logging for upload, scan, and deletion events
+   - failure observability and alerts
+9. Phase 8: Add optional optimizations after v1 works end-to-end
+   - better thumbnails and previews
+   - asynchronous secondary derivatives
+   - CDN-backed delivery for clean media
+   - stronger moderation/reporting workflows
 
 ## High-Level Architecture
 
 ### Use cases
 
-1. Client asks backend to create an upload intent
-2. Backend authenticates user, validates requested media type/size, applies rate limits, and returns presigned upload data
-3. Client uploads directly to object storage
-4. Client calls backend to complete the upload
-5. Backend verifies the uploaded object and creates a media message in a `PROCESSING` or `READY` state
-6. Background workers run malware scan, thumbnail generation, and optional compression/transcoding
-7. When media is ready, normal chat delivery and history APIs return message metadata plus view/download URLs
+1. A user sends an image message in public chat or group chat
+   - the message may contain multiple image attachments
+   - the message may also include an optional caption
+2. A user sends a video, audio, or generic file message in public chat or group chat
+   - these message types allow exactly one attachment per message
+   - the message may also include an optional caption
+3. A sender sees local upload progress and pre-send placeholder state
+   - uploading
+   - scanning
+   - compressing when required
+   - success or failure
+4. Other chat participants only receive the final message after:
+   - upload completes
+   - malware scan succeeds
+   - required synchronous image/video compression completes
+5. A recipient can consume approved media from chat history or real-time delivery
+   - image gallery preview
+   - inline video/audio playback
+   - file download/open
+
+### Component diagram
+
+```mermaid
+flowchart LR
+    A[Chat Web / React Client] -->|1. Prepare upload session| B[Chat Backend API]
+    B -->|Auth, membership, validation, rate limits| C[(Redis)]
+    B -->|Issue presigned upload instructions| D[Object Storage\nMinIO / S3 / GCS / Azure Blob]
+    A -->|2. Direct upload bytes| D
+    A -->|3. Complete upload session| B
+    B -->|Verify object metadata| D
+    B -->|4. Malware scan| E[Malware Scan Service]
+    B -->|5. Required sync compression / thumbnail generation| F[Media Processing Service]
+    B -->|6. Persist message + media metadata| G[(Chat Database)]
+    B -->|7. Publish final chat message| H[REST + WebSocket Delivery]
+    H -->|8. Message history / real-time updates| A
+```
 
 ### Proposed Domain Model
 
@@ -205,10 +269,18 @@ Do **not** overload `content` with storage metadata. Keep text/caption concerns 
 
 Suggested table: `message_media`
 
+Relationship:
+
+- one `messages` row can have zero media rows for `TEXT`
+- one `messages` row can have multiple `message_media` rows for `IMAGE`
+- one `messages` row can have exactly one `message_media` row for `VIDEO`, `AUDIO`, or `FILE`
+- mixed-type attachments in one message are out of scope for phase 1
+
 Suggested fields:
 
 - `id`
 - `message_id`
+- `attachment_order`
 - `storage_provider`
 - `bucket`
 - `object_key`
@@ -240,12 +312,15 @@ Purpose:
 - Track presigned upload intents before a message exists
 - Prevent orphaned or spoofed completion calls
 - Support expiration, retries, and cleanup
+- Support multi-image upload sessions before one final message is created
 
 Suggested fields:
 
 - `upload_id`
 - `user_id`
+- `chat_scope` (`PUBLIC`, `GROUP`)
 - `group_id`
+- `upload_session_id`
 - `requested_message_type`
 - `requested_filename`
 - `requested_size_bytes`
@@ -285,59 +360,134 @@ Recommendation:
 
 ### API Draft
 
-#### 1. Create upload intent
+#### 1. Prepare a media message upload session
 
-`POST /api/media/uploads`
+`POST /api/media/messages/prepare`
+
+Purpose:
+
+- create one upload session for one future chat message
+- support both:
+  - multi-image messages
+  - single video/audio/file messages
 
 Request fields:
 
-- `groupId`
+- `chatScope` (`PUBLIC`, `GROUP`)
+- `groupId` (required only for `GROUP`)
 - `messageType`
-- `filename`
-- `sizeBytes`
-- `mimeType`
-- `multipart` flag or backend decision based on size threshold
+- `caption` (optional)
+- `attachments`:
+  - `filename`
+  - `sizeBytes`
+  - `mimeType`
+
+Validation rules:
+
+- `IMAGE`: `attachments.length >= 1`
+- `VIDEO`, `AUDIO`, `FILE`: `attachments.length == 1`
+- all attachments in one request must match the requested `messageType`
 
 Response fields:
 
-- `uploadId`
-- `storageProvider`
-- `objectKey`
-- `uploadStrategy` (`SINGLE_PART`, `MULTIPART`)
-- `presignedUrl` for small single-part uploads
-- multipart instructions for large uploads:
-  - `uploadId`
-  - part size guidance
-  - endpoint(s) to request part URLs or a prepared list of part URLs
-- expiration time
-- max allowed size for that media type
+- `uploadSessionId`
+- `messageType`
+- `chatScope`
+- `expiresAt`
+- `attachments`:
+  - `attachmentId`
+  - `objectKey`
+  - `uploadStrategy` (`SINGLE_PART`, `MULTIPART`)
+  - `presignedUrl` for single-part uploads
+  - multipart instructions when required:
+    - `multipartUploadId`
+    - `recommendedPartSize`
+    - `completeBy`
+- `limits`:
+  - `maxSizeBytes`
+  - `maxAttachmentCount`
 
-#### 2. Complete upload
+#### 2. Request multipart part URLs when needed
 
-`POST /api/media/uploads/{uploadId}/complete`
+`POST /api/media/messages/upload-sessions/{uploadSessionId}/attachments/{attachmentId}/parts`
+
+Purpose:
+
+- issue presigned URLs for multipart chunks when the upload strategy is `MULTIPART`
 
 Request fields:
 
-- multipart completion metadata if applicable
-- optional caption text
+- `partNumbers`
+
+Response fields:
+
+- `multipartUploadId`
+- `parts`:
+  - `partNumber`
+  - `presignedUrl`
+
+#### 3. Complete and publish the media message
+
+`POST /api/media/messages/upload-sessions/{uploadSessionId}/complete`
+
+Purpose:
+
+- verify all uploaded attachments
+- run malware-scan gating
+- run required synchronous image/video compression
+- create and publish the final message only after all required checks pass
+
+Request fields:
+
+- `attachments`:
+  - `attachmentId`
+  - `etag` or multipart completion metadata
 
 Response:
 
-- created `MessageResponse` with media payload, or a pending/processing variant
+- created `MessageResponse` with final media payload
 
-#### 3. Fetch/render media in chat history
+Failure behavior:
 
-Extend existing message-history responses so media messages include:
+- if any attachment fails verification, scan, or required processing, the message is not created
+- sender receives a failure response and may retry with a new upload session
+
+#### 4. Fetch/render media in chat history
+
+Extend existing message-history responses for:
+
+- `GET /api/messages/public`
+- `GET /api/messages/groups/{groupId}`
+
+Media messages should include:
 
 - `messageType`
 - `caption`
-- `media.status`
-- `media.originalFilename`
-- `media.mimeType`
-- `media.sizeBytes`
-- `media.thumbnailUrl` (short-lived signed URL when available)
-- `media.contentUrl` or `downloadUrl`
-- `media.width`, `media.height`, `media.durationMs`
+- `attachments`:
+  - `attachmentId`
+  - `status`
+  - `originalFilename`
+  - `mimeType`
+  - `sizeBytes`
+  - `thumbnailUrl` (short-lived signed URL when available)
+  - `contentUrl` or `downloadUrl`
+  - `width`
+  - `height`
+  - `durationMs`
+  - `attachmentOrder`
+
+#### 5. Refresh signed access URLs when needed
+
+`POST /api/media/messages/{messageId}/attachments/{attachmentId}/access`
+
+Purpose:
+
+- issue a fresh short-lived signed URL when an existing media URL expires during playback or download
+
+Response fields:
+
+- `contentUrl` or `downloadUrl`
+- `expiresAt`
 
 ### Upload Lifecycle
 
@@ -345,7 +495,7 @@ Extend existing message-history responses so media messages include:
 
 1. User selects file in frontend
 2. Frontend validates basic file type/size before starting
-3. Frontend requests upload intent from backend
+3. Frontend requests an upload session from backend
 4. Backend validates auth, membership, limits, and rate limits
 5. Client uploads directly to object storage
 6. Client calls completion endpoint
@@ -354,18 +504,23 @@ Extend existing message-history responses so media messages include:
    - size matches allowed limits
    - detected content type is acceptable
    - upload belongs to caller
-8. Backend creates message and media metadata
-9. Background processing updates media status
-10. Frontend updates placeholder/progress UI until ready
+8. Backend runs malware scan
+9. Backend runs required synchronous image/video compression before publish
+10. Backend creates message and media metadata
+11. Backend publishes the final message
+12. Frontend clears placeholder and shows the delivered message
 
 #### Recommended visibility rule
 
 Default recommendation:
 
 - Sender sees a local optimistic placeholder while uploading
-- Other users should not see the message until upload completes and the object passes initial verification
-- If malware scanning is asynchronous, the message can enter `PROCESSING`
-- If scan fails, mark the media as `BLOCKED` and do not expose a download URL
+- Other users should not see the message until:
+  - upload completes
+  - malware scanning passes
+  - required synchronous processing finishes
+- If scan fails, mark the upload blocked and do not create a visible message
+- If required synchronous processing fails, do not create a visible message
 
 This is safer than publishing media immediately and trying to revoke it later.
 
@@ -394,13 +549,9 @@ This is safer than publishing media immediately and trying to revoke it later.
 Recommended approach:
 
 - Upload into a temporary/quarantine prefix
-- Run malware scan asynchronously
+- Run malware scan before message creation and delivery
 - Promote to a clean/serving prefix only after scan passes, or mark the media blocked
-
-If quarantine/promotion is too much for phase 1, at minimum:
-
-- keep signed URLs unavailable until scan passes, or
-- restrict visibility until scan completes
+- Do not publish the message if any required attachment fails scan
 
 ### Upload Rate Limiting
 
@@ -428,20 +579,21 @@ Suggested Redis keys:
 #### Images
 
 - generate at least one thumbnail size
-- optionally compress oversized images
+- compress oversized images before message delivery when required
 - preserve original image for download when required
 - consider EXIF stripping and orientation normalization
 
 #### Video
 
 - generate poster thumbnail
-- optionally generate streaming-friendly derivative later
+- perform required synchronous compression before message delivery
 - capture duration, width, and height metadata
 
 #### Audio
 
 - capture duration and codec metadata
-- optionally transcode to a normalized compressed format later
+- support inline playback in phase 1
+- keep optional transcoding as a later optimization, not a phase-1 requirement
 - optionally generate waveform data later
 
 #### Generic files
@@ -452,9 +604,9 @@ Suggested Redis keys:
 
 Recommendation:
 
-- Make compression/transcoding asynchronous
-- Treat thumbnails as higher priority than heavy transcoding
-- Do not block initial rollout on full media optimization
+- Keep required image/video compression synchronous because the current product rule says the final delivered message should already reference processed media
+- Keep optional secondary derivatives asynchronous where they are not required for phase-1 delivery
+- Do not expand phase 1 into advanced streaming/transcoding beyond what is necessary for inline playback
 
 ### Frontend UX
 
@@ -465,12 +617,13 @@ Recommendation:
 - Lazy-load thumbnails and large media
 - Render clear states:
   - uploading
-  - processing
+  - scanning
+  - compressing
   - ready
   - failed
   - blocked
 - For image/video, prefer preview cards
-- For audio, show compact inline player only if supported in phase 1
+- For audio, show compact inline player in phase 1
 - For generic files, show filename, size, icon, and download/open action
 
 ### Media Caching
@@ -495,7 +648,7 @@ For local development:
 - **Moderation:** consider future admin review for reported media
 - **Accessibility:** captions/alt text are likely not phase 1 requirements, but should stay possible
 - **Search/indexing:** filenames and captions may later become searchable
-- **Privacy/compliance:** retention, legal hold, and regional storage requirements may matter later
+- **Privacy/compliance:** current requirement says media is retained for at least 30 days and deleted after 60 days; confirm whether chat history should show a tombstone, broken attachment state, or hard-delete behavior after that expiry
 - **Cost controls:** video storage and egress can dominate costs quickly
 
 ### API / Contract / Config Impacts
