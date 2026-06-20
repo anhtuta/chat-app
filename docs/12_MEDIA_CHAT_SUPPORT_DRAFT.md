@@ -153,58 +153,6 @@ The main design goal is to support media messages without turning the backend in
 
 **Recommendation for our problem:** No for initial rollout
 
-## Recommendation
-
-Recommendation path:
-
-1. Phase 1: Add storage-provider abstraction and environment configuration
-   - define a storage contract that works with MinIO locally and cloud object storage later
-   - add provider-specific config for buckets/prefixes, signed URL TTL, multipart threshold, per-type size limits, and retention period
-   - keep provider details behind backend interfaces
-2. Phase 2: Add data model and message contract changes
-   - add `messageType` to `messages`
-   - add `message_media` for attachment metadata
-   - add `media_uploads` or equivalent upload-session tracking
-   - extend message DTOs so history APIs can return media metadata safely
-   - ensure media messages carry no text payload in `messages.content`
-3. Phase 3: Add upload-session APIs
-   - create upload-session preparation endpoint
-   - support batch upload preparation for multi-image messages
-   - support single-attachment preparation for video/audio/file
-   - add multipart support for large uploads
-4. Phase 4: Add upload completion and final message creation
-   - verify uploaded objects exist and belong to the caller
-   - run malware scan gate
-   - create the final message only after all required checks pass
-   - publish image/video messages with processing metadata when async processing is still ongoing
-5. Phase 5: Add async media processing inside `chat-app-backend`
-   - implement malware-scan orchestration and media-processing workers/modules inside the existing backend first
-   - generate thumbnails and compressed derivatives asynchronously for image/video
-   - update message media status as processing progresses
-   - do not introduce separate Spring Boot apps in the first rollout
-6. Phase 6: Add history and delivery contract updates
-   - return media-aware message payloads from public and group message APIs
-   - update latest-message preview behavior for non-text messages
-   - ensure WebSocket-delivered messages use the same media contract as REST history
-7. Phase 7: Deliver phase-1 UI capabilities
-   - upload progress
-   - image gallery rendering
-   - inline video/audio playback
-   - file download/open UI
-   - sender-side placeholder and retry/cancel behavior before publish
-   - visible processing indicator for image/video messages after publish
-8. Phase 8: Add abuse protection and operational hardening
-   - Redis-based rate limiting
-   - orphan upload cleanup
-   - audit logging for upload, scan, and deletion events
-   - scheduled hard-delete of expired files and related metadata cleanup
-   - failure observability and alerts
-9. Phase 9: Add optional optimizations after v1 works end-to-end
-   - better thumbnails and previews
-   - asynchronous secondary derivatives
-   - CDN-backed delivery for clean media
-   - stronger moderation/reporting workflows
-
 ## High-Level Architecture
 
 ### Use cases
@@ -830,6 +778,58 @@ For local development:
   - video -> "Video"
   - audio -> "Audio"
   - file -> filename or "File"
+
+## Recommendation
+
+Recommendation path:
+
+1. Phase 1: Add storage-provider abstraction and environment configuration
+   - define a storage contract that works with MinIO locally and cloud object storage later
+   - add provider-specific config for buckets/prefixes, signed URL TTL, multipart threshold, per-type size limits, and retention period
+   - keep provider details behind backend interfaces
+2. Phase 2: Add data model and message contract changes
+   - add `messageType` to `messages`
+   - add `message_media` for attachment metadata
+   - add `media_uploads` or equivalent upload-session tracking
+   - extend message DTOs so history APIs can return media metadata safely
+   - ensure media messages carry no text payload in `messages.content`
+3. Phase 3: Add upload-session APIs
+   - create upload-session preparation endpoint
+   - support batch upload preparation for multi-image messages
+   - support single-attachment preparation for video/audio/file
+   - add multipart support for large uploads
+4. Phase 4: Add upload completion and final message creation
+   - verify uploaded objects exist and belong to the caller
+   - run malware scan gate
+   - create the final message only after all required checks pass
+   - publish image/video messages with processing metadata when async processing is still ongoing
+5. Phase 5: Add async media processing inside `chat-app-backend`
+   - implement malware-scan orchestration and media-processing workers/modules inside the existing backend first
+   - generate thumbnails and compressed derivatives asynchronously for image/video
+   - update message media status as processing progresses
+   - do not introduce separate Spring Boot apps in the first rollout
+6. Phase 6: Add history and delivery contract updates
+   - return media-aware message payloads from public and group message APIs
+   - update latest-message preview behavior for non-text messages
+   - ensure WebSocket-delivered messages use the same media contract as REST history
+7. Phase 7: Deliver phase-1 UI capabilities
+   - upload progress
+   - image gallery rendering
+   - inline video/audio playback
+   - file download/open UI
+   - sender-side placeholder and retry/cancel behavior before publish
+   - visible processing indicator for image/video messages after publish
+8. Phase 8: Add abuse protection and operational hardening
+   - Redis-based rate limiting
+   - orphan upload cleanup
+   - audit logging for upload, scan, and deletion events
+   - scheduled hard-delete of expired files and related metadata cleanup
+   - failure observability and alerts
+9. Phase 9: Add optional optimizations after v1 works end-to-end
+   - better thumbnails and previews
+   - asynchronous secondary derivatives
+   - CDN-backed delivery for clean media
+   - stronger moderation/reporting workflows
 
 ## Chosen Solution + Implementation
 
