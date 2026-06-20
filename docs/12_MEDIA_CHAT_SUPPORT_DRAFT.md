@@ -14,7 +14,7 @@ Supporting images, videos, audio, and arbitrary files requires more than just ad
 - Message schema changes
 - Secure object storage uploads
 - Validation and abuse protection
-- Asynchronous processing (scan, thumbnail, compression/transcode)
+- Media security checks and processing (scan, thumbnail, compression/transcode)
 - Frontend upload UX and message rendering
 - Local development with MinIO and cloud production on AWS/GCP/Azure
 
@@ -30,11 +30,15 @@ The main design goal is to support media messages without turning the backend in
 - Media support is required for both:
   - public chat
   - group chat
-- Users can optionally add a caption/text body to any media message
 - One message can contain:
   - multiple image attachments in a single message
   - exactly one attachment for video, audio, or generic file messages
+- Maximum number of images in one image message is 50
 - Mixed attachment types in one message are not required in the first version
+- A media message must not contain text content
+- If the frontend lets a user compose text plus media together, it must split them into two separate messages:
+  - one text message
+  - one media message
 - Users can upload large files with resumable or multipart upload behavior
 - Frontend shows upload progress for large uploads
 - Frontend renders thumbnails / previews when applicable
@@ -45,8 +49,8 @@ The main design goal is to support media messages without turning the backend in
 - Media messages become visible to other users only after:
   - upload completes
   - malware scan passes
-  - required synchronous processing finishes
-- Captions do not need post-send editing in phase 1
+  - required post-upload verification finishes
+- Image and video messages may remain visible in a processing state while async media processing continues
 - Attachment deletion independent of message deletion is not required in phase 1
 - Failed, canceled, or abandoned uploads do not create broken permanent messages
 
@@ -58,19 +62,21 @@ The main design goal is to support media messages without turning the backend in
   - Audio: up to 50 MB
   - Video: up to 200 MB
   - Generic files: up to 20 MB
+- Keep the per-type size limits configurable in `application.yml`
 - There is no separate video-duration or audio-duration limit in phase 1; size limits are the only hard cap
 - Validate both declared MIME type and server-detected content type
 - Do not expose uploaded media to other users until malware scanning succeeds
-- Perform required image/video compression synchronously before message delivery
+- Run image/video compression asynchronously after the message becomes visible
 - Rate limit upload initiation and completion to reduce abuse
 - Use Redis-backed controls for upload rate limiting and abuse protection
 - Support local object storage via MinIO and cloud object storage in production
-- Allow optional asynchronous post-processing only for follow-up optimizations that are not required before delivery
+- Keep media retention configurable in `application.yml`
 - Make upload, scan, and processing failures visible and recoverable
 - Keep storage/provider-specific details behind an abstraction layer
-- Current retention assumption:
-  - uploaded media is retained for at least 30 days
-  - uploaded media is deleted after 60 days
+- Hard-delete media files from object storage after the configured retention period expires
+- Default retention target:
+  - hard-delete media files after 60 days
+  - allow future extension to longer periods such as 6 months or 5 years through configuration
 - Preserve backward compatibility for existing text messages
 
 ## Possible Solutions
@@ -109,7 +115,7 @@ The main design goal is to support media messages without turning the backend in
 - Client uploads directly to object storage
 - Client calls a completion endpoint after successful upload
 - Backend verifies uploaded object metadata and creates or finalizes the message
-- Background workers handle malware scan, thumbnails, and optional compression/transcoding
+- Backend runs malware scan as the publish gate, then background jobs handle thumbnails and optional compression/transcoding
 
 **Pros**
 
@@ -151,50 +157,49 @@ The main design goal is to support media messages without turning the backend in
 
 Recommendation path:
 
-1. Phase 0: Lock the v1 product rules
-   - confirm allowed message shapes:
-     - image gallery message
-     - single video message
-     - single audio message
-     - single generic file message
-   - confirm media is supported in both public chat and group chat
-   - confirm visibility rule: upload complete + malware scan pass + required synchronous processing complete before publish
-   - confirm retention semantics, especially what users should see after day 60 deletion
-2. Phase 1: Add storage-provider abstraction and environment configuration
+1. Phase 1: Add storage-provider abstraction and environment configuration
    - define a storage contract that works with MinIO locally and cloud object storage later
-   - add provider-specific config for buckets/prefixes, signed URL TTL, multipart threshold, and per-type size limits
+   - add provider-specific config for buckets/prefixes, signed URL TTL, multipart threshold, per-type size limits, and retention period
    - keep provider details behind backend interfaces
-3. Phase 2: Add data model and message contract changes
+2. Phase 2: Add data model and message contract changes
    - add `messageType` to `messages`
    - add `message_media` for attachment metadata
    - add `media_uploads` or equivalent upload-session tracking
    - extend message DTOs so history APIs can return media metadata safely
-4. Phase 3: Add upload-session APIs
+   - ensure media messages carry no text payload in `messages.content`
+3. Phase 3: Add upload-session APIs
    - create upload-session preparation endpoint
    - support batch upload preparation for multi-image messages
    - support single-attachment preparation for video/audio/file
    - add multipart support for large uploads
-5. Phase 4: Add upload completion and final message creation
+4. Phase 4: Add upload completion and final message creation
    - verify uploaded objects exist and belong to the caller
    - run malware scan gate
-   - run required synchronous image/video compression
    - create the final message only after all required checks pass
-6. Phase 5: Add history and delivery contract updates
+   - publish image/video messages with processing metadata when async processing is still ongoing
+5. Phase 5: Add async media processing inside `chat-app-backend`
+   - implement malware-scan orchestration and media-processing workers/modules inside the existing backend first
+   - generate thumbnails and compressed derivatives asynchronously for image/video
+   - update message media status as processing progresses
+   - do not introduce separate Spring Boot apps in the first rollout
+6. Phase 6: Add history and delivery contract updates
    - return media-aware message payloads from public and group message APIs
    - update latest-message preview behavior for non-text messages
    - ensure WebSocket-delivered messages use the same media contract as REST history
-7. Phase 6: Deliver phase-1 UI capabilities
+7. Phase 7: Deliver phase-1 UI capabilities
    - upload progress
    - image gallery rendering
    - inline video/audio playback
    - file download/open UI
    - sender-side placeholder and retry/cancel behavior before publish
-8. Phase 7: Add abuse protection and operational hardening
+   - visible processing indicator for image/video messages after publish
+8. Phase 8: Add abuse protection and operational hardening
    - Redis-based rate limiting
    - orphan upload cleanup
    - audit logging for upload, scan, and deletion events
+   - scheduled hard-delete of expired files and related metadata cleanup
    - failure observability and alerts
-9. Phase 8: Add optional optimizations after v1 works end-to-end
+9. Phase 9: Add optional optimizations after v1 works end-to-end
    - better thumbnails and previews
    - asynchronous secondary derivatives
    - CDN-backed delivery for clean media
@@ -206,20 +211,23 @@ Recommendation path:
 
 1. A user sends an image message in public chat or group chat
    - the message may contain multiple image attachments
-   - the message may also include an optional caption
+   - maximum number of images is 50
 2. A user sends a video, audio, or generic file message in public chat or group chat
    - these message types allow exactly one attachment per message
-   - the message may also include an optional caption
 3. A sender sees local upload progress and pre-send placeholder state
-   - uploading
-   - scanning
-   - compressing when required
-   - success or failure
+   - `UPLOAD_IN_PROGRESS`
+   - `SCAN_PENDING`
+   - `PROCESSING_PENDING`
+   - `MEDIA_READY`
+   - `UPLOAD_FAILED`
 4. Other chat participants only receive the final message after:
    - upload completes
    - malware scan succeeds
-   - required synchronous image/video compression completes
-5. A recipient can consume approved media from chat history or real-time delivery
+   - required upload verification succeeds
+5. Image and video messages may continue async processing after publish
+   - recipients can see a processing indicator while thumbnails or compressed derivatives are still being prepared
+   - users can leave the chat, switch groups, and continue using the app while processing continues
+6. A recipient can consume approved media from chat history or real-time delivery
    - image gallery preview
    - inline video/audio playback
    - file download/open
@@ -228,18 +236,99 @@ Recommendation path:
 
 ```mermaid
 flowchart LR
-    A[Chat Web / React Client] -->|1. Prepare upload session| B[Chat Backend API]
-    B -->|Auth, membership, validation, rate limits| C[(Redis)]
+    A[Chat Web / React Client] -->|1. Prepare upload session| B[chat-app-backend\nSpring Boot]
+    B -->|Auth, membership, rate limits| C[(Redis)]
     B -->|Issue presigned upload instructions| D[Object Storage\nMinIO / S3 / GCS / Azure Blob]
     A -->|2. Direct upload bytes| D
     A -->|3. Complete upload session| B
-    B -->|Verify object metadata| D
-    B -->|4. Malware scan| E[Malware Scan Service]
-    B -->|5. Required sync compression / thumbnail generation| F[Media Processing Service]
-    B -->|6. Persist message + media metadata| G[(Chat Database)]
-    B -->|7. Publish final chat message| H[REST + WebSocket Delivery]
-    H -->|8. Message history / real-time updates| A
+    B -->|Verify uploaded object| D
+    B -->|4. Malware scan| F[ClamAV / clamd]
+    B -->|5. Persist message + media metadata| E[(Chat Database)]
+    B -->|6. Publish cross-instance chat event| G[(RabbitMQ)]
+    G -->|event only: message id + metadata| H[Other chat-app-backend instances]
+    B -->|7. Async image/video processing| D
+    B -->|8. Update status / derivatives metadata| E
 ```
+
+### Component placement
+
+Phase-1 recommendation:
+
+- implement upload orchestration, malware-scan coordination, and media-processing logic inside the existing `chat-app-backend`
+- do not create two new Spring Boot applications in the first rollout
+- treat malware scanning and media processing as backend modules / jobs, not separate deployable services yet
+
+Future extraction path:
+
+- if scan/processing load becomes heavy, or if we need stronger isolation and independent scaling, extract those modules into separate worker services later
+
+### RabbitMQ role
+
+Recommended phase-1 role for RabbitMQ:
+
+- use RabbitMQ for cross-instance real-time message delivery only
+- do not send media bytes through RabbitMQ
+- do not make RabbitMQ the first background-job queue for scan or media processing
+
+Why:
+
+- this codebase already uses RabbitMQ for cross-instance fan-out, so media messages should reuse that path
+- file processing is a different workload from real-time chat fan-out
+- the first rollout already keeps scan/processing logic inside `chat-app-backend`, so adding a second RabbitMQ job topology immediately would add operational complexity before it is necessary
+
+Future option:
+
+- if async processing load grows, RabbitMQ can later be introduced as a lightweight job queue
+- if that happens, queue messages should carry only job identifiers and metadata pointers, never binary file content
+
+### Cross-instance media delivery
+
+When a media message is delivered across instances:
+
+- do not forward the whole file through RabbitMQ
+- do not forward signed URLs through RabbitMQ, because they are short-lived and should be generated close to delivery/read time
+- forward only lightweight message metadata, such as:
+  - `messageId`
+  - `chatScope`
+  - `groupId` when applicable
+  - `messageType`
+  - sender summary
+  - attachment ids
+  - filenames
+  - MIME types
+  - sizes
+  - media status
+  - width/height/duration when available
+  - storage references such as object keys when needed internally
+
+Recommended event shape:
+
+- prefer a message-domain event that contains `messageId` plus enough immutable metadata for receivers
+- receiving instances may either:
+  - hydrate the full message from the database, or
+  - use the event payload plus locally generated signed URLs when constructing the outgoing WebSocket payload
+
+### Malware scanning approach
+
+Recommended phase-1 technique:
+
+- use `ClamAV` with `clamd` as the malware scanning engine
+- run it as an infrastructure dependency, for example a local container in development and an equivalent deployment in production
+- let `chat-app-backend` orchestrate scan requests and status updates
+
+Suggested backend flow:
+
+1. upload completes to object storage
+2. backend streams or downloads the uploaded object for scanning
+3. backend sends the bytes to `clamd`
+4. if the result is clean, continue message creation
+5. if the result is infected or scan fails, move the media to a blocked/failed state and do not publish the message
+
+Why this is a good fit:
+
+- simple and well-known first step
+- works without introducing another Spring Boot application
+- keeps the malware engine separate from application code, while still letting the main backend own workflow orchestration
 
 ### Proposed Domain Model
 
@@ -265,7 +354,7 @@ Why:
 
 #### 2. Add a dedicated media metadata table
 
-Do **not** overload `content` with storage metadata. Keep text/caption concerns separate from file metadata.
+Do **not** overload `content` with storage metadata. Keep text-only messages separate from file metadata.
 
 Suggested table: `message_media`
 
@@ -289,8 +378,8 @@ Suggested fields:
 - `detected_mime_type`
 - `size_bytes`
 - `checksum_sha256`
-- `status` (`UPLOADING`, `PROCESSING`, `READY`, `FAILED`, `BLOCKED`, `DELETED`)
-- `scan_status` (`PENDING`, `CLEAN`, `INFECTED`, `ERROR`)
+- `status` (`UPLOAD_COMPLETED`, `SCAN_PENDING`, `SCAN_PASSED`, `PROCESSING_PENDING`, `PROCESSING_IN_PROGRESS`, `MEDIA_READY`, `PROCESSING_FAILED`, `SCAN_BLOCKED`, `HARD_DELETED`)
+- `scan_status` (`SCAN_PENDING`, `SCAN_PASSED`, `SCAN_BLOCKED`, `SCAN_FAILED`)
 - `width`, `height` for images/video when available
 - `duration_ms` for audio/video when available
 - `thumbnail_object_key` when available
@@ -298,10 +387,11 @@ Suggested fields:
 - `transcoded_object_key` when available
 - `created_at`, `updated_at`
 
-Caption strategy:
+Text/media separation strategy:
 
-- Keep `messages.content` for user-entered caption text
-- For pure file-only messages, `content` may be null or empty
+- `messages.content` is used only for text messages
+- media messages should keep `messages.content` null or empty
+- if the user composes text plus media together, the frontend splits that into separate text and media messages
 
 #### 3. Add an upload-tracking table
 
@@ -329,8 +419,36 @@ Suggested fields:
 - `bucket`
 - `object_key`
 - `multipart_upload_id` (nullable)
-- `status` (`INITIATED`, `UPLOADED`, `COMPLETED`, `EXPIRED`, `CANCELED`, `FAILED`)
+- `status` (`UPLOAD_INITIATED`, `UPLOAD_IN_PROGRESS`, `UPLOAD_COMPLETED`, `UPLOAD_SESSION_COMPLETED`, `UPLOAD_SESSION_EXPIRED`, `UPLOAD_CANCELED`, `UPLOAD_FAILED`)
 - `expires_at`
+
+#### 4. Status modeling recommendation
+
+Do not manage these transitions with an ad-hoc shared hashmap spread across the codebase.
+
+Recommended approach:
+
+- create separate enums per entity / workflow, for example:
+  - `MediaStatus`
+  - `MediaScanStatus`
+  - `UploadSessionStatus`
+- keep allowed transitions in one explicit transition policy per enum or workflow
+- validate transitions in service-layer methods so invalid jumps are rejected consistently
+- if the workflow grows more complex, promote that transition policy into a small state-machine helper instead of scattering `if` checks everywhere
+
+Recommendation for naming:
+
+- keep enum values in `UPPER_CASE_WITH_UNDERSCORE`
+- do not add entity prefixes to every enum value when the enum type already scopes them
+- example:
+  - prefer `SCAN_PENDING` inside `MediaStatus`
+  - instead of `MEDIA_SCAN_PENDING`
+
+When prefixes are useful:
+
+- external queue event names
+- metrics/logging dimensions shared across multiple workflows
+- database values shared by more than one entity type
 
 ### Storage Abstraction
 
@@ -357,6 +475,30 @@ Recommendation:
 
 - Keep a single internal contract and provider-specific adapters
 - Avoid leaking provider-specific terminology into controller DTOs where possible
+- Configure retention days and per-type max upload sizes in `application.yml`
+- Mirror environment-backed media settings in `chat-app-backend/.env.example`
+
+Suggested `application.yml` settings:
+
+- `chat.media.max-size.image-bytes`
+- `chat.media.max-size.audio-bytes`
+- `chat.media.max-size.video-bytes`
+- `chat.media.max-size.file-bytes`
+- `chat.media.max-image-count`
+- `chat.media.retention-days`
+- `chat.media.multipart-threshold-bytes`
+
+Environment alignment note:
+
+- if these values are sourced from environment variables in local/dev deployments, mirror them in `chat-app-backend/.env.example`
+- recommended environment-variable counterparts:
+  - `CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES`
+  - `CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES`
+  - `CHAT_MEDIA_MAX_SIZE_VIDEO_BYTES`
+  - `CHAT_MEDIA_MAX_SIZE_FILE_BYTES`
+  - `CHAT_MEDIA_MAX_IMAGE_COUNT`
+  - `CHAT_MEDIA_RETENTION_DAYS`
+  - `CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES`
 
 ### API Draft
 
@@ -376,7 +518,6 @@ Request fields:
 - `chatScope` (`PUBLIC`, `GROUP`)
 - `groupId` (required only for `GROUP`)
 - `messageType`
-- `caption` (optional)
 - `attachments`:
   - `filename`
   - `sizeBytes`
@@ -384,7 +525,7 @@ Request fields:
 
 Validation rules:
 
-- `IMAGE`: `attachments.length >= 1`
+- `IMAGE`: `1 <= attachments.length <= 50`
 - `VIDEO`, `AUDIO`, `FILE`: `attachments.length == 1`
 - all attachments in one request must match the requested `messageType`
 
@@ -394,6 +535,7 @@ Response fields:
 - `messageType`
 - `chatScope`
 - `expiresAt`
+- `retentionDays`
 - `attachments`:
   - `attachmentId`
   - `objectKey`
@@ -434,8 +576,8 @@ Purpose:
 
 - verify all uploaded attachments
 - run malware-scan gating
-- run required synchronous image/video compression
 - create and publish the final message only after all required checks pass
+- enqueue async image/video processing work when needed
 
 Request fields:
 
@@ -449,7 +591,7 @@ Response:
 
 Failure behavior:
 
-- if any attachment fails verification, scan, or required processing, the message is not created
+- if any attachment fails verification or scan, the message is not created
 - sender receives a failure response and may retry with a new upload session
 
 #### 4. Fetch/render media in chat history
@@ -462,7 +604,6 @@ Extend existing message-history responses for:
 Media messages should include:
 
 - `messageType`
-- `caption`
 - `attachments`:
   - `attachmentId`
   - `status`
@@ -505,10 +646,10 @@ Response fields:
    - detected content type is acceptable
    - upload belongs to caller
 8. Backend runs malware scan
-9. Backend runs required synchronous image/video compression before publish
-10. Backend creates message and media metadata
-11. Backend publishes the final message
-12. Frontend clears placeholder and shows the delivered message
+9. Backend creates message and media metadata
+10. Backend publishes the final message
+11. Backend schedules async image/video processing when needed
+12. Frontend clears the pre-send placeholder and shows the delivered message with current media status
 
 #### Recommended visibility rule
 
@@ -518,9 +659,12 @@ Default recommendation:
 - Other users should not see the message until:
   - upload completes
   - malware scanning passes
-  - required synchronous processing finishes
-- If scan fails, mark the upload blocked and do not create a visible message
-- If required synchronous processing fails, do not create a visible message
+  - required upload verification finishes
+- After publish:
+  - image/video may remain in `PROCESSING_PENDING` or `PROCESSING_IN_PROGRESS`
+  - audio/file can usually move directly to `MEDIA_READY`
+- If scan fails, mark the upload `SCAN_BLOCKED` and do not create a visible message
+- If async processing fails, keep the message visible and move the media to `PROCESSING_FAILED`
 
 This is safer than publishing media immediately and trying to revoke it later.
 
@@ -550,7 +694,7 @@ Recommended approach:
 
 - Upload into a temporary/quarantine prefix
 - Run malware scan before message creation and delivery
-- Promote to a clean/serving prefix only after scan passes, or mark the media blocked
+- Promote to a clean/serving prefix only after scan passes, or mark the media `SCAN_BLOCKED`
 - Do not publish the message if any required attachment fails scan
 
 ### Upload Rate Limiting
@@ -579,14 +723,14 @@ Suggested Redis keys:
 #### Images
 
 - generate at least one thumbnail size
-- compress oversized images before message delivery when required
+- compress oversized images asynchronously after publish
 - preserve original image for download when required
 - consider EXIF stripping and orientation normalization
 
 #### Video
 
 - generate poster thumbnail
-- perform required synchronous compression before message delivery
+- perform compression asynchronously after publish
 - capture duration, width, and height metadata
 
 #### Audio
@@ -604,8 +748,9 @@ Suggested Redis keys:
 
 Recommendation:
 
-- Keep required image/video compression synchronous because the current product rule says the final delivered message should already reference processed media
-- Keep optional secondary derivatives asynchronous where they are not required for phase-1 delivery
+- Keep malware scan synchronous as the publish gate
+- Keep image/video compression asynchronous so users can continue chatting while processing finishes
+- Update media status as async processing progresses and finishes
 - Do not expand phase 1 into advanced streaming/transcoding beyond what is necessary for inline playback
 
 ### Frontend UX
@@ -616,12 +761,13 @@ Recommendation:
 - Use multipart upload for large video/audio/file payloads
 - Lazy-load thumbnails and large media
 - Render clear states:
-  - uploading
-  - scanning
-  - compressing
-  - ready
-  - failed
-  - blocked
+  - `UPLOAD_IN_PROGRESS`
+  - `SCAN_PENDING`
+  - `PROCESSING_PENDING`
+  - `PROCESSING_IN_PROGRESS`
+  - `MEDIA_READY`
+  - `PROCESSING_FAILED`
+  - `SCAN_BLOCKED`
 - For image/video, prefer preview cards
 - For audio, show compact inline player in phase 1
 - For generic files, show filename, size, icon, and download/open action
@@ -647,8 +793,8 @@ For local development:
 - **Auditability:** log upload intent, completion, scan result, and deletion events
 - **Moderation:** consider future admin review for reported media
 - **Accessibility:** captions/alt text are likely not phase 1 requirements, but should stay possible
-- **Search/indexing:** filenames and captions may later become searchable
-- **Privacy/compliance:** current requirement says media is retained for at least 30 days and deleted after 60 days; confirm whether chat history should show a tombstone, broken attachment state, or hard-delete behavior after that expiry
+- **Search/indexing:** filenames may later become searchable; if media captions are added in a future phase, index them separately from the current phase-1 design
+- **Expiry behavior:** hard-delete files from storage after the configured retention period expires, and decide whether message rows remain with unavailable attachments or whether related metadata is also removed
 - **Cost controls:** video storage and egress can dominate costs quickly
 
 ### API / Contract / Config Impacts
@@ -661,10 +807,18 @@ For local development:
   - buckets/prefixes
   - signed URL TTL
   - max file sizes by message type
+  - max image count
+  - media retention days
   - allowed MIME types
   - multipart threshold
   - rate limiting thresholds
   - malware scanner integration
+- Suggested property families in `application.yml`:
+  - `chat.media.max-size.*`
+  - `chat.media.max-image-count`
+  - `chat.media.retention-days`
+  - `chat.media.multipart-threshold-bytes`
+- Mirror relevant media settings in `chat-app-backend/.env.example` when they are environment-backed
 
 ### Backward Compatibility and Rollout Notes
 
