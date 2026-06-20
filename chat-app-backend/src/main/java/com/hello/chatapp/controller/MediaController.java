@@ -28,6 +28,9 @@ public class MediaController {
         this.mediaUploadSessionService = mediaUploadSessionService;
     }
 
+    /**
+     * Start an upload session for one future media message.
+     */
     @PostMapping("/prepare")
     public ResponseEntity<PrepareMediaMessageResponse> prepareUploadSession(
             @Valid @RequestBody PrepareMediaMessageRequest request,
@@ -36,6 +39,18 @@ public class MediaController {
         return ResponseEntity.ok(mediaUploadSessionService.prepareUploadSession(user, request));
     }
 
+    /**
+     * <p>
+     * For multipart attachments only — return presigned URLs so the client can upload file chunks
+     * directly to object storage (MinIO/S3). Why it exists:
+     * - Large files are split into parts client-side.
+     * - Presigned URLs are short-lived; the client requests them in batches (partNumbers) instead of
+     * getting hundreds upfront at prepare time.
+     * - On first call, the backend assigns multipartUploadId and marks the upload UPLOAD_IN_PROGRESS.
+     * 
+     * Note: can call this endpoint multiple times (e.g. request parts 1–5, upload, then request 6–10).
+     * </p>
+     */
     @PostMapping("/upload-sessions/{uploadSessionId}/attachments/{attachmentId}/parts")
     public ResponseEntity<RequestMultipartPartUrlsResponse> requestMultipartPartUrls(
             @PathVariable String uploadSessionId,
@@ -47,6 +62,10 @@ public class MediaController {
                 mediaUploadSessionService.requestMultipartPartUrls(user, uploadSessionId, attachmentId, request));
     }
 
+    /**
+     * Call this after every attachment in the session has been uploaded to storage.
+     * This API will verify uploads, run malware scan gating, create the final Message, and publish it over WebSocket.
+     */
     @PostMapping("/upload-sessions/{uploadSessionId}/complete")
     public ResponseEntity<MessageResponse> completeUploadSession(
             @PathVariable String uploadSessionId,

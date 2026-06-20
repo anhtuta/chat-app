@@ -1027,6 +1027,54 @@ Phase-4 behavior currently covers:
 - mark upload-session rows as `UPLOAD_SESSION_COMPLETED`
 - publish the created media message through the existing real-time topic path
 
+#### Call order for Single-part (≤ 5 MB default)
+
+```
+prepareUploadSession
+  → PUT file to presignedUrl (client → storage)
+  → completeUploadSession
+```
+
+`requestMultipartPartUrls` is **not** used.
+
+#### Call order for Multipart (> 5 MB default)
+
+```
+prepareUploadSession
+  → requestMultipartPartUrls (possibly multiple times, per attachment)
+  → PUT each part to its presignedUrl (client → storage), collect etags
+  → completeUploadSession (with parts metadata)
+```
+
+#### Call order for Multi-image message
+
+For each attachment, follow single-part or multipart flow **independently**, then **one** `complete` with all attachments.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Backend API
+    participant Storage as Object Storage
+
+    Client->>API: POST /prepare
+    API-->>Client: uploadSessionId, attachment instructions
+
+    alt SINGLE_PART
+        Client->>Storage: PUT presignedUrl
+        Storage-->>Client: etag
+    else MULTIPART
+        loop per batch of parts
+            Client->>API: POST .../parts { partNumbers }
+            API-->>Client: presigned URLs
+            Client->>Storage: PUT each part URL
+            Storage-->>Client: etag per part
+        end
+    end
+
+    Client->>API: POST .../complete { attachments + etags/parts }
+    API-->>Client: MessageResponse
+```
+
 Current Phase-4 limitations:
 
 - uploaded-object existence is still validated only by completion metadata and upload-session ownership, not by provider SDK `HEAD`/object checks yet
