@@ -88,6 +88,10 @@ run.be: check.env
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
+test.be: check.env
+	@echo "🚀 Running Spring Boot tests..."
+	./mvnw test
+
 # Used by Cursor "Debug Backend (make run.be)" launch config.
 # Ensures .env exists and compiles with the same env vars as make run.be.
 debug.prepare: check.env

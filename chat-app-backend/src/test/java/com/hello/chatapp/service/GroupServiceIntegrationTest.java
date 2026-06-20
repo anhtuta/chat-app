@@ -14,6 +14,10 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 import java.util.Map;
 
@@ -24,6 +28,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class GroupServiceIntegrationTest {
+
+    @DynamicPropertySource
+    static void registerIsolatedDataSource(DynamicPropertyRegistry registry) {
+        IsolatedH2DataSourceSupport.register(registry, GroupServiceIntegrationTest.class);
+    }
 
     @Autowired
     private GroupService groupService;

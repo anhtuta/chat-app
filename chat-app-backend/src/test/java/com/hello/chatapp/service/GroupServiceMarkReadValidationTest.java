@@ -15,11 +15,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({GroupService.class})
 public class GroupServiceMarkReadValidationTest {
+
+    @DynamicPropertySource
+    static void registerIsolatedDataSource(DynamicPropertyRegistry registry) {
+        IsolatedH2DataSourceSupport.register(registry, GroupServiceMarkReadValidationTest.class);
+    }
 
     @Autowired
     private GroupService groupService;

@@ -422,3 +422,43 @@ sequenceDiagram
    Flush->>Lock: acquire (reschedule or cleanup)
    Flush->>Lock: release
 ```
+
+## Test isolation problem
+
+Run a single test passes, but run all tests fails:
+
+```sh
+# Pass
+./mvnw test -Dtest=GroupServiceIntegrationTest
+
+# Fail
+./mvnw test
+```
+
+Why? The failure was a **test isolation** problem, not a bug in `GroupServiceIntegrationTest` itself.
+
+### Root cause
+
+All Spring tests were using the same in-memory H2 database from `src/test/resources/application.yaml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false;LOCK_TIMEOUT=15000
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+```
+
+With `ddl-auto: create-drop`, when one Spring context shuts down (for example after `@DirtiesContext` on `MessageServiceIntegrationTest` or `GroupServiceIntegrationTest`), Hibernate **drops all tables** in that shared `testdb`. Another test class can still be using a cached context that points at the same database — so inserts fail with `Table "USERS" not found (this database is empty)`.
+
+Running a single test works because only one context starts and stops in isolation.
+
+### Fix
+
+Each test class now gets its own H2 database via `@DynamicPropertySource` and a small helper:
+
+- `IsolatedH2DataSourceSupport` — registers `jdbc:h2:mem:<TestClassName>` per class
+- Applied to `GroupServiceIntegrationTest`, `GroupServiceMarkReadValidationTest`, `MessageServiceIntegrationTest`, and `ChatAppApplicationTests`

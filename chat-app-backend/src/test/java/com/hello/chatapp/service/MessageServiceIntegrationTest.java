@@ -13,8 +13,12 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +37,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class MessageServiceIntegrationTest {
+
+    @DynamicPropertySource
+    static void registerIsolatedDataSource(DynamicPropertyRegistry registry) {
+        IsolatedH2DataSourceSupport.register(registry, MessageServiceIntegrationTest.class);
+    }
 
     @Autowired
     private MessageService messageService;
