@@ -2,6 +2,8 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.MessageMedia;
+import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupRepository;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
+import java.util.List;
 
 @Service
 public class MessageService {
@@ -35,6 +38,18 @@ public class MessageService {
 
         Message message = new Message(user, content);
         message.setGroup(null);
+        return messageRepository.save(message);
+    }
+
+    @Transactional
+    public Message savePublicMediaMessage(User user, MessageType messageType, List<MessageMedia> attachments) {
+        Objects.requireNonNull(user.getId());
+        Message message = new Message();
+        message.setUser(user);
+        message.setGroup(null);
+        message.setMessageType(messageType);
+        message.setContent(null);
+        attachMedia(message, attachments);
         return messageRepository.save(message);
     }
 
@@ -84,6 +99,45 @@ public class MessageService {
         return savedMessage;
     }
 
+    @Transactional
+    public Message saveGroupMediaMessage(Group group, User user, MessageType messageType, List<MessageMedia> attachments) {
+        Long groupId = Objects.requireNonNull(group.getId());
+        Objects.requireNonNull(user.getId());
+        Group existingGroup = groupRepository.findById(groupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
+
+        Message message = new Message();
+        message.setUser(user);
+        message.setGroup(existingGroup);
+        message.setMessageType(messageType);
+        message.setContent(null);
+        attachMedia(message, attachments);
+
+        Message savedMessage = messageRepository.saveAndFlush(message);
+
+        // Sleep is intentionally kept for demo timing to simulate a slower request.
+        try {
+            logger.debug("Saved media message for group {}, sleeping to simulate long request...", groupId);
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        // TODO remove the sleep
+
+        int rowsUpdated = groupRepository.updateLatestMessageIfNewer(
+                groupId,
+                buildLatestMessagePreview(savedMessage),
+                savedMessage.getUser().getUsername(),
+                savedMessage.getTimestamp(),
+                Objects.requireNonNull(savedMessage.getId()));
+
+        if (rowsUpdated == 0) {
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists", groupId);
+        }
+
+        return savedMessage;
+    }
+
     public static String buildLatestMessagePreview(String content) {
         if (content == null) {
             return null;
@@ -93,5 +147,34 @@ public class MessageService {
             return normalized;
         }
         return normalized.substring(0, LATEST_MESSAGE_MAX_LENGTH);
+    }
+
+    public static String buildLatestMessagePreview(Message message) {
+        if (message == null) {
+            return null;
+        }
+        MessageType messageType = message.getMessageType();
+        if (messageType == null || messageType == MessageType.TEXT || messageType == MessageType.SYSTEM) {
+            return buildLatestMessagePreview(message.getContent());
+        }
+
+        return switch (messageType) {
+            case IMAGE -> message.getAttachments().size() > 1 ? "Photos" : "Photo";
+            case VIDEO -> "Video";
+            case AUDIO -> "Audio";
+            case FILE -> message.getAttachments().isEmpty()
+                    ? "File"
+                    : buildLatestMessagePreview(message.getAttachments().getFirst().getOriginalFilename());
+            default -> buildLatestMessagePreview(message.getContent());
+        };
+    }
+
+    private void attachMedia(Message message, List<MessageMedia> attachments) {
+        if (attachments == null) {
+            return;
+        }
+        for (MessageMedia attachment : attachments) {
+            message.addAttachment(attachment);
+        }
     }
 }

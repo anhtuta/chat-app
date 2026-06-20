@@ -1,6 +1,9 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.MediaStorageProperties;
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
+import com.hello.chatapp.dto.CompleteMediaMessageRequest;
 import com.hello.chatapp.dto.MultipartPartResponse;
 import com.hello.chatapp.dto.PrepareMediaAttachmentRequest;
 import com.hello.chatapp.dto.PrepareMediaMessageRequest;
@@ -10,11 +13,16 @@ import com.hello.chatapp.dto.RequestMultipartPartUrlsRequest;
 import com.hello.chatapp.dto.RequestMultipartPartUrlsResponse;
 import com.hello.chatapp.dto.UploadStrategy;
 import com.hello.chatapp.entity.ChatScope;
+import com.hello.chatapp.entity.MediaScanStatus;
+import com.hello.chatapp.entity.MediaStatus;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.MediaUpload;
+import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.UploadSessionStatus;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
@@ -24,12 +32,15 @@ import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -42,18 +53,30 @@ public class MediaUploadSessionService {
     private final GroupParticipantRepository groupParticipantRepository;
     private final MediaStorageProperties mediaStorageProperties;
     private final ObjectStorageProviderRegistry objectStorageProviderRegistry;
+    private final MalwareScanService malwareScanService;
+    private final MessageService messageService;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
     public MediaUploadSessionService(
             MediaUploadRepository mediaUploadRepository,
             GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             MediaStorageProperties mediaStorageProperties,
-            ObjectStorageProviderRegistry objectStorageProviderRegistry) {
+            ObjectStorageProviderRegistry objectStorageProviderRegistry,
+            MalwareScanService malwareScanService,
+            MessageService messageService,
+            SimpMessagingTemplate messagingTemplate,
+            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
         this.mediaUploadRepository = mediaUploadRepository;
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.mediaStorageProperties = mediaStorageProperties;
         this.objectStorageProviderRegistry = objectStorageProviderRegistry;
+        this.malwareScanService = malwareScanService;
+        this.messageService = messageService;
+        this.messagingTemplate = messagingTemplate;
+        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
     }
 
     @Transactional
@@ -137,6 +160,48 @@ public class MediaUploadSessionService {
                 .multipartUploadId(mediaUpload.getMultipartUploadId())
                 .parts(parts)
                 .build();
+    }
+
+    @Transactional
+    public MessageResponse completeUploadSession(User user, String uploadSessionId, CompleteMediaMessageRequest request) {
+        List<MediaUpload> uploads = mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(uploadSessionId);
+        if (uploads.isEmpty()) {
+            throw new NotFoundException("Upload session not found");
+        }
+
+        uploads.forEach(upload -> ensureUploadBelongsToUser(upload, user));
+        MediaUpload firstUpload = uploads.getFirst();
+        ensureNotExpired(firstUpload);
+
+        Map<String, CompleteMediaAttachmentRequest> requestByAttachmentId = new HashMap<>();
+        for (CompleteMediaAttachmentRequest attachmentRequest : request.getAttachments()) {
+            CompleteMediaAttachmentRequest previous = requestByAttachmentId.put(attachmentRequest.getAttachmentId(), attachmentRequest);
+            if (previous != null) {
+                throw new BadRequestException("Duplicate attachmentId in completion request");
+            }
+        }
+
+        if (requestByAttachmentId.size() != uploads.size()) {
+            throw new BadRequestException("Completion request must include every prepared attachment exactly once");
+        }
+
+        for (MediaUpload upload : uploads) {
+            CompleteMediaAttachmentRequest attachmentRequest = requestByAttachmentId.get(upload.getUploadId());
+            if (attachmentRequest == null) {
+                throw new BadRequestException("Missing completion metadata for attachment " + upload.getUploadId());
+            }
+            validateCompletionRequest(upload, attachmentRequest);
+            // TODO: Replace completion-metadata checks with provider-backed object existence verification.
+            malwareScanService.assertClean(upload);
+            upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
+        }
+
+        Message message = persistFinalMessage(user, uploads);
+        uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
+
+        MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(message));
+        publishFinalMessage(response, message);
+        return response;
     }
 
     private PreparedMediaAttachmentResponse createUploadRecord(
@@ -242,6 +307,81 @@ public class MediaUploadSessionService {
         if (!uploadUserId.equals(currentUserId)) {
             throw new ForbiddenException("Upload does not belong to the current user");
         }
+    }
+
+    private void ensureNotExpired(MediaUpload mediaUpload) {
+        if (mediaUpload.getExpiresAt() != null && mediaUpload.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("Upload session has expired");
+        }
+    }
+
+    private void validateCompletionRequest(MediaUpload upload, CompleteMediaAttachmentRequest request) {
+        UploadStrategy uploadStrategy = resolveUploadStrategy(upload.getRequestedSizeBytes());
+        if (uploadStrategy == UploadStrategy.MULTIPART) {
+            if (request.getParts() == null || request.getParts().isEmpty()) {
+                throw new BadRequestException("Multipart attachment requires completed parts metadata");
+            }
+            if (upload.getMultipartUploadId() == null || upload.getMultipartUploadId().isBlank()) {
+                throw new BadRequestException("Multipart upload was not initialized for attachment " + upload.getUploadId());
+            }
+            return;
+        }
+
+        if (request.getEtag() == null || request.getEtag().isBlank()) {
+            throw new BadRequestException("Single-part attachment requires etag");
+        }
+    }
+
+    private Message persistFinalMessage(User user, List<MediaUpload> uploads) {
+        MediaUpload firstUpload = uploads.getFirst();
+        MessageType messageType = firstUpload.getRequestedMessageType();
+        Map<Long, Integer> attachmentOrderByUploadId = new HashMap<>();
+        for (int index = 0; index < uploads.size(); index++) {
+            attachmentOrderByUploadId.put(uploads.get(index).getId(), index);
+        }
+
+        List<MessageMedia> attachments = uploads.stream()
+                .map(upload -> toMessageMedia(upload, attachmentOrderByUploadId))
+                .toList();
+
+        return firstUpload.getChatScope() == ChatScope.GROUP
+                ? messageService.saveGroupMediaMessage(
+                        Objects.requireNonNull(firstUpload.getGroup()),
+                        user,
+                        messageType,
+                        attachments)
+                : messageService.savePublicMediaMessage(user, messageType, attachments);
+    }
+
+    private MessageMedia toMessageMedia(MediaUpload upload, Map<Long, Integer> attachmentOrderByUploadId) {
+        MessageMedia media = new MessageMedia();
+        media.setAttachmentOrder(attachmentOrderByUploadId.getOrDefault(upload.getId(), 0));
+        media.setStorageProvider(upload.getStorageProvider());
+        media.setBucket(upload.getBucket());
+        media.setObjectKey(upload.getObjectKey());
+        media.setOriginalFilename(upload.getRequestedFilename());
+        media.setDeclaredMimeType(upload.getRequestedMimeType());
+        media.setSizeBytes(upload.getRequestedSizeBytes());
+        media.setScanStatus(MediaScanStatus.SCAN_PASSED);
+        media.setStatus(resolveInitialMediaStatus(upload.getRequestedMessageType()));
+        return media;
+    }
+
+    private MediaStatus resolveInitialMediaStatus(MessageType messageType) {
+        return switch (messageType) {
+            case IMAGE, VIDEO -> MediaStatus.PROCESSING_PENDING;
+            case AUDIO, FILE -> MediaStatus.MEDIA_READY;
+            default -> MediaStatus.MEDIA_READY;
+        };
+    }
+
+    private void publishFinalMessage(MessageResponse response, Message message) {
+        String destination = message.getGroup() == null
+                ? "/topic/public"
+                : "/topic/group." + Objects.requireNonNull(message.getGroup().getId());
+        MessageResponse nonNullResponse = Objects.requireNonNull(response);
+        messagingTemplate.convertAndSend(destination, nonNullResponse);
+        rabbitMQBrokerHandler.publishToRabbitMQ(destination, nonNullResponse);
     }
 
     private long resolveMaxSizeBytes(MessageType messageType) {

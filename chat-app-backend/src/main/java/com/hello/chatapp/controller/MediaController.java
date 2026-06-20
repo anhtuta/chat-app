@@ -1,5 +1,7 @@
 package com.hello.chatapp.controller;
 
+import com.hello.chatapp.dto.CompleteMediaMessageRequest;
+import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.PrepareMediaMessageRequest;
 import com.hello.chatapp.dto.PrepareMediaMessageResponse;
 import com.hello.chatapp.dto.RequestMultipartPartUrlsRequest;
@@ -43,6 +45,15 @@ public class MediaController {
         User user = getAuthenticatedUser(session);
         return ResponseEntity.ok(
                 mediaUploadSessionService.requestMultipartPartUrls(user, uploadSessionId, attachmentId, request));
+    }
+
+    @PostMapping("/upload-sessions/{uploadSessionId}/complete")
+    public ResponseEntity<MessageResponse> completeUploadSession(
+            @PathVariable String uploadSessionId,
+            @Valid @RequestBody CompleteMediaMessageRequest request,
+            HttpSession session) {
+        User user = getAuthenticatedUser(session);
+        return ResponseEntity.ok(mediaUploadSessionService.completeUploadSession(user, uploadSessionId, request));
     }
 
     private User getAuthenticatedUser(HttpSession session) {

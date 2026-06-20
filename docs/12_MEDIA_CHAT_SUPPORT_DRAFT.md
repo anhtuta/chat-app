@@ -1,5 +1,7 @@
 # Media Chat Support Draft Design
 
+By: GPT 5.4, medium reasoning
+
 ## Current Problem
 
 The current chat system is still designed for **text-only messages**:
@@ -838,7 +840,8 @@ Status:
 - Phase 1 completed
 - Phase 2 completed
 - Phase 3 completed
-- Phases 4-9 not implemented yet
+- Phase 4 completed
+- Phases 5-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -987,6 +990,61 @@ What Phase 3 intentionally does **not** implement yet:
 Phase-3 implementation note:
 
 - the backend now has working upload-session persistence and validation APIs, but the secure direct-upload step is still incomplete until provider-backed signing and completion flow are added in later phases
+
+### Phase 4 - Upload completion and final message creation
+
+Implemented in `chat-app-backend`:
+
+- Added `POST /api/media/messages/upload-sessions/{uploadSessionId}/complete`
+- Added completion request DTOs for:
+  - per-attachment completion metadata
+  - completed multipart part metadata
+- Extended `MediaUploadSessionService` to:
+  - load all uploads for a session
+  - verify ownership and expiry
+  - validate completion metadata for single-part vs multipart uploads
+  - mark upload rows completed
+  - create the final `Message`
+  - create linked `MessageMedia` rows
+  - publish the final message to:
+    - `/topic/public`, or
+    - `/topic/group.{groupId}`
+- Added a temporary `MalwareScanService` abstraction
+- Added `NoOpMalwareScanService` as a placeholder scan gate until real ClamAV integration is added
+- Extended `MessageService` with media-message save flows for:
+  - public media messages
+  - group media messages
+- Added basic latest-message preview generation for media group messages
+
+Phase-4 behavior currently covers:
+
+- complete a prepared upload session
+- turn prepared `media_uploads` rows into a persisted final chat message
+- persist attachment metadata into `message_media`
+- set initial media states:
+  - `IMAGE` / `VIDEO` -> `PROCESSING_PENDING`
+  - `AUDIO` / `FILE` -> `MEDIA_READY`
+- mark upload-session rows as `UPLOAD_SESSION_COMPLETED`
+- publish the created media message through the existing real-time topic path
+
+Current Phase-4 limitations:
+
+- uploaded-object existence is still validated only by completion metadata and upload-session ownership, not by provider SDK `HEAD`/object checks yet
+- malware scanning is currently a no-op placeholder service, not real ClamAV execution yet
+- multipart completion metadata is validated structurally, but not yet finalized against a real storage-provider multipart-complete API
+
+What Phase 4 intentionally does **not** implement yet:
+
+- real storage-provider object verification
+- true presigned upload completion with SDK-backed multipart finalize
+- real malware scan integration
+- async media-processing workers
+- derivative generation / thumbnail generation
+- signed read/download URL refresh APIs
+
+Phase-4 implementation note:
+
+- the backend can now prepare uploads, accept completion metadata, persist final media messages, and publish them, but the storage-verification and malware-scan steps are still placeholders until the next phases replace them with real provider/scanner integrations
 
 ## Future Higher-Scale Path
 
