@@ -833,9 +833,50 @@ Recommendation path:
 
 ## Chosen Solution + Implementation
 
-Status: **draft only, not implemented**
+Status:
+
+- Phase 1 completed
+- Phases 2-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
+
+### Phase 1 - Storage-provider abstraction and environment configuration
+
+Implemented in `chat-app-backend`:
+
+- Added typed media/storage configuration binding via `MediaStorageProperties`
+- Added `ObjectStorageProvider` abstraction with provider descriptors
+- Added concrete phase-1 provider scaffolding for:
+  - `MINIO`
+  - `S3`
+- Added `ObjectStorageProviderRegistry` to resolve the active configured provider
+- Added media configuration defaults in `application.yaml`
+- Mirrored environment-backed media settings in `chat-app-backend/.env.example`
+- Added a focused backend test for provider selection and missing-provider validation
+
+Configuration currently covers:
+
+- active storage provider
+- per-type file-size limits
+- max image count
+- retention days
+- multipart threshold
+- MinIO connection/bucket settings
+- S3 bucket/region/endpoint settings
+
+What Phase 1 intentionally does **not** implement yet:
+
+- real upload APIs
+- actual MinIO/S3 SDK integration
+- presigned URL generation
+- object metadata fetch/delete operations
+- malware scanning workflow
+- async media-processing jobs
+- media message persistence / DTO changes
+
+Phase-1 implementation note:
+
+- the backend now has the config and abstraction scaffolding needed for later phases, but storage operations remain intentionally unimplemented until Phase 3+ when upload and delivery flows are added
 
 ## Future Higher-Scale Path
 

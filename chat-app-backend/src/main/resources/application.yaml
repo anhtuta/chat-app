@@ -78,3 +78,27 @@ logging:
       file-name-pattern: chat-app-%d{yyyy-MM-dd}.log
       strategy:
         type: time
+
+chat:
+  media:
+    provider: ${CHAT_MEDIA_PROVIDER:MINIO}
+    max-image-count: ${CHAT_MEDIA_MAX_IMAGE_COUNT:50}
+    retention-days: ${CHAT_MEDIA_RETENTION_DAYS:60}
+    multipart-threshold-bytes: ${CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES:5242880}
+    max-size:
+      image-bytes: ${CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES:10485760}
+      audio-bytes: ${CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES:52428800}
+      video-bytes: ${CHAT_MEDIA_MAX_SIZE_VIDEO_BYTES:209715200}
+      file-bytes: ${CHAT_MEDIA_MAX_SIZE_FILE_BYTES:20971520}
+    minio:
+      endpoint: ${CHAT_MEDIA_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${CHAT_MEDIA_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${CHAT_MEDIA_MINIO_SECRET_KEY:minioadmin}
+      bucket: ${CHAT_MEDIA_MINIO_BUCKET:chat-media}
+      region: ${CHAT_MEDIA_MINIO_REGION:us-east-1}
+      path-style-access: ${CHAT_MEDIA_MINIO_PATH_STYLE_ACCESS:true}
+    s3:
+      bucket: ${CHAT_MEDIA_S3_BUCKET:chat-media}
+      region: ${CHAT_MEDIA_S3_REGION:ap-southeast-1}
+      endpoint: ${CHAT_MEDIA_S3_ENDPOINT:}
+      path-style-access: ${CHAT_MEDIA_S3_PATH_STYLE_ACCESS:false}
