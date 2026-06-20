@@ -32,4 +32,21 @@ public class S3ObjectStorageProvider implements ObjectStorageProvider {
     public ObjectStorageProviderType getType() {
         return ObjectStorageProviderType.S3;
     }
+
+    @Override
+    public String buildUploadUrl(String objectKey) {
+        MediaStorageProperties.S3 s3 = mediaStorageProperties.getS3();
+        String endpoint = (s3.getEndpoint() == null || s3.getEndpoint().isBlank())
+                ? "https://s3." + s3.getRegion() + ".amazonaws.com"
+                : s3.getEndpoint();
+        if (s3.isPathStyleAccess()) {
+            return endpoint + "/" + s3.getBucket() + "/" + objectKey;
+        }
+        return endpoint + "/" + s3.getBucket() + "/" + objectKey;
+    }
+
+    @Override
+    public String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber) {
+        return buildUploadUrl(objectKey) + "?uploadId=" + multipartUploadId + "&partNumber=" + partNumber;
+    }
 }

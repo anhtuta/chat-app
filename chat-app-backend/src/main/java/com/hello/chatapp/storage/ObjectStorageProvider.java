@@ -8,4 +8,8 @@ public interface ObjectStorageProvider {
     ObjectStorageProviderDescriptor describe();
 
     ObjectStorageProviderType getType();
+
+    String buildUploadUrl(String objectKey);
+
+    String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber);
 }

@@ -32,4 +32,15 @@ public class MinioObjectStorageProvider implements ObjectStorageProvider {
     public ObjectStorageProviderType getType() {
         return ObjectStorageProviderType.MINIO;
     }
+
+    @Override
+    public String buildUploadUrl(String objectKey) {
+        MediaStorageProperties.Minio minio = mediaStorageProperties.getMinio();
+        return minio.getEndpoint() + "/" + minio.getBucket() + "/" + objectKey;
+    }
+
+    @Override
+    public String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber) {
+        return buildUploadUrl(objectKey) + "?uploadId=" + multipartUploadId + "&partNumber=" + partNumber;
+    }
 }

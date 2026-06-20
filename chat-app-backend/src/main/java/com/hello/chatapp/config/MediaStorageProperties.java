@@ -34,6 +34,9 @@ public class MediaStorageProperties {
     @Min(1)
     private long multipartThresholdBytes = 5L * 1024 * 1024;
 
+    @Min(1)
+    private int uploadSessionTtlMinutes = 15;
+
     @Valid
     @NotNull
     private MaxSize maxSize = new MaxSize();

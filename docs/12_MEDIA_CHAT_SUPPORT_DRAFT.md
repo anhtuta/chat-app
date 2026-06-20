@@ -837,7 +837,8 @@ Status:
 
 - Phase 1 completed
 - Phase 2 completed
-- Phases 3-9 not implemented yet
+- Phase 3 completed
+- Phases 4-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -926,6 +927,66 @@ What Phase 2 intentionally does **not** implement yet:
 Phase-2 implementation note:
 
 - the backend schema and DTO layer are now ready for media-aware persistence and response payloads, but actual upload and delivery behavior still starts in Phase 3+
+
+### Phase 3 - Upload-session APIs
+
+Implemented in `chat-app-backend`:
+
+- Added `MediaController` REST endpoints for:
+  - `POST /api/media/messages/prepare`
+  - `POST /api/media/messages/upload-sessions/{uploadSessionId}/attachments/{attachmentId}/parts`
+- Added upload-session request/response DTOs for:
+  - media-message preparation
+  - prepared attachment upload plans
+  - multipart part-url requests
+  - multipart part-url responses
+- Added `UploadStrategy` enum with:
+  - `SINGLE_PART`
+  - `MULTIPART`
+- Added `MediaUploadSessionService` for:
+  - session-based user authentication checks
+  - public/group scope validation
+  - group-membership validation
+  - media-type validation
+  - per-type size-limit validation
+  - max-image-count validation
+  - upload-session persistence
+  - multipart part request handling
+- Added upload-session TTL configuration in:
+  - `application.yaml`
+  - `chat-app-backend/.env.example`
+- Made `Message.attachments` explicitly `LAZY`
+- Added rollback migration `down/U7__drop_media_message_support_phase2.sql`
+
+Phase-3 API behavior currently covers:
+
+- create one upload session for one future media message
+- support:
+  - `IMAGE` with 1..50 attachments
+  - `VIDEO`, `AUDIO`, `FILE` with exactly 1 attachment
+- persist one `media_uploads` row per prepared attachment
+- generate stable `uploadSessionId` and `attachmentId` values
+- choose `SINGLE_PART` vs `MULTIPART` based on configured threshold
+- issue multipart part-upload plans for prepared multipart attachments
+
+Current Phase-3 limitation:
+
+- the returned `presignedUrl` fields are currently provider-derived upload target URLs, not true signed URLs yet
+- actual object-storage signing / SDK-backed upload authorization is still deferred to the next phase of provider-backed file operations
+
+What Phase 3 intentionally does **not** implement yet:
+
+- upload completion endpoint
+- final message creation after upload
+- malware scan execution
+- async media-processing orchestration
+- object existence verification
+- persisted message/media linking after upload completes
+- real signed URL generation backed by storage SDKs
+
+Phase-3 implementation note:
+
+- the backend now has working upload-session persistence and validation APIs, but the secure direct-upload step is still incomplete until provider-backed signing and completion flow are added in later phases
 
 ## Future Higher-Scale Path
 

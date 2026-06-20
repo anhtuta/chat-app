@@ -53,7 +53,7 @@ public class Message {
     @Column(nullable = false)
     private LocalDateTime timestamp;
 
-    @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "message", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("attachmentOrder ASC, id ASC")
     private List<MessageMedia> attachments = new ArrayList<>();
 
