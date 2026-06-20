@@ -836,7 +836,8 @@ Recommendation path:
 Status:
 
 - Phase 1 completed
-- Phases 2-9 not implemented yet
+- Phase 2 completed
+- Phases 3-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -877,6 +878,54 @@ What Phase 1 intentionally does **not** implement yet:
 Phase-1 implementation note:
 
 - the backend now has the config and abstraction scaffolding needed for later phases, but storage operations remain intentionally unimplemented until Phase 3+ when upload and delivery flows are added
+
+### Phase 2 - Data model and message contract changes
+
+Implemented in `chat-app-backend`:
+
+- Added message/media-related enums:
+  - `MessageType`
+  - `ChatScope`
+  - `MediaStatus`
+  - `MediaScanStatus`
+  - `UploadSessionStatus`
+- Extended `Message` with:
+  - `messageType`
+  - nullable `content` so media-only messages are possible later
+  - ordered attachment collection
+- Added `MessageMedia` entity for persisted attachment metadata
+- Added `MediaUpload` entity for upload-session tracking metadata
+- Added repository scaffolding for:
+  - `MessageMediaRepository`
+  - `MediaUploadRepository`
+- Added `MessageAttachmentResponse`
+- Extended `MessageResponse` to include:
+  - `messageType`
+  - `attachments`
+- Added Flyway migration `V7__add_media_message_support_phase2.sql`
+- Added a focused DTO test that verifies media-aware response mapping
+
+Phase-2 schema/model coverage:
+
+- existing text messages default to `TEXT`
+- `messages.content` can now be null for future media-only messages
+- one message can own multiple media rows for future image-gallery support
+- upload-session metadata now has a dedicated persistence model
+
+What Phase 2 intentionally does **not** implement yet:
+
+- media upload endpoints
+- upload-session creation/completion flow
+- media message send flow from WebSocket or REST
+- provider-backed file operations
+- signed URL generation
+- malware scan execution
+- async processing orchestration
+- latest-message preview changes for media types
+
+Phase-2 implementation note:
+
+- the backend schema and DTO layer are now ready for media-aware persistence and response payloads, but actual upload and delivery behavior still starts in Phase 3+
 
 ## Future Higher-Scale Path
 

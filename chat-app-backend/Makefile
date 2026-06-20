@@ -4,6 +4,8 @@
 .PHONY: db.migrate db.info db.clean db.repair
 .PHONY: e2e.test
 
+.DEFAULT_GOAL := help
+
 # Check and create .env file if it doesn't exist
 check.env:
 	@if [ ! -f .env ]; then \
