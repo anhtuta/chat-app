@@ -61,7 +61,13 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     boolean existsByIdAndGroup_Id(Long id, Long groupId);
 
-    @EntityGraph(attributePaths = { "user", "group", "attachments" })
+    /**
+     * Similar to {@link JpaRepository#findById()}, but eagerly fetches user, group, and attachments.
+     * (Note: WithMedia is not a JPA keyword, it's descriptive only and will be ignored).
+     * Why we use this name? If we use `findById`, we cannot add that overload on JpaRepository without conflicting with the
+     * inherited findById. That is why teams often use a descriptive alias like findWithMediaById or findMessageGraphById.
+     */
+    @EntityGraph(attributePaths = {"user", "group", "attachments"})
     Optional<Message> findWithMediaById(Long id);
 }
 
