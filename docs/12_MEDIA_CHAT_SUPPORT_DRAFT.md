@@ -814,20 +814,33 @@ Recommendation path:
    - return media-aware message payloads from public and group message APIs
    - update latest-message preview behavior for non-text messages
    - ensure WebSocket-delivered messages use the same media contract as REST history
-7. Phase 7: Deliver phase-1 UI capabilities
+7. Phase 7: Real MinIO-backed first usable photo flow
+   - implement real MinIO provider integration for local development
+   - generate real presigned upload URLs instead of placeholder upload targets
+   - verify uploaded objects against MinIO during completion
+   - return usable read/render URLs for image history payloads
+   - enable the first end-to-end frontend slice:
+     - user selects one image
+     - uploads it
+     - sends it to a group
+     - sees it appear in the group chat
+     - other group members receive it in real time
+   - do this before adding malware scan, rate limiting, and heavier optimization layers
+8. Phase 8: Expand UI capabilities beyond the first image slice
    - upload progress
-   - image gallery rendering
+   - multi-image gallery rendering
    - inline video/audio playback
    - file download/open UI
    - sender-side placeholder and retry/cancel behavior before publish
    - visible processing indicator for image/video messages after publish
-8. Phase 8: Add abuse protection and operational hardening
+9. Phase 9: Add abuse protection and operational hardening
+   - real malware scan integration
    - Redis-based rate limiting
    - orphan upload cleanup
    - audit logging for upload, scan, and deletion events
    - scheduled hard-delete of expired files and related metadata cleanup
    - failure observability and alerts
-9. Phase 9: Add optional optimizations after v1 works end-to-end
+10. Phase 10: Add optional optimizations after v1 works end-to-end
    - better thumbnails and previews
    - asynchronous secondary derivatives
    - CDN-backed delivery for clean media
@@ -843,7 +856,7 @@ Status:
 - Phase 4 completed
 - Phase 5 completed
 - Phase 6 completed
-- Phases 7-9 not implemented yet
+- Phases 7-10 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
