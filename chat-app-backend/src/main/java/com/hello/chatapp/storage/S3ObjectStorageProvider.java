@@ -49,4 +49,14 @@ public class S3ObjectStorageProvider implements ObjectStorageProvider {
     public String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber) {
         return buildUploadUrl(objectKey) + "?uploadId=" + multipartUploadId + "&partNumber=" + partNumber;
     }
+
+    @Override
+    public String buildReadUrl(String objectKey) {
+        return buildUploadUrl(objectKey);
+    }
+
+    @Override
+    public boolean objectExists(String objectKey) {
+        return true;
+    }
 }

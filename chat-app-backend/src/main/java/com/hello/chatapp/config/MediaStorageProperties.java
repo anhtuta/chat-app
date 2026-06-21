@@ -32,10 +32,16 @@ public class MediaStorageProperties {
     private int retentionDays = 60;
 
     @Min(1)
-    private long multipartThresholdBytes = 5L * 1024 * 1024;
+    private long multipartThresholdBytes = 10L * 1024 * 1024;
 
     @Min(1)
     private int uploadSessionTtlMinutes = 15;
+
+    @Min(1)
+    private int uploadUrlTtlMinutes = 15;
+
+    @Min(1)
+    private int readUrlTtlMinutes = 60;
 
     @Valid
     @NotNull

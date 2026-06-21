@@ -856,7 +856,8 @@ Status:
 - Phase 4 completed
 - Phase 5 completed
 - Phase 6 completed
-- Phases 7-10 not implemented yet
+- Phase 7 completed
+- Phases 8-10 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1204,6 +1205,69 @@ What Phase 6 intentionally does **not** implement yet:
 Phase-6 implementation note:
 
 - the backend now exposes a consistent media-aware message contract across REST history and realtime delivery, and sidebar/latest-message previews no longer fall back to `null` for media messages
+
+### Phase 7 - Real MinIO-backed first usable photo flow
+
+Implemented in `chat-app-backend`:
+
+- Added real MinIO Java SDK integration via:
+  - `io.minio:minio`
+  - `com.squareup.okhttp3:okhttp-jvm`
+- Upgraded `MinioObjectStorageProvider` to:
+  - create a real `MinioClient`
+  - ensure the configured bucket exists at startup
+  - generate real presigned `PUT` upload URLs
+  - generate real presigned `GET` read/render URLs
+  - verify object existence in MinIO
+- Extended storage config with:
+  - `chat.media.upload-url-ttl-minutes`
+  - `chat.media.read-url-ttl-minutes`
+- Added `MessageResponseMapper` so media responses now include usable signed URLs
+- Extended attachment payloads with:
+  - `contentUrl`
+  - `thumbnailUrl`
+  - `previewUrl`
+  - `transcodedUrl`
+- Updated media completion flow to perform real object-existence verification for single-part uploads
+- Updated REST history and realtime media publishing to use URL-aware response mapping
+- Added local MinIO service to `chat-app-backend/docker-compose.yml`
+- Wired backend containers in compose to MinIO using container-safe endpoint/credentials
+- Raised the default multipart threshold to `10 MB` so the first image slice matches the image-size cap and can work through the real single-part MinIO path
+- Added focused unit coverage for URL-aware response mapping
+
+Phase-7 behavior currently covers:
+
+- local backend + MinIO can issue real presigned upload URLs for single-part media uploads
+- upload completion can verify the uploaded object is present in MinIO before creating the message
+- created media messages now return usable signed read/render URLs in:
+  - completion responses
+  - REST history responses
+  - async-processing republish responses
+- the first intended product slice is now supported on the backend side:
+  - user uploads a photo
+  - completes the upload session
+  - creates a group media message
+  - other users receive the media message with a usable image URL
+
+Current Phase-7 limitations:
+
+- real MinIO-backed flow is currently reliable for the first **single-part image** slice
+- multipart upload finalization is still not backed by a real MinIO multipart-complete flow yet
+- S3 remains abstraction-compatible but still placeholder-level compared to MinIO
+- malware scan is still a no-op placeholder
+- derivative generation is still placeholder metadata, not real binary output
+
+What Phase 7 intentionally does **not** implement yet:
+
+- real multipart completion against MinIO
+- real video/audio/file end-to-end slice
+- real malware scan integration
+- real thumbnail generation / transcode output storage
+- FE rendering changes
+
+Phase-7 implementation note:
+
+- the backend now has a real MinIO-backed vertical slice for the first usable photo flow, which is enough for FE/Postman to exercise prepare -> upload -> complete -> render for small images before adding malware scan, rate limiting, and deeper optimizations
 
 ## Future Higher-Scale Path
 

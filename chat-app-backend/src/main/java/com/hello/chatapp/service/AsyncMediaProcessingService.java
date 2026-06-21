@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.MessageResponse;
+import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.MediaStatus;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
@@ -25,16 +26,19 @@ public class AsyncMediaProcessingService implements MediaProcessingService {
 
     private final MessageRepository messageRepository;
     private final MessageMediaRepository messageMediaRepository;
+    private final MessageResponseMapper messageResponseMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
     public AsyncMediaProcessingService(
             MessageRepository messageRepository,
             MessageMediaRepository messageMediaRepository,
+            MessageResponseMapper messageResponseMapper,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
         this.messageRepository = messageRepository;
         this.messageMediaRepository = messageMediaRepository;
+        this.messageResponseMapper = messageResponseMapper;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
     }
@@ -126,7 +130,7 @@ public class AsyncMediaProcessingService implements MediaProcessingService {
 
     private void publishUpdatedMessage(Long messageId) {
         Message message = loadMessageWithMedia(messageId);
-        MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(message));
+        MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
         String destination = message.getGroup() == null
                 ? "/topic/public"
                 : "/topic/group." + Objects.requireNonNull(message.getGroup().getId());

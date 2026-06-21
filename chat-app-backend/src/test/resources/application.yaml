@@ -7,3 +7,7 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: false
+
+chat:
+  media:
+    provider: S3

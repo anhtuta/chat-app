@@ -4,6 +4,7 @@ import com.hello.chatapp.config.MediaStorageProperties;
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
+import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.dto.MultipartPartResponse;
 import com.hello.chatapp.dto.PrepareMediaAttachmentRequest;
 import com.hello.chatapp.dto.PrepareMediaMessageRequest;
@@ -56,6 +57,7 @@ public class MediaUploadSessionService {
     private final MalwareScanService malwareScanService;
     private final MessageService messageService;
     private final MediaProcessingService mediaProcessingService;
+    private final MessageResponseMapper messageResponseMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
@@ -68,6 +70,7 @@ public class MediaUploadSessionService {
             MalwareScanService malwareScanService,
             MessageService messageService,
             MediaProcessingService mediaProcessingService,
+            MessageResponseMapper messageResponseMapper,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
         this.mediaUploadRepository = mediaUploadRepository;
@@ -78,6 +81,7 @@ public class MediaUploadSessionService {
         this.malwareScanService = malwareScanService;
         this.messageService = messageService;
         this.mediaProcessingService = mediaProcessingService;
+        this.messageResponseMapper = messageResponseMapper;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
     }
@@ -195,7 +199,7 @@ public class MediaUploadSessionService {
                 throw new BadRequestException("Missing completion metadata for attachment " + upload.getUploadId());
             }
             validateCompletionRequest(upload, attachmentRequest);
-            // TODO: Replace completion-metadata checks with provider-backed object existence verification.
+            verifyUploadedObjectExists(upload);
             malwareScanService.assertClean(upload);
             upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
         }
@@ -203,7 +207,7 @@ public class MediaUploadSessionService {
         Message message = persistFinalMessage(user, uploads);
         uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
 
-        MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(message));
+        MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
         publishFinalMessage(response, message);
         enqueueAsyncProcessingIfNeeded(message);
         return response;
@@ -334,6 +338,19 @@ public class MediaUploadSessionService {
 
         if (request.getEtag() == null || request.getEtag().isBlank()) {
             throw new BadRequestException("Single-part attachment requires etag");
+        }
+    }
+
+    private void verifyUploadedObjectExists(MediaUpload upload) {
+        UploadStrategy uploadStrategy = resolveUploadStrategy(upload.getRequestedSizeBytes());
+        if (uploadStrategy == UploadStrategy.MULTIPART) {
+            // TODO: Replace this with real MinIO multipart finalize + object verification.
+            return;
+        }
+
+        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(upload.getStorageProvider());
+        if (!provider.objectExists(upload.getObjectKey())) {
+            throw new BadRequestException("Uploaded object not found in storage for attachment " + upload.getUploadId());
         }
     }
 

@@ -62,13 +62,13 @@ start.all: check.env
 upd: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d postgres redis rabbitmq prometheus grafana instance-2
+	docker-compose up -d postgres redis rabbitmq prometheus grafana minio instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 upbd: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d --build postgres redis rabbitmq prometheus grafana
+	docker-compose up -d --build postgres redis rabbitmq prometheus grafana minio instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 # Build FE and copy to BE static resources

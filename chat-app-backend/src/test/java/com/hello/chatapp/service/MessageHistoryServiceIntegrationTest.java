@@ -1,6 +1,7 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.dto.MessageResponse;
+import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.MediaScanStatus;
 import com.hello.chatapp.entity.MediaStatus;
@@ -8,10 +9,13 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.config.MediaStorageConfig;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import com.hello.chatapp.repository.UserRepository;
+import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
+import com.hello.chatapp.storage.S3ObjectStorageProvider;
 import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +32,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-@Import(MessageHistoryService.class)
+@Import({
+        MessageHistoryService.class,
+        MessageResponseMapper.class,
+        MediaStorageConfig.class,
+        ObjectStorageProviderRegistry.class,
+        S3ObjectStorageProvider.class
+})
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class MessageHistoryServiceIntegrationTest {
@@ -69,6 +79,7 @@ class MessageHistoryServiceIntegrationTest {
         assertThat(responses.getFirst().getMessageType()).isEqualTo(MessageType.IMAGE);
         assertThat(responses.getFirst().getAttachments()).hasSize(1);
         assertThat(responses.getFirst().getAttachments().getFirst().getOriginalFilename()).isEqualTo("public-photo.png");
+        assertThat(responses.getFirst().getAttachments().getFirst().getContentUrl()).isNotBlank();
     }
 
     @Test
@@ -101,7 +112,7 @@ class MessageHistoryServiceIntegrationTest {
     private MessageMedia buildAttachment(String filename, int order) {
         MessageMedia attachment = new MessageMedia();
         attachment.setAttachmentOrder(order);
-        attachment.setStorageProvider(ObjectStorageProviderType.MINIO);
+        attachment.setStorageProvider(ObjectStorageProviderType.S3);
         attachment.setBucket("chat-media");
         attachment.setObjectKey("media/test/" + filename);
         attachment.setOriginalFilename(filename);

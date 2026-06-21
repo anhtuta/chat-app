@@ -12,4 +12,8 @@ public interface ObjectStorageProvider {
     String buildUploadUrl(String objectKey);
 
     String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber);
+
+    String buildReadUrl(String objectKey);
+
+    boolean objectExists(String objectKey);
 }

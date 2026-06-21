@@ -84,8 +84,10 @@ chat:
     provider: ${CHAT_MEDIA_PROVIDER:MINIO}
     max-image-count: ${CHAT_MEDIA_MAX_IMAGE_COUNT:50}
     retention-days: ${CHAT_MEDIA_RETENTION_DAYS:60}
-    multipart-threshold-bytes: ${CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES:5242880}
+    multipart-threshold-bytes: ${CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES:10485760}
     upload-session-ttl-minutes: ${CHAT_MEDIA_UPLOAD_SESSION_TTL_MINUTES:15}
+    upload-url-ttl-minutes: ${CHAT_MEDIA_UPLOAD_URL_TTL_MINUTES:15}
+    read-url-ttl-minutes: ${CHAT_MEDIA_READ_URL_TTL_MINUTES:60}
     max-size:
       image-bytes: ${CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES:10485760}
       audio-bytes: ${CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES:52428800}

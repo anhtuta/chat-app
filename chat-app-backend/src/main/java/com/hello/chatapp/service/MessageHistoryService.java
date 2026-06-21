@@ -1,6 +1,7 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.dto.MessageResponse;
+import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.repository.MessageRepository;
@@ -18,9 +19,11 @@ import java.util.Map;
 public class MessageHistoryService {
 
     private final MessageRepository messageRepository;
+    private final MessageResponseMapper messageResponseMapper;
 
-    public MessageHistoryService(MessageRepository messageRepository) {
+    public MessageHistoryService(MessageRepository messageRepository, MessageResponseMapper messageResponseMapper) {
         this.messageRepository = messageRepository;
+        this.messageResponseMapper = messageResponseMapper;
     }
 
     @Transactional(readOnly = true)
@@ -61,7 +64,7 @@ public class MessageHistoryService {
         List<MessageResponse> responses = idsInQueryOrder.stream()
                 .map(messagesById::get)
                 .filter(java.util.Objects::nonNull)
-                .map(MessageResponse::fromMessage)
+                .map(messageResponseMapper::toResponse)
                 .toList();
 
         // Keep the response in ascending order so UI can prepend older pages safely.
