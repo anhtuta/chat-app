@@ -841,7 +841,8 @@ Status:
 - Phase 2 completed
 - Phase 3 completed
 - Phase 4 completed
-- Phases 5-9 not implemented yet
+- Phase 5 completed
+- Phases 6-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1093,6 +1094,58 @@ What Phase 4 intentionally does **not** implement yet:
 Phase-4 implementation note:
 
 - the backend can now prepare uploads, accept completion metadata, persist final media messages, and publish them, but the storage-verification and malware-scan steps are still placeholders until the next phases replace them with real provider/scanner integrations
+
+### Phase 5 - Async media processing inside `chat-app-backend`
+
+Implemented in `chat-app-backend`:
+
+- Enabled async execution in `AsyncConfig`
+- Added dedicated `mediaProcessingExecutor`
+- Added `MediaProcessingService`
+- Added `AsyncMediaProcessingService`
+- Extended `MessageRepository` with media-aware fetch support for processing/publish refresh
+- Extended `MessageMediaRepository` with ordered media lookup by `messageId`
+- Updated `MediaUploadSessionService` to enqueue async processing after final message creation for:
+  - `IMAGE`
+  - `VIDEO`
+
+Phase-5 behavior currently covers:
+
+- enqueue image/video processing after upload completion and final message publish
+- transition media statuses:
+  - `PROCESSING_PENDING`
+  - `PROCESSING_IN_PROGRESS`
+  - `MEDIA_READY`
+- mark media as `PROCESSING_FAILED` if async processing throws
+- republish updated `MessageResponse` payloads to the same real-time destinations as processing state changes
+- fill placeholder derivative metadata fields asynchronously:
+  - image:
+    - `thumbnailObjectKey`
+    - `previewObjectKey`
+  - video:
+    - `thumbnailObjectKey`
+    - `transcodedObjectKey`
+- backfill `detectedMimeType` from `declaredMimeType` when it was still empty
+
+Current Phase-5 limitations:
+
+- async processing currently generates derivative **metadata placeholders**, not real thumbnails/transcoded files yet
+- no real MinIO/S3-backed derivative write occurs yet
+- no real media metadata extraction yet, so fields like width/height/duration are still not computed here
+- no separate processing queue/broker is used yet; processing stays in-process inside `chat-app-backend`
+
+What Phase 5 intentionally does **not** implement yet:
+
+- real thumbnail generation
+- real image compression
+- real video transcode
+- real metadata extraction for width/height/duration
+- durable distributed job queue for processing
+- retry/backoff policies for async processing failures
+
+Phase-5 implementation note:
+
+- the backend now has a working in-process async media-processing worker and status lifecycle for image/video messages, but the actual binary derivative generation is still placeholder logic until real object-storage integration is added
 
 ## Future Higher-Scale Path
 

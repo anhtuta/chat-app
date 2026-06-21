@@ -55,6 +55,7 @@ public class MediaUploadSessionService {
     private final ObjectStorageProviderRegistry objectStorageProviderRegistry;
     private final MalwareScanService malwareScanService;
     private final MessageService messageService;
+    private final MediaProcessingService mediaProcessingService;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
@@ -66,6 +67,7 @@ public class MediaUploadSessionService {
             ObjectStorageProviderRegistry objectStorageProviderRegistry,
             MalwareScanService malwareScanService,
             MessageService messageService,
+            MediaProcessingService mediaProcessingService,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
         this.mediaUploadRepository = mediaUploadRepository;
@@ -75,6 +77,7 @@ public class MediaUploadSessionService {
         this.objectStorageProviderRegistry = objectStorageProviderRegistry;
         this.malwareScanService = malwareScanService;
         this.messageService = messageService;
+        this.mediaProcessingService = mediaProcessingService;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
     }
@@ -175,7 +178,8 @@ public class MediaUploadSessionService {
 
         Map<String, CompleteMediaAttachmentRequest> requestByAttachmentId = new HashMap<>();
         for (CompleteMediaAttachmentRequest attachmentRequest : request.getAttachments()) {
-            CompleteMediaAttachmentRequest previous = requestByAttachmentId.put(attachmentRequest.getAttachmentId(), attachmentRequest);
+            CompleteMediaAttachmentRequest previous =
+                    requestByAttachmentId.put(attachmentRequest.getAttachmentId(), attachmentRequest);
             if (previous != null) {
                 throw new BadRequestException("Duplicate attachmentId in completion request");
             }
@@ -201,6 +205,7 @@ public class MediaUploadSessionService {
 
         MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(message));
         publishFinalMessage(response, message);
+        enqueueAsyncProcessingIfNeeded(message);
         return response;
     }
 
@@ -215,7 +220,7 @@ public class MediaUploadSessionService {
             ObjectStorageProvider provider,
             PrepareMediaAttachmentRequest attachment,
             long maxSizeBytes) {
-        validateAttachment(attachment, maxSizeBytes);
+        validateAttachmentSize(attachment, maxSizeBytes);
 
         String uploadId = UUID.randomUUID().toString();
         String objectKey = buildObjectKey(user, messageType, attachment.getFilename());
@@ -281,8 +286,8 @@ public class MediaUploadSessionService {
         int count = attachments.size();
         if (messageType == MessageType.IMAGE) {
             if (count < 1 || count > mediaStorageProperties.getMaxImageCount()) {
-                throw new BadRequestException("Image messages must contain between 1 and "
-                        + mediaStorageProperties.getMaxImageCount() + " attachments");
+                throw new BadRequestException("Image messages must contain between 1 and " +
+                        mediaStorageProperties.getMaxImageCount() + " attachments");
             }
             return;
         }
@@ -292,7 +297,7 @@ public class MediaUploadSessionService {
         }
     }
 
-    private void validateAttachment(PrepareMediaAttachmentRequest attachment, long maxSizeBytes) {
+    private void validateAttachmentSize(PrepareMediaAttachmentRequest attachment, long maxSizeBytes) {
         if (attachment.getSizeBytes() == null || attachment.getSizeBytes() <= 0) {
             throw new BadRequestException("Attachment sizeBytes must be positive");
         }
@@ -382,6 +387,13 @@ public class MediaUploadSessionService {
         MessageResponse nonNullResponse = Objects.requireNonNull(response);
         messagingTemplate.convertAndSend(destination, nonNullResponse);
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, nonNullResponse);
+    }
+
+    private void enqueueAsyncProcessingIfNeeded(Message message) {
+        MessageType messageType = message.getMessageType();
+        if (messageType == MessageType.IMAGE || messageType == MessageType.VIDEO) {
+            mediaProcessingService.enqueueProcessing(Objects.requireNonNull(message.getId()));
+        }
     }
 
     private long resolveMaxSizeBytes(MessageType messageType) {
