@@ -842,7 +842,8 @@ Status:
 - Phase 3 completed
 - Phase 4 completed
 - Phase 5 completed
-- Phases 6-9 not implemented yet
+- Phase 6 completed
+- Phases 7-9 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1146,6 +1147,50 @@ What Phase 5 intentionally does **not** implement yet:
 Phase-5 implementation note:
 
 - the backend now has a working in-process async media-processing worker and status lifecycle for image/video messages, but the actual binary derivative generation is still placeholder logic until real object-storage integration is added
+
+### Phase 6 - History and delivery contract updates
+
+Implemented in `chat-app-backend`:
+
+- Added `MessageHistoryService`
+- Updated `MessageController` to use `MessageHistoryService` for:
+  - `GET /api/messages/public`
+  - `GET /api/messages/groups/{groupId}`
+- Extended `MessageRepository` with `findWithMediaByIdIn(...)`
+- Kept `MessageResponse` as the shared payload shape for:
+  - REST history responses
+  - upload-completion publish flow
+  - async-processing republish flow
+- Fixed `WebSocketController.pushGroupSummaryUpdate(...)` to use media-aware latest-message preview generation
+
+Phase-6 behavior currently covers:
+
+- REST history now hydrates messages with their media attachments before mapping to `MessageResponse`
+- REST history preserves expected ordering while still loading media-aware payloads
+- realtime media messages and REST-loaded media messages now use the same `MessageResponse` contract shape
+- realtime group-summary updates now publish non-text previews correctly, for example:
+  - `Photo`
+  - `Photos`
+  - `Video`
+  - `Audio`
+  - filename / `File`
+
+Current Phase-6 limitations:
+
+- REST history still returns internal object-key-based media metadata, not signed read/download URLs yet
+- public/group realtime delivery is consistent at the DTO shape level, but actual frontend rendering still belongs to later UI phases
+- the focused Spring integration test added for history compilation is affected by the existing Mockito/JDK 25 test-environment issue and cannot currently be relied on as an executed verification signal
+
+What Phase 6 intentionally does **not** implement yet:
+
+- signed read/download URL generation for history payloads
+- attachment access-refresh endpoint
+- frontend rendering work
+- richer history query optimizations beyond the current hydration approach
+
+Phase-6 implementation note:
+
+- the backend now exposes a consistent media-aware message contract across REST history and realtime delivery, and sidebar/latest-message previews no longer fall back to `null` for media messages
 
 ## Future Higher-Scale Path
 

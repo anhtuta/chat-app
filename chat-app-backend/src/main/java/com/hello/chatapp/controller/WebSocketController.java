@@ -130,7 +130,7 @@ public class WebSocketController {
      */
     private void pushGroupSummaryUpdate(Group group, Message savedMessage) {
         Long groupId = Objects.requireNonNull(group.getId());
-        String preview = MessageService.buildLatestMessagePreview(savedMessage.getContent());
+        String preview = MessageService.buildLatestMessagePreview(savedMessage);
         groupSummaryUpdatePublisher.publishToGroupMembers(
                 groupId,
                 GroupSummaryUpdate.fromMessage(groupId, savedMessage, preview));

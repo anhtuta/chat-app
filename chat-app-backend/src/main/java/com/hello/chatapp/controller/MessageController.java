@@ -9,9 +9,8 @@ import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.exception.UnauthorizedException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
-import com.hello.chatapp.repository.MessageRepository;
+import com.hello.chatapp.service.MessageHistoryService;
 import jakarta.servlet.http.HttpSession;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -23,31 +22,27 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Collections;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/messages")
 public class MessageController {
 
-    private final MessageRepository messageRepository;
     private final GroupRepository groupRepository;
     private final GroupParticipantRepository groupParticipantRepository;
+    private final MessageHistoryService messageHistoryService;
 
-    public MessageController(MessageRepository messageRepository,
-            GroupRepository groupRepository,
-            GroupParticipantRepository groupParticipantRepository) {
-        this.messageRepository = messageRepository;
+    public MessageController(GroupRepository groupRepository,
+            GroupParticipantRepository groupParticipantRepository,
+            MessageHistoryService messageHistoryService) {
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
+        this.messageHistoryService = messageHistoryService;
     }
 
     @GetMapping("/public")
     public List<MessageResponse> getPublicMessages() {
         fakeDelay();
-        return messageRepository.findAllPublicMessages().stream()
-                .map(MessageResponse::fromMessage)
-                .collect(Collectors.toList());
+        return messageHistoryService.getPublicMessages();
     }
 
     @GetMapping("/groups/{groupId}")
@@ -82,17 +77,7 @@ public class MessageController {
             throw new BadRequestException("Both beforeTimestamp and beforeId are required when using cursor pagination");
         }
 
-        List<MessageResponse> messages = (hasCursorTimestamp
-                ? messageRepository.findGroupMessagesBeforeCursor(group, beforeTimestamp, beforeId,
-                        PageRequest.of(0, validatedSize))
-                : messageRepository.findLatestGroupMessages(group, PageRequest.of(0, validatedSize))).stream()
-                        .map(MessageResponse::fromMessage)
-                        .collect(Collectors.toList());
-
-        // Keep the response in ascending order so UI can prepend older pages safely.
-        Collections.reverse(messages);
-
-        return ResponseEntity.ok(messages);
+        return ResponseEntity.ok(messageHistoryService.getGroupMessages(group, beforeTimestamp, beforeId, validatedSize));
     }
 
     private void fakeDelay() {
