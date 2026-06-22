@@ -25,6 +25,7 @@ import java.util.concurrent.ScheduledFuture;
  * timer. {@link #GROUP_SUMMARY_BUFFER_INTERVAL} is measured from the first update in a burst for
  * that group only. Groups do not share flush timestamps — e.g. group1 may flush at 10:01:04 while
  * group2 flushes at 10:01:05 if its first buffered update arrived at 10:01:02.
+ * See more in spring.md.
  */
 @Service
 public class GroupSummaryUpdatePublisher {

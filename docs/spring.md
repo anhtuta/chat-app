@@ -462,3 +462,55 @@ Each test class now gets its own H2 database via `@DynamicPropertySource` and a 
 
 - `IsolatedH2DataSourceSupport` — registers `jdbc:h2:mem:<TestClassName>` per class
 - Applied to `GroupServiceIntegrationTest`, `GroupServiceMarkReadValidationTest`, `MessageServiceIntegrationTest`, and `ChatAppApplicationTests`
+
+## Why we use `TaskScheduler` instead of `@Scheduled` in `GroupSummaryUpdatePublisher.java`
+
+- `groupSummaryUpdateScheduler.schedule(...)` is **dynamic, one-shot scheduling**: you register a task at runtime to run once at a specific time (`now + 3s`). Nothing runs until a group actually gets an update.
+- `@Scheduled` is **static, repeating scheduling**: Spring registers a method at startup and invokes it on a fixed cron / fixed rate / fixed delay forever, whether or not there is work.
+
+For debounced/buffered group fan-out, dynamic scheduling fits; `@Scheduled` does not.
+
+### What this class is really doing
+
+It is not “one scheduler per group.” It uses **one shared** `ThreadPoolTaskScheduler` bean (pool size 4 in `AsyncConfig`) and schedules **individual flush tasks** per group when needed:
+
+```java
+private void scheduleFlushIfAbsent(Long groupId, PendingGroupSummaryUpdate pendingUpdate) {
+   if (pendingUpdate.scheduledFlush != null || pendingUpdate.latestUpdate == null) {
+      return;
+   }
+
+   // Relative to this group's first update in the current burst, not a global tick.
+   Instant flushAt = Objects.requireNonNull(Instant.now().plus(GROUP_SUMMARY_BUFFER_INTERVAL));
+   pendingUpdate.scheduledFlush = groupSummaryUpdateScheduler.schedule(
+            () -> flushGroupMembers(groupId, pendingUpdate),
+            flushAt);
+}
+```
+
+Flow:
+
+1. **Message arrives** → `publishToGroupMembers` buffers `latestUpdate`.
+2. **First update in a burst** → schedule one flush in 3s (`scheduleFlushIfAbsent`).
+3. **More messages before flush** → only update `latestUpdate`; no new schedule (debounce).
+4. **Flush runs** → fan-out once with the latest summary.
+5. **No more pending updates** → remove from `pendingUpdates`; **no timer left for that group**.
+
+So idle groups cost nothing: no thread wake-ups, no DB lookups, no empty iterations.
+
+### Why `@Scheduled` would be a poor fit
+
+If you used something like `@Scheduled(fixedRate = 3000)`:
+
+| Concern            | `@Scheduled` (global tick)                                 | `TaskScheduler` (event-driven)                        |
+| ------------------ | ---------------------------------------------------------- | ----------------------------------------------------- |
+| Runs when idle?    | Yes, every 3s forever                                      | No                                                    |
+| Per-group debounce | Hard — global clock, not “3s after first message in burst” | Natural — `flushAt = now + 3s` per group              |
+| Coalescing bursts  | You’d poll `pendingUpdates` on every tick anyway           | Built in via `latestUpdate` + `scheduleFlushIfAbsent` |
+| Per-group timing   | All groups aligned to same tick                            | Group A at 10:01:04, group B at 10:01:07, etc.        |
+
+A polling `@Scheduled` approach could work in theory (“every 3s, scan all pending groups and flush if `now >= deadline`”), but it would:
+
+- Wake up constantly even when **zero** groups have pending updates.
+- Still need the same `pendingUpdates` map and deadline logic you already have.
+- Be less precise and less efficient than scheduling exactly when each group’s debounce window ends.
