@@ -1,6 +1,6 @@
 .PHONY: help start start.all upd upbd
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
-.PHONY: stop restart logs clean status check.env
+.PHONY: stop restart restart.be2 logs clean status check.env
 .PHONY: db.migrate db.info db.clean db.repair
 .PHONY: e2e.test
 
@@ -121,6 +121,11 @@ restart:
 	@echo "🔄 Restarting services..."
 	docker-compose --profile multi-instance restart
 	@echo "✅ Services restarted!"
+
+restart.be2:
+	@echo "🔄 Restarting instance-2..."
+	docker compose up -d --build instance-2
+	@echo "✅ instance-2 restarted!"
 
 logs:
 	docker-compose --profile multi-instance logs -f instance-1

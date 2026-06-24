@@ -173,11 +173,116 @@ export async function getTotalUnreadCount() {
   handleErrorResponse(response);
 }
 
+/**
+ * Prepare a media message upload session.
+ */
+export async function prepareMediaMessage({ chatScope, groupId, messageType, attachments }) {
+  const response = await fetch(`${API_BASE_URL}/api/media/messages/prepare`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      chatScope,
+      groupId,
+      messageType,
+      attachments,
+    }),
+  });
+
+  if (response.ok) {
+    return response.json();
+  }
+
+  throw new Error(await readErrorMessage(response, "Failed to prepare media message"));
+}
+
+/**
+ * Complete a prepared media upload session and publish the final message.
+ */
+export async function completeMediaMessage(uploadSessionId, attachments) {
+  const response = await fetch(`${API_BASE_URL}/api/media/messages/upload-sessions/${uploadSessionId}/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ attachments }),
+  });
+
+  if (response.ok) {
+    return response.json();
+  }
+
+  throw new Error(await readErrorMessage(response, "Failed to complete media message"));
+}
+
+/**
+ * Upload a file directly to a storage-provider presigned URL.
+ */
+export function uploadFileToPresignedUrl(url, file, { onProgress } = {}) {
+  const xhr = new XMLHttpRequest();
+
+  const promise = new Promise((resolve, reject) => {
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(event.loaded, event.total);
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        // Some storage CORS configs do not expose ETag to browsers yet.
+        resolve(xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "etag-unavailable");
+        return;
+      }
+
+      reject(new Error(`Upload failed with status ${xhr.status}`));
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new Error("Upload failed"));
+    });
+
+    xhr.addEventListener("abort", () => {
+      const abortError = new Error("Upload canceled");
+      abortError.name = "AbortError";
+      reject(abortError);
+    });
+
+    xhr.open("PUT", url);
+    if (file.type) {
+      xhr.setRequestHeader("Content-Type", file.type);
+    }
+    xhr.send(file);
+  });
+
+  return {
+    promise,
+    abort: () => xhr.abort(),
+  };
+}
+
 function handleErrorResponse(response) {
   if (response.status === 403) {
     // redirect to login
     window.location.href = "/login";
   } else {
     throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+}
+
+async function readErrorMessage(response, fallbackMessage) {
+  if (response.status === 403) {
+    window.location.href = "/login";
+    return fallbackMessage;
+  }
+
+  try {
+    const errorText = await response.text();
+    return errorText || fallbackMessage;
+  } catch (error) {
+    return fallbackMessage;
   }
 }

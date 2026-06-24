@@ -1,6 +1,15 @@
 import React from "react";
-import { Box, Paper, Typography, CircularProgress } from "@mui/material";
+import { Box, Paper, Typography, CircularProgress, Button, LinearProgress } from "@mui/material";
 import "./ChatMessageList.css";
+import {
+  formatBytes,
+  getAttachmentDisplayUrl,
+  getLocalUploadStatusCopy,
+  getProcessingIndicator,
+  isMediaMessageType,
+  LOCAL_UPLOAD_STATUSES,
+  MESSAGE_TYPES,
+} from "./mediaUtils";
 
 function formatRelativeTime(timestamp) {
   if (!timestamp) {
@@ -83,6 +92,10 @@ function formatMessage(message, username) {
     timestamp: message.timestamp,
     relativeTimestamp: formatRelativeTime(message.timestamp),
     absoluteTimestamp: formatAbsoluteTimeVi(message.timestamp),
+    messageType: message.messageType || MESSAGE_TYPES.TEXT,
+    attachments: Array.isArray(message.attachments) ? message.attachments : [],
+    localUploadState: message.localUploadState || null,
+    processingIndicator: getProcessingIndicator(message),
   };
 }
 
@@ -94,6 +107,9 @@ function ChatMessageList({
   isLoading,
   isLoadingOlder,
   onScroll,
+  onRetryPendingMessage,
+  onCancelPendingMessage,
+  onDismissPendingMessage,
 }) {
   return (
     <div className="chat-message-list-wrapper">
@@ -116,6 +132,11 @@ function ChatMessageList({
 
         {messages.map((message, index) => {
           const formatted = formatMessage(message, username);
+          // todo remove this. todo test this: while uploading a photo and updating progress of that message, it re-render all other messages? Evidence: while uploading a photo, these logs are printed constantly.
+          if (message.attachments.length > 0) {
+            console.log("formatted", formatted);
+            console.log("message", message);
+          }
 
           if (formatted.type === "system") {
             const systemClass = formatted.isDisconnected
@@ -158,6 +179,15 @@ function ChatMessageList({
                 <Typography variant="body2" className="chat-message-text">
                   {formatted.content}
                 </Typography>
+                {isMediaMessageType(formatted.messageType) && (
+                  <MessageMediaContent
+                    message={message}
+                    formatted={formatted}
+                    onRetryPendingMessage={onRetryPendingMessage}
+                    onCancelPendingMessage={onCancelPendingMessage}
+                    onDismissPendingMessage={onDismissPendingMessage}
+                  />
+                )}
               </Paper>
             </Box>
           );
@@ -170,3 +200,218 @@ function ChatMessageList({
 }
 
 export default ChatMessageList;
+
+function MessageMediaContent({
+  message,
+  formatted,
+  onRetryPendingMessage,
+  onCancelPendingMessage,
+  onDismissPendingMessage,
+}) {
+  return (
+    <Box className="chat-message-media-block">
+      {formatted.messageType === MESSAGE_TYPES.IMAGE && (
+        <ImageGallery attachments={formatted.attachments} />
+      )}
+      {formatted.messageType === MESSAGE_TYPES.VIDEO && (
+        <InlineVideo attachment={formatted.attachments[0]} messageType={formatted.messageType} />
+      )}
+      {formatted.messageType === MESSAGE_TYPES.AUDIO && (
+        <InlineAudio attachment={formatted.attachments[0]} messageType={formatted.messageType} />
+      )}
+      {formatted.messageType === MESSAGE_TYPES.FILE && (
+        <FileAttachmentCard attachment={formatted.attachments[0]} />
+      )}
+      {formatted.processingIndicator && (
+        <Box className={`chat-message-processing-indicator ${formatted.processingIndicator.tone}`}>
+          <Typography variant="caption" className="chat-message-processing-title">
+            {formatted.processingIndicator.label}
+          </Typography>
+          <Typography variant="caption" className="chat-message-processing-copy">
+            {formatted.processingIndicator.description}
+          </Typography>
+        </Box>
+      )}
+      {formatted.localUploadState && (
+        <LocalUploadStatus
+          message={message}
+          localUploadState={formatted.localUploadState}
+          onRetryPendingMessage={onRetryPendingMessage}
+          onCancelPendingMessage={onCancelPendingMessage}
+          onDismissPendingMessage={onDismissPendingMessage}
+        />
+      )}
+    </Box>
+  );
+}
+
+function ImageGallery({ attachments }) {
+  return (
+    <Box className={`chat-message-image-gallery ${attachments.length > 1 ? "multi" : "single"}`}>
+      {attachments.map((attachment, index) => {
+        const imageUrl = getAttachmentDisplayUrl(MESSAGE_TYPES.IMAGE, attachment);
+
+        return (
+          <a
+            key={attachment.id || `${attachment.originalFilename}-${index}`}
+            href={attachment.contentUrl || imageUrl || "#"}
+            target="_blank"
+            rel="noreferrer"
+            className="chat-message-image-link"
+          >
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={attachment.originalFilename || `Image ${index + 1}`}
+                className="chat-message-image"
+                loading="lazy"
+              />
+            ) : (
+              <Box className="chat-message-image-fallback">
+                <Typography variant="caption">{attachment.originalFilename || "Image unavailable"}</Typography>
+              </Box>
+            )}
+          </a>
+        );
+      })}
+    </Box>
+  );
+}
+
+function InlineVideo({ attachment, messageType }) {
+  const videoUrl = getAttachmentDisplayUrl(messageType, attachment);
+  if (!attachment) {
+    return null;
+  }
+
+  return (
+    <Box className="chat-message-video-card">
+      {videoUrl ? (
+        <video
+          className="chat-message-video"
+          controls
+          preload="metadata"
+          src={videoUrl}
+        />
+      ) : (
+        <Box className="chat-message-media-fallback">
+          <Typography variant="body2">Video preview unavailable</Typography>
+        </Box>
+      )}
+      <Typography variant="caption" className="chat-message-attachment-meta">
+        {attachment.originalFilename} {attachment.sizeBytes ? `• ${formatBytes(attachment.sizeBytes)}` : ""}
+      </Typography>
+    </Box>
+  );
+}
+
+function InlineAudio({ attachment, messageType }) {
+  const audioUrl = getAttachmentDisplayUrl(messageType, attachment);
+  if (!attachment) {
+    return null;
+  }
+
+  return (
+    <Box className="chat-message-audio-card">
+      {audioUrl ? (
+        <audio className="chat-message-audio" controls preload="metadata" src={audioUrl}>
+          <track kind="captions" />
+        </audio>
+      ) : (
+        <Box className="chat-message-media-fallback">
+          <Typography variant="body2">Audio preview unavailable</Typography>
+        </Box>
+      )}
+      <Typography variant="caption" className="chat-message-attachment-meta">
+        {attachment.originalFilename} {attachment.sizeBytes ? `• ${formatBytes(attachment.sizeBytes)}` : ""}
+      </Typography>
+    </Box>
+  );
+}
+
+function FileAttachmentCard({ attachment }) {
+  if (!attachment) {
+    return null;
+  }
+
+  return (
+    <Box className="chat-message-file-card">
+      <Box className="chat-message-file-meta">
+        <Typography variant="body2" className="chat-message-file-name">
+          {attachment.originalFilename || "Attachment"}
+        </Typography>
+        <Typography variant="caption" className="chat-message-attachment-meta">
+          {formatBytes(attachment.sizeBytes)}
+        </Typography>
+      </Box>
+      <Box className="chat-message-file-actions">
+        {attachment.contentUrl && (
+          <>
+            <a href={attachment.contentUrl} target="_blank" rel="noreferrer" className="chat-message-file-link">
+              Open
+            </a>
+            <a href={attachment.contentUrl} download className="chat-message-file-link">
+              Download
+            </a>
+          </>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function LocalUploadStatus({
+  message,
+  localUploadState,
+  onRetryPendingMessage,
+  onCancelPendingMessage,
+  onDismissPendingMessage,
+}) {
+  const statusCopy = getLocalUploadStatusCopy(localUploadState.status);
+  const isUploading =
+    localUploadState.status === LOCAL_UPLOAD_STATUSES.UPLOAD_IN_PROGRESS
+    || localUploadState.status === LOCAL_UPLOAD_STATUSES.FINALIZING;
+  const showRetry =
+    localUploadState.status === LOCAL_UPLOAD_STATUSES.UPLOAD_FAILED
+    || localUploadState.status === LOCAL_UPLOAD_STATUSES.CANCELED;
+
+  return (
+    <Box className="chat-message-local-status">
+      <Typography variant="caption" className="chat-message-local-status-title">
+        {statusCopy.title}
+      </Typography>
+      <Typography variant="caption" className="chat-message-local-status-copy">
+        {localUploadState.errorMessage || statusCopy.description}
+      </Typography>
+      {isUploading && (
+        <>
+          <LinearProgress
+            variant="determinate"
+            value={Math.max(0, Math.min(100, Number(localUploadState.progressPercent || 0)))}
+            className="chat-message-local-progress"
+          />
+          <Typography variant="caption" className="chat-message-local-progress-copy">
+            {Math.round(Number(localUploadState.progressPercent || 0))}%
+          </Typography>
+        </>
+      )}
+      <Box className="chat-message-local-actions">
+        {showRetry && (
+          <Button size="small" onClick={() => onRetryPendingMessage?.(message.localId)}>
+            Retry
+          </Button>
+        )}
+        {isUploading && (
+          <Button size="small" onClick={() => onCancelPendingMessage?.(message.localId)}>
+            Cancel
+          </Button>
+        )}
+        {!isUploading && (
+          <Button size="small" onClick={() => onDismissPendingMessage?.(message.localId)}>
+            Dismiss
+          </Button>
+        )}
+      </Box>
+    </Box>
+  );
+}

@@ -44,6 +44,25 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     sendMessage: sendWebSocketMessage,
   } = useWebSocket();
 
+  const upsertMessage = (previousMessages, incomingMessage) => {
+    if (!incomingMessage) {
+      return previousMessages;
+    }
+
+    if (incomingMessage.id === undefined || incomingMessage.id === null) {
+      return [...previousMessages, incomingMessage];
+    }
+
+    const existingIndex = previousMessages.findIndex((message) => message.id === incomingMessage.id);
+    if (existingIndex === -1) {
+      return [...previousMessages, incomingMessage];
+    }
+
+    const nextMessages = [...previousMessages];
+    nextMessages[existingIndex] = incomingMessage;
+    return nextMessages;
+  };
+
   // Load groups once on mount; cleanup any active subscription on unmount
   useEffect(() => {
     loadGroups();
@@ -207,7 +226,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
     const unsubscribe = subscribeSingleGroup(topicPath, (message) => {
       if (currentChatIdRef.current === chatId) {
-        setMessages((prev) => [...prev, message]);
+        setMessages((prev) => upsertMessage(prev, message));
       }
     });
     currentUnsubscribeRef.current = unsubscribe;
@@ -300,6 +319,19 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     switchToChat(newGroup.id, newGroup.name);
   };
 
+  const handleMediaMessageDelivered = (message) => {
+    if (!message) {
+      return;
+    }
+
+    const targetChatId = message.groupId === undefined || message.groupId === null ? "public" : Number(message.groupId);
+    if (currentChatIdRef.current !== targetChatId) {
+      return;
+    }
+
+    setMessages((prev) => upsertMessage(prev, message));
+  };
+
   const handleChatNavigate = (chatId) => {
     navigate(`/group/${chatId}`);
   };
@@ -327,6 +359,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
           isConnected={wsConnected}
           username={username}
           onSendMessage={sendMessage}
+          onMediaMessageDelivered={handleMediaMessageDelivered}
           onLoadOlderMessages={loadOlderGroupMessages}
           onLogout={onLogout}
         />
