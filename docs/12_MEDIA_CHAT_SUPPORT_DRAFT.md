@@ -202,7 +202,7 @@ flowchart LR
 
 ### Component placement
 
-Phase-1 recommendation:
+Recommendation for this feature:
 
 - implement upload orchestration, malware-scan coordination, and media-processing logic inside the existing `chat-app-backend`
 - do not create two new Spring Boot applications in the first rollout
@@ -214,7 +214,7 @@ Future extraction path:
 
 ### RabbitMQ role
 
-Recommended phase-1 role for RabbitMQ:
+Recommended role for RabbitMQ:
 
 - use RabbitMQ for cross-instance real-time message delivery only
 - do not send media bytes through RabbitMQ
@@ -260,7 +260,7 @@ Recommended event shape:
 
 ### Malware scanning approach
 
-Recommended phase-1 technique:
+Recommended technique:
 
 - use `ClamAV` with `clamd` as the malware scanning engine
 - run it as an infrastructure dependency, for example a local container in development and an equivalent deployment in production
@@ -841,10 +841,10 @@ Recommendation path:
    - scheduled hard-delete of expired files and related metadata cleanup
    - failure observability and alerts
 10. Phase 10: Add optional optimizations after v1 works end-to-end
-   - better thumbnails and previews
-   - asynchronous secondary derivatives
-   - CDN-backed delivery for clean media
-   - stronger moderation/reporting workflows
+    - better thumbnails and previews
+    - asynchronous secondary derivatives
+    - CDN-backed delivery for clean media
+    - stronger moderation/reporting workflows
 
 ## Chosen Solution + Implementation
 
