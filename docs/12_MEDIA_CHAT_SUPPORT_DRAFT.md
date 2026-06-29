@@ -202,7 +202,7 @@ flowchart LR
 
 ### Component placement
 
-Phase-1 recommendation:
+Recommendation for this feature:
 
 - implement upload orchestration, malware-scan coordination, and media-processing logic inside the existing `chat-app-backend`
 - do not create two new Spring Boot applications in the first rollout
@@ -214,7 +214,7 @@ Future extraction path:
 
 ### RabbitMQ role
 
-Recommended phase-1 role for RabbitMQ:
+Recommended role for RabbitMQ:
 
 - use RabbitMQ for cross-instance real-time message delivery only
 - do not send media bytes through RabbitMQ
@@ -260,7 +260,7 @@ Recommended event shape:
 
 ### Malware scanning approach
 
-Recommended phase-1 technique:
+Recommended technique:
 
 - use `ClamAV` with `clamd` as the malware scanning engine
 - run it as an infrastructure dependency, for example a local container in development and an equivalent deployment in production
@@ -841,10 +841,10 @@ Recommendation path:
    - scheduled hard-delete of expired files and related metadata cleanup
    - failure observability and alerts
 10. Phase 10: Add optional optimizations after v1 works end-to-end
-   - better thumbnails and previews
-   - asynchronous secondary derivatives
-   - CDN-backed delivery for clean media
-   - stronger moderation/reporting workflows
+    - better thumbnails and previews
+    - asynchronous secondary derivatives
+    - CDN-backed delivery for clean media
+    - stronger moderation/reporting workflows
 
 ## Chosen Solution + Implementation
 
@@ -857,7 +857,8 @@ Status:
 - Phase 5 completed
 - Phase 6 completed
 - Phase 7 completed
-- Phases 8-10 not implemented yet
+- Phase 8 completed
+- Phases 9-10 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1268,6 +1269,64 @@ What Phase 7 intentionally does **not** implement yet:
 Phase-7 implementation note:
 
 - the backend now has a real MinIO-backed vertical slice for the first usable photo flow, which is enough for FE/Postman to exercise prepare -> upload -> complete -> render for small images before adding malware scan, rate limiting, and deeper optimizations
+
+### Phase 8 - Expand UI capabilities beyond the first image slice
+
+Implemented in `chat-app-frontend`:
+
+- Extended `ChatMessageComposer` with:
+  - attachment picker
+  - selected-media draft tray
+  - single-message upload entry point for:
+    - multi-image batches
+    - single video
+    - single audio
+    - single generic file
+- Added direct-to-storage upload orchestration from the browser via:
+  - `prepareMediaMessage(...)`
+  - `uploadFileToPresignedUrl(...)`
+  - `completeMediaMessage(...)`
+- Added sender-side optimistic upload placeholders in the message list with:
+  - upload progress percentage
+  - publishing/finalizing state
+  - retry action for failed/canceled uploads
+  - cancel action while upload is in flight
+  - dismiss action for failed/canceled placeholders
+- Extended `ChatMessageList` rendering for media-aware history/realtime messages:
+  - multi-image gallery rendering
+  - inline video playback
+  - inline audio playback
+  - file open/download actions
+- Added visible processing-state UI for image/video messages based on backend attachment status updates
+- Updated `ChatPage` realtime message handling to upsert by message id so async processing republishes replace the existing message instead of duplicating it
+
+Phase-8 behavior currently covers:
+
+- sender can choose media from the composer and send it through the existing prepare -> upload -> complete backend flow
+- image messages can render one or many images in the chat stream
+- video/audio/file messages can render with type-appropriate inline or action-based UI when the backend returns a usable content URL
+- sender sees pre-publish local placeholder states for:
+  - uploading
+  - finalizing/publishing
+  - failed
+  - canceled
+- recipients and sender can see image/video processing indicators after publish while async backend processing is still running
+
+Current Phase-8 limitations:
+
+- the browser UI intentionally stops on `MULTIPART` upload plans for now because backend multipart completion is not fully implemented yet
+- text captions combined with media messages are still not supported in the current UI slice
+- file/video/audio flows are most reliable today for payloads that stay within the current single-part upload path
+
+What Phase 8 intentionally does **not** implement yet:
+
+- real browser multipart upload + multipart completion against MinIO
+- captions/alt text for media messages
+- richer media lightbox/gallery navigation beyond inline rendering
+
+Phase-8 implementation note:
+
+- the frontend now matches the backend media message contract closely enough to exercise the usable UI slice end to end, while still keeping the known multipart gap explicit until the backend storage flow is finished
 
 ## Future Higher-Scale Path
 
