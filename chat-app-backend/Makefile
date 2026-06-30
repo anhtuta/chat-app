@@ -2,11 +2,11 @@
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
 .PHONY: stop restart restart.be2 logs clean status check.env
 .PHONY: db.migrate db.info db.clean db.repair
-.PHONY: e2e.test
+.PHONY: test.be test.ut test.it test.e2e
 
 .DEFAULT_GOAL := help
 
-# Check and create .env file if it doesn't exist
+# Check and create .env file if it doesn't exist (only in chat-app-backend folder)
 check.env:
 	@if [ ! -f .env ]; then \
 		echo "📝 Creating .env file from example..."; \
@@ -36,6 +36,11 @@ help:
 	@echo "  make db.info     - Show migration status"
 	@echo "  make db.clean    - Drop all objects in schema (use with caution!)"
 	@echo "  make db.repair   - Repair Flyway schema history"
+	@echo ""
+	@echo "Backend Test Commands:"
+	@echo "  make test.be              - Run all backend tests (unit + integration)"
+	@echo "  make test.be.unit         - Run unit tests only (fast, no Spring context)"
+	@echo "  make test.be.integration  - Run integration tests only (@DataJpaTest, @SpringBootTest)"
 	@echo ""
 	@echo "  make help        - Show this help message"
 	@echo ""
@@ -88,9 +93,15 @@ run.be: check.env
 	@echo "🚀 Running Spring Boot app locally with .env variables..."
 	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
 
-test.be: check.env
-	@echo "🚀 Running Spring Boot tests..."
+test.be: check.env test.be.unit test.be.integration
+
+test.ut: check.env
+	@echo "🚀 Running backend unit tests..."
 	./mvnw test
+
+test.it: check.env
+	@echo "🚀 Running backend integration tests..."
+	./mvnw failsafe:integration-test
 
 # Used by Cursor "Debug Backend (make run.be)" launch config.
 # Ensures .env exists and compiles with the same env vars as make run.be.
@@ -108,7 +119,7 @@ run.bot:
 	@echo "🚀 Running Bot simulator..."
 	cd ../bot-simulator && ./mvnw spring-boot:run
 
-e2e.test:
+test.e2e:
 	@echo "🚀 Running E2E tests..."
 	@cd ../e2e && E2E_BASE_URL=http://localhost:9010 E2E_SKIP_WEBSERVER=1 pnpm test
 
