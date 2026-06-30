@@ -75,6 +75,7 @@ public class AsyncMediaProcessingService implements MediaProcessingService {
                 media.setStatus(MediaStatus.MEDIA_READY);
             }
             messageMediaRepository.saveAll(mediaList);
+            logger.debug("Async media processing completed for messageId={}", messageId);
             publishUpdatedMessage(messageId);
         } catch (Exception e) {
             logger.error("Async media processing failed for messageId={}", messageId, e);

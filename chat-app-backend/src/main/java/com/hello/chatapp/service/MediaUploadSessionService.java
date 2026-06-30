@@ -36,6 +36,8 @@ import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.HashMap;
 import java.time.LocalDateTime;
@@ -209,7 +211,7 @@ public class MediaUploadSessionService {
 
         MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
         publishFinalMessage(response, message);
-        enqueueAsyncProcessingIfNeeded(message);
+        scheduleAsyncProcessingAfterCommit(message);
         return response;
     }
 
@@ -406,11 +408,18 @@ public class MediaUploadSessionService {
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, nonNullResponse);
     }
 
-    private void enqueueAsyncProcessingIfNeeded(Message message) {
+    private void scheduleAsyncProcessingAfterCommit(Message message) {
+        Long messageId = Objects.requireNonNull(message.getId());
         MessageType messageType = message.getMessageType();
-        if (messageType == MessageType.IMAGE || messageType == MessageType.VIDEO) {
-            mediaProcessingService.enqueueProcessing(Objects.requireNonNull(message.getId()));
+        if (messageType != MessageType.IMAGE && messageType != MessageType.VIDEO) {
+            return;
         }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                mediaProcessingService.enqueueProcessing(messageId);
+            }
+        });
     }
 
     private long resolveMaxSizeBytes(MessageType messageType) {
