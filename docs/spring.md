@@ -514,3 +514,29 @@ A polling `@Scheduled` approach could work in theory (“every 3s, scan all pend
 - Wake up constantly even when **zero** groups have pending updates.
 - Still need the same `pendingUpdates` map and deadline logic you already have.
 - Be less precise and less efficient than scheduling exactly when each group’s debounce window ends.
+
+## Enqueue async work only after transaction commit
+
+**Problem:** Calling `@Async` (or publishing to a queue) inside a `@Transactional` method runs the worker on another thread before the transaction commits. Under `READ COMMITTED`, that thread cannot see uncommitted rows, so `findById` may return empty and processing fails permanently (no retry).
+
+Sample code:
+
+```java
+@Transactional
+public MessageResponse completeUploadSession() {
+   // Lệnh này sẽ lưu object message xuống DB, nhưng chưa commit
+   publishFinalMessage(response, message);
+
+   // Enqueue bên trong transaction, processor sẽ fetch object message từ DB và ko thấy (do chưa commit) --> bị race condition
+   enqueueAsyncProcessingIfNeeded(message);
+}
+```
+
+**Fix used in this project:** Register a `TransactionSynchronization` callback and enqueue in `afterCommit()` — see `MediaUploadSessionService.scheduleAsyncProcessingAfterCommit()`.
+
+**Other options:** `@TransactionalEventListener(phase = AFTER_COMMIT)` with an application event; split persist into a `REQUIRES_NEW` transaction so commit happens first; retry `NotFoundException` in the worker as a safety net only.
+
+Other solutions:
+
+1. Split transactions: Persist in a `REQUIRES_NEW` method so it commits first, then enqueue in the outer flow. Works, but easier to get wrong than `afterCommit`.
+2. Retry on `NotFoundException` in the async worker.
