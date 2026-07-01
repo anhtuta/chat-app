@@ -12,6 +12,7 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.UploadSessionStatus;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MediaUploadRepository;
@@ -33,8 +34,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -154,16 +157,67 @@ class MediaUploadSessionServiceTest {
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
     }
 
-    private void stubSuccessfulCompletion(MessageType messageType) {
-        MediaUpload upload = buildUpload(messageType);
-        Message savedMessage = buildMessage(messageType);
+    @Test
+    void completeUploadSession_rejectsEtagMismatch() {
+        stubUploadSessionLookup(MessageType.IMAGE);
+        stubStoredEtagVerification(Optional.of("\"different-etag\""));
 
+        assertThatThrownBy(() -> mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                completionRequest(ATTACHMENT_ID)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("etag does not match");
+    }
+
+    @Test
+    void completeUploadSession_rejectsUnavailableClientEtag() {
+        stubUploadSessionLookup(MessageType.IMAGE);
+
+        assertThatThrownBy(() -> mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                new CompleteMediaMessageRequest(List.of(
+                        new CompleteMediaAttachmentRequest(ATTACHMENT_ID, "etag-unavailable", null)))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("etag is unavailable");
+    }
+
+    @Test
+    void completeUploadSession_rejectsMissingStoredObject() {
+        stubUploadSessionLookup(MessageType.IMAGE);
+        stubStoredEtagVerification(Optional.empty());
+
+        assertThatThrownBy(() -> mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                completionRequest(ATTACHMENT_ID)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("not found in storage");
+    }
+
+    private void stubUploadSessionLookup(MessageType messageType) {
         when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
-                .thenReturn(List.of(upload));
+                .thenReturn(List.of(buildUpload(messageType)));
         when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+    }
+
+    private void stubStoredEtagVerification(Optional<String> storageEtag) {
         when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
                 .thenReturn(objectStorageProvider);
-        when(objectStorageProvider.objectExists(anyString())).thenReturn(true);
+        when(objectStorageProvider.supportsStoredEtagVerification()).thenReturn(true);
+        when(objectStorageProvider.findObjectEtag(uploadObjectKey())).thenReturn(storageEtag);
+    }
+
+    private void stubSuccessfulCompletion(MessageType messageType) {
+        stubSuccessfulCompletion(messageType, "\"etag-1\"");
+    }
+
+    private void stubSuccessfulCompletion(MessageType messageType, String storageEtag) {
+        Message savedMessage = buildMessage(messageType);
+
+        stubUploadSessionLookup(messageType);
+        stubStoredEtagVerification(Optional.of(storageEtag));
         when(messageService.savePublicMediaMessage(eq(user), eq(messageType), anyList()))
                 .thenReturn(savedMessage);
         when(messageResponseMapper.toResponse(savedMessage)).thenReturn(MessageResponse.builder().id(MESSAGE_ID).build());
@@ -202,6 +256,10 @@ class MediaUploadSessionServiceTest {
     private CompleteMediaMessageRequest completionRequest(String attachmentId) {
         return new CompleteMediaMessageRequest(List.of(
                 new CompleteMediaAttachmentRequest(attachmentId, "\"etag-1\"", null)));
+    }
+
+    private String uploadObjectKey() {
+        return "media/7/image/object.jpg";
     }
 
     private void triggerAfterCommit() {

@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -93,20 +94,29 @@ public class MinioObjectStorageProvider implements ObjectStorageProvider {
 
     @Override
     public boolean objectExists(String objectKey) {
+        return findObjectEtag(objectKey).isPresent();
+    }
+
+    @Override
+    public Optional<String> findObjectEtag(String objectKey) {
         try {
-            minioClient.statObject(StatObjectArgs.builder()
-                    .bucket(mediaStorageProperties.getMinio().getBucket())
-                    .object(objectKey)
-                    .build());
-            return true;
+            String etag = minioClient.statObject(StatObjectArgs.builder()
+                            .bucket(mediaStorageProperties.getMinio().getBucket())
+                            .object(objectKey)
+                            .build())
+                    .etag();
+            if (etag == null || etag.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(etag);
         } catch (ErrorResponseException e) {
             String code = e.errorResponse() == null ? null : e.errorResponse().code();
             if ("NoSuchKey".equals(code) || "NoSuchObject".equals(code)) {
-                return false;
+                return Optional.empty();
             }
-            throw new IllegalStateException("Failed to verify object existence in MinIO", e);
+            throw new IllegalStateException("Failed to read object ETag from MinIO", e);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to verify object existence in MinIO", e);
+            throw new IllegalStateException("Failed to read object ETag from MinIO", e);
         }
     }
 

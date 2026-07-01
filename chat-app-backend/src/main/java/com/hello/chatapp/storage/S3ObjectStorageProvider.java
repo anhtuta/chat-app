@@ -3,6 +3,8 @@ package com.hello.chatapp.storage;
 import com.hello.chatapp.config.MediaStorageProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+
 /**
  * S3-backed provider descriptor for AWS-style object storage.
  * This is a concrete strategy.
@@ -58,5 +60,16 @@ public class S3ObjectStorageProvider implements ObjectStorageProvider {
     @Override
     public boolean objectExists(String objectKey) {
         return true;
+    }
+
+    @Override
+    public Optional<String> findObjectEtag(String objectKey) {
+        // TODO: Replace with real S3 HeadObject when SDK integration lands.
+        return Optional.empty();
+    }
+
+    @Override
+    public boolean supportsStoredEtagVerification() {
+        return false;
     }
 }
