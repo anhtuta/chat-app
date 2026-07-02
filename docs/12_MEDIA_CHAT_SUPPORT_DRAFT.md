@@ -20,7 +20,7 @@ Supporting images, videos, audio, and arbitrary files requires more than just ad
 - Frontend upload UX and message rendering
 - Local development with MinIO and cloud production on AWS/GCP/Azure
 
-The main design goal is to support media messages without turning the backend into a file-transfer bottleneck, while keeping the message domain, security model, and future scale path clean.
+The main design goal is to support media messages **without turning the backend into a file-transfer bottleneck**, while keeping the message domain, security model, and future scale path clean.
 
 ## Functional Requirements
 
@@ -282,9 +282,7 @@ Why this is a good fit:
 
 ### Proposed Domain Model
 
-#### 1. Add `messageType` to `messages`
-
-Yes, the design should add a new column to the message table to identify message kind.
+#### 1. Add `messageType` to `messages` table
 
 Suggested enum:
 
@@ -297,9 +295,7 @@ Suggested enum:
 
 Why:
 
-- Rendering logic depends on message type
-- Validation rules depend on message type
-- Sidebar/latest-message preview often differs by type, for example "Photo" or a filename instead of raw text
+- Rendering logic and validation rules depend on message type
 - Keeping type on the main `messages` row makes message history queries efficient
 
 #### 2. Add a dedicated media metadata table
@@ -386,20 +382,6 @@ Recommended approach:
 - validate transitions in service-layer methods so invalid jumps are rejected consistently
 - if the workflow grows more complex, promote that transition policy into a small state-machine helper instead of scattering `if` checks everywhere
 
-Recommendation for naming:
-
-- keep enum values in `UPPER_CASE_WITH_UNDERSCORE`
-- do not add entity prefixes to every enum value when the enum type already scopes them
-- example:
-  - prefer `SCAN_PENDING` inside `MediaStatus`
-  - instead of `MEDIA_SCAN_PENDING`
-
-When prefixes are useful:
-
-- external queue event names
-- metrics/logging dimensions shared across multiple workflows
-- database values shared by more than one entity type
-
 ### Storage Abstraction
 
 Create a storage-provider interface in the backend so business logic does not depend on MinIO/S3/GCS/Azure specifics.
@@ -437,18 +419,6 @@ Suggested `application.yml` settings:
 - `chat.media.max-image-count`
 - `chat.media.retention-days`
 - `chat.media.multipart-threshold-bytes`
-
-Environment alignment note:
-
-- if these values are sourced from environment variables in local/dev deployments, mirror them in `chat-app-backend/.env.example`
-- recommended environment-variable counterparts:
-  - `CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES`
-  - `CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES`
-  - `CHAT_MEDIA_MAX_SIZE_VIDEO_BYTES`
-  - `CHAT_MEDIA_MAX_SIZE_FILE_BYTES`
-  - `CHAT_MEDIA_MAX_IMAGE_COUNT`
-  - `CHAT_MEDIA_RETENTION_DAYS`
-  - `CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES`
 
 ### API Draft
 
