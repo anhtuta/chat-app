@@ -368,7 +368,7 @@ Suppose `window_time` = 1.5 seconds.
 - **Throttling / Buffering:** _"I don't care how much you talk, I will take a snapshot and update the sidebar exactly every 1.5 seconds."_ It guarantees a steady, predictable heartbeat of updates.
 - **Debouncing:** _"I will wait until you **stop** talking for 1.5 seconds before I update the sidebar."_ Every time a new message arrives, the 1.5-second timer **resets**.
 
-## Explain why we lock `latestUpdate` in `GroupSummaryUpdatePublisher.java`
+## Explain why we lock `latestUpdate` in [`GroupSummaryUpdatePublisher.java`](../chat-app-backend/src/main/java/com/hello/chatapp/service/GroupSummaryUpdatePublisher.java)
 
 ### Why `synchronized (pendingUpdate)`?
 
