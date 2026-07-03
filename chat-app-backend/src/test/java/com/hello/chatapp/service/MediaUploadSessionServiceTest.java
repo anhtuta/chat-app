@@ -2,15 +2,15 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.config.MediaStorageProperties;
+import com.hello.chatapp.constant.ChatScope;
+import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
-import com.hello.chatapp.entity.ChatScope;
 import com.hello.chatapp.entity.MediaUpload;
 import com.hello.chatapp.entity.Message;
-import com.hello.chatapp.entity.MessageType;
-import com.hello.chatapp.entity.UploadSessionStatus;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;

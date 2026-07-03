@@ -1,12 +1,12 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.constant.MediaStatus;
+import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
-import com.hello.chatapp.entity.MediaStatus;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
-import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.MessageMediaRepository;
 import com.hello.chatapp.repository.MessageRepository;

@@ -1,7 +1,7 @@
 package com.hello.chatapp.dto;
 
+import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Message;
-import com.hello.chatapp.entity.MessageType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

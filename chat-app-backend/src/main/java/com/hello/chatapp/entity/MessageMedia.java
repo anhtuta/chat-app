@@ -1,5 +1,7 @@
 package com.hello.chatapp.entity;
 
+import com.hello.chatapp.constant.MediaScanStatus;
+import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

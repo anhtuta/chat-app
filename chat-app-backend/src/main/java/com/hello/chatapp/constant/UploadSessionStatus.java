@@ -1,4 +1,4 @@
-package com.hello.chatapp.entity;
+package com.hello.chatapp.constant;
 
 public enum UploadSessionStatus {
     UPLOAD_INITIATED,

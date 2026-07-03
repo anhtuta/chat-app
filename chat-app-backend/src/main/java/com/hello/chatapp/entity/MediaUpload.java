@@ -1,5 +1,8 @@
 package com.hello.chatapp.entity;
 
+import com.hello.chatapp.constant.ChatScope;
+import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

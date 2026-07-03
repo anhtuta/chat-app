@@ -1,8 +1,8 @@
 package com.hello.chatapp.dto;
 
 import com.hello.chatapp.entity.MessageMedia;
-import com.hello.chatapp.entity.MediaScanStatus;
-import com.hello.chatapp.entity.MediaStatus;
+import com.hello.chatapp.constant.MediaScanStatus;
+import com.hello.chatapp.constant.MediaStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

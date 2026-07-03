@@ -1,11 +1,11 @@
 package com.hello.chatapp.dto;
 
 import com.hello.chatapp.config.MediaStorageProperties;
-import com.hello.chatapp.entity.MediaScanStatus;
-import com.hello.chatapp.entity.MediaStatus;
+import com.hello.chatapp.constant.MediaScanStatus;
+import com.hello.chatapp.constant.MediaStatus;
+import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
-import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.storage.ObjectStorageProviderType;

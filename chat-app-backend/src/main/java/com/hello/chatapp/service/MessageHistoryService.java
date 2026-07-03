@@ -28,7 +28,6 @@ public class MessageHistoryService {
 
     @Transactional(readOnly = true)
     public List<MessageResponse> getPublicMessages() {
-        // TODO Add pagination
         List<Long> messageIds = messageRepository.findAllPublicMessageIds();
         return toResponsesWithMedia(messageIds, false);
     }

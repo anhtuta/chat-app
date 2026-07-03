@@ -1,7 +1,7 @@
 package com.hello.chatapp.dto;
 
-import com.hello.chatapp.entity.ChatScope;
-import com.hello.chatapp.entity.MessageType;
+import com.hello.chatapp.constant.ChatScope;
+import com.hello.chatapp.constant.MessageType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;

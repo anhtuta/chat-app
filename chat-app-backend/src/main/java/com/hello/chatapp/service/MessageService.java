@@ -1,9 +1,9 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
-import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupRepository;
@@ -93,7 +93,8 @@ public class MessageService {
                 Objects.requireNonNull(savedMessage.getId()));
 
         if (rowsUpdated == 0) {
-            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists", groupId);
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists",
+                    groupId);
         }
 
         return savedMessage;
@@ -132,7 +133,8 @@ public class MessageService {
                 Objects.requireNonNull(savedMessage.getId()));
 
         if (rowsUpdated == 0) {
-            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists", groupId);
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists",
+                    groupId);
         }
 
         return savedMessage;

@@ -1,7 +1,7 @@
 package com.hello.chatapp.repository;
 
+import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Message;
-import com.hello.chatapp.entity.MessageType;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 import org.junit.jupiter.api.Test;

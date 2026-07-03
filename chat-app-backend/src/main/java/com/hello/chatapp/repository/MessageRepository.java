@@ -17,7 +17,8 @@ import java.util.Optional;
 
 @Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
-    @Query("SELECT m.id FROM Message m WHERE m.group IS NULL ORDER BY m.timestamp ASC")
+    // TODO: Add pagination, for now, only get latest 100 public messages
+    @Query("SELECT m.id FROM Message m WHERE m.group IS NULL ORDER BY m.timestamp ASC LIMIT 100")
     List<Long> findAllPublicMessageIds();
 
     @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.group = :group ORDER BY m.timestamp ASC")
