@@ -117,22 +117,32 @@ Recommendation path:
 
 ## Chosen Solution + Implementation
 
-Planning only. No implementation has been done yet.
-
 Chosen path: **incremental migration with `allowJs`**, keeping runtime behavior stable while improving type coverage in reviewable slices.
 
 Planned implementation phases:
 
 ### Phase 1: Tooling bootstrap
 
-- Add `typescript` and React type packages.
-- Add a `tsconfig.json` suitable for CRA.
-- Start with pragmatic settings such as:
+- Status: Implemented
+- Added `typescript` and React/Jest/Node/SockJS type packages to `chat-app-frontend`.
+- Pinned `typescript` to `4.9.5` for compatibility with `react-scripts@5`.
+- Added a `tsconfig.json` suitable for CRA.
+- Started with pragmatic settings such as:
   - `allowJs: true`
   - `checkJs: false`
   - `noEmit: true`
-  - `strict: false` initially, or selectively enabled based on migration friction
-- Confirm the existing dev server, test runner, and production build still work.
+  - `strict: false` initially
+- Kept the existing JavaScript source files unchanged in this phase so TypeScript support can land without mixing in conversion work.
+- Verification:
+  - `npm run build` passes
+  - `CI=true npm test -- --watchAll=false --runInBand` passes
+  - the old CRA starter test was replaced with a small app smoke test because it no longer matched the real UI
+
+### Phase 1 Notes
+
+- Phase 1 is intentionally only a tooling/bootstrap step.
+- File conversion to `.ts` / `.tsx` starts in later phases.
+- Remaining frontend ESLint warnings seen during build are pre-existing and are not introduced by this phase.
 
 ### Phase 2: Shared types foundation
 
