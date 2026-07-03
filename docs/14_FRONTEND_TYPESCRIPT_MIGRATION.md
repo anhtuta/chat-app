@@ -146,14 +146,24 @@ Planned implementation phases:
 
 ### Phase 2: Shared types foundation
 
-- Create `src/types/` for stable frontend contracts.
-- Suggested initial files:
+- Status: Implemented
+- Created `src/types/` for stable frontend contracts.
+- Added:
   - `src/types/auth.ts`
   - `src/types/chat.ts`
   - `src/types/groups.ts`
   - `src/types/theme.ts`
   - `src/types/websocket.ts`
-- Keep types close to current backend payloads, and normalize data in the service layer where needed.
+  - `src/types/index.ts`
+- Kept the first-pass types close to current frontend usage so later `.ts` / `.tsx` file conversions can adopt them incrementally.
+- Added a small TODO in the group update types where the backend contract is not fully settled yet.
+
+### Phase 2 Notes
+
+- These types are additive only in this phase; existing JavaScript files were not converted yet.
+- Media upload session shapes were included in `src/types/chat.ts` because that is already part of the current chat message flow.
+- If backend payloads become stricter later, we should refine these interfaces at the service layer instead of spreading shape assumptions across components.
+- `@types/node` was pinned to a TypeScript-4-compatible version because `react-scripts@5` currently keeps us on `typescript@4.9.x`; newer `@types/node` releases use syntax that this compiler version cannot parse. This pin is intentional and should be revisited when the frontend toolchain moves beyond CRA.
 
 ### Phase 3: Convert low-risk entry points
 
