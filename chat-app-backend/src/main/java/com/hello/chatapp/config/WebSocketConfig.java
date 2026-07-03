@@ -1,6 +1,8 @@
 package com.hello.chatapp.config;
 
 import com.hello.chatapp.interceptor.RabbitMQSubscriptionInterceptor;
+import com.hello.chatapp.interceptor.WebSocketHandshakeInterceptor;
+import com.hello.chatapp.interceptor.WebSocketSecurityChannelInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
@@ -38,13 +40,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // /user is added so that convertAndSendToUser (personal queues) is routed through the simple broker.
         config.enableSimpleBroker("/topic", "/user");
 
-        // The messages whose destination starts with "/app" should be routed to message-handling methods (check WebSocketController).
+        // The messages whose destination starts with "/app" should be routed to message-handling methods
+        // (check WebSocketController).
         // E.g. a message with destination /app/chat.send will be routed to a method that has @MessageMapping("/chat.send")
         config.setApplicationDestinationPrefixes("/app");
 
         // Prefix used by convertAndSendToUser to resolve the actual destination.
         // e.g. convertAndSendToUser("alice", "/queue/group-updates", payload)
-        //   -> delivers to /user/alice/queue/group-updates
+        // --> delivers to /user/alice/queue/group-updates
         // The client subscribes to /user/queue/group-updates and Spring rewrites it automatically.
         config.setUserDestinationPrefix("/user");
     }

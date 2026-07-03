@@ -1,4 +1,4 @@
-package com.hello.chatapp.config;
+package com.hello.chatapp.interceptor;
 
 import com.hello.chatapp.entity.User;
 import jakarta.servlet.http.HttpSession;

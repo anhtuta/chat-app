@@ -1,5 +1,6 @@
-package com.hello.chatapp.config;
+package com.hello.chatapp.interceptor;
 
+import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
