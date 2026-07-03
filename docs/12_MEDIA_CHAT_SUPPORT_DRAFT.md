@@ -1142,6 +1142,7 @@ Implemented in `chat-app-backend`:
   - `GET /api/messages/public`
   - `GET /api/messages/groups/{groupId}`
 - Extended `MessageRepository` with `findWithMediaByIdIn(...)`
+- Optimized history pagination to use ID-only page queries (`findAllPublicMessageIds`, `findLatestGroupMessageIds`, `findGroupMessageIdsBeforeCursor`) before a single `findWithMediaByIdIn(...)` hydration pass
 - Kept `MessageResponse` as the shared payload shape for:
   - REST history responses
   - upload-completion publish flow
@@ -1151,6 +1152,7 @@ Implemented in `chat-app-backend`:
 Phase-6 behavior currently covers:
 
 - REST history now hydrates messages with their media attachments before mapping to `MessageResponse`
+- REST history pagination first selects message IDs only, then batch-hydrates user/group/attachments in one follow-up query (avoids `JOIN FETCH` on `attachments` during paginated queries)
 - REST history preserves expected ordering while still loading media-aware payloads
 - realtime media messages and REST-loaded media messages now use the same `MessageResponse` contract shape
 - realtime group-summary updates now publish non-text previews correctly, for example:
@@ -1171,7 +1173,6 @@ What Phase 6 intentionally does **not** implement yet:
 - signed read/download URL generation for history payloads
 - attachment access-refresh endpoint
 - frontend rendering work
-- richer history query optimizations beyond the current hydration approach
 
 Phase-6 implementation note:
 

@@ -87,9 +87,10 @@ class MessageServiceIntegrationTest {
         assertThat(executorService.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
 
         Group persistedGroup = groupRepository.findById(Objects.requireNonNull(group.getId())).orElseThrow();
-        Message actualLatestMessage = messageRepository.findLatestGroupMessages(persistedGroup, PageRequest.of(0, 1)).stream()
+        Long latestMessageId = messageRepository.findLatestGroupMessageIds(persistedGroup, PageRequest.of(0, 1)).stream()
                 .findFirst()
                 .orElseThrow();
+        Message actualLatestMessage = messageRepository.findWithMediaById(latestMessageId).orElseThrow();
 
         assertThat(persistedMessages).hasSize(6);
         assertThat(persistedGroup.getLatestMessage()).isEqualTo(actualLatestMessage.getContent());

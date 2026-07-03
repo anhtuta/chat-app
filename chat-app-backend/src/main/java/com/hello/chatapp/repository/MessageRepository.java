@@ -17,30 +17,28 @@ import java.util.Optional;
 
 @Repository
 public interface MessageRepository extends JpaRepository<Message, Long> {
-    @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.group IS NULL ORDER BY m.timestamp ASC")
-    List<Message> findAllPublicMessages();
+    @Query("SELECT m.id FROM Message m WHERE m.group IS NULL ORDER BY m.timestamp ASC")
+    List<Long> findAllPublicMessageIds();
 
     @Query("SELECT m FROM Message m JOIN FETCH m.user WHERE m.group = :group ORDER BY m.timestamp ASC")
     List<Message> findByGroupOrderByTimestampAsc(Group group);
 
     @Query("""
-            SELECT m FROM Message m
-            JOIN FETCH m.user
+            SELECT m.id FROM Message m
             WHERE m.group = :group
             ORDER BY m.timestamp DESC, m.id DESC
             """)
-    List<Message> findLatestGroupMessages(
+    List<Long> findLatestGroupMessageIds(
             @Param("group") Group group,
             Pageable pageable);
 
     @Query("""
-            SELECT m FROM Message m
-            JOIN FETCH m.user
+            SELECT m.id FROM Message m
             WHERE m.group = :group
                 AND (m.timestamp < :beforeTimestamp OR (m.timestamp = :beforeTimestamp AND m.id < :beforeId))
             ORDER BY m.timestamp DESC, m.id DESC
             """)
-    List<Message> findGroupMessagesBeforeCursor(
+    List<Long> findGroupMessageIdsBeforeCursor(
             @Param("group") Group group,
             @Param("beforeTimestamp") LocalDateTime beforeTimestamp,
             @Param("beforeId") Long beforeId,

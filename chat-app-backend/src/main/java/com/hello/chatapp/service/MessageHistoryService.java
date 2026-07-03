@@ -29,8 +29,8 @@ public class MessageHistoryService {
     @Transactional(readOnly = true)
     public List<MessageResponse> getPublicMessages() {
         // TODO Add pagination
-        List<Message> baseMessages = messageRepository.findAllPublicMessages();
-        return toResponsesWithMedia(baseMessages, false);
+        List<Long> messageIds = messageRepository.findAllPublicMessageIds();
+        return toResponsesWithMedia(messageIds, false);
     }
 
     @Transactional(readOnly = true)
@@ -40,22 +40,20 @@ public class MessageHistoryService {
             Long beforeId,
             int size) {
         boolean hasCursor = beforeTimestamp != null && beforeId != null;
-        List<Message> baseMessages = hasCursor
-                ? messageRepository.findGroupMessagesBeforeCursor(group, beforeTimestamp, beforeId, PageRequest.of(0, size))
-                : messageRepository.findLatestGroupMessages(group, PageRequest.of(0, size));
-        return toResponsesWithMedia(baseMessages, true);
+        List<Long> messageIds = hasCursor
+                ? messageRepository.findGroupMessageIdsBeforeCursor(group, beforeTimestamp, beforeId, PageRequest.of(0, size))
+                : messageRepository.findLatestGroupMessageIds(group, PageRequest.of(0, size));
+        return toResponsesWithMedia(messageIds, true);
     }
 
-    private List<MessageResponse> toResponsesWithMedia(List<Message> baseMessages, boolean ascendingOutput) {
-        if (baseMessages.isEmpty()) {
+    private List<MessageResponse> toResponsesWithMedia(List<Long> idsInQueryOrder, boolean ascendingOutput) {
+        if (idsInQueryOrder.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<Long> idsInQueryOrder = baseMessages.stream()
-                .map(Message::getId)
-                .toList();
-
-        // TODO why don't we use a single query (with JOIN FETCH) to fetch all messages with media?
+        // Why don't we use a single query (with JOIN FETCH) to fetch all messages with media?
+        // Vì 1 message có thể có nhiều media attachments, do đó query đầu tiên chỉ lấy message để phân trang trước,
+        // sau đó từ list message đó mới lấy các media của từng message đc!
         Map<Long, Message> messagesById = new LinkedHashMap<>();
         for (Message hydratedMessage : messageRepository.findWithMediaByIdIn(idsInQueryOrder)) {
             messagesById.put(hydratedMessage.getId(), hydratedMessage);
