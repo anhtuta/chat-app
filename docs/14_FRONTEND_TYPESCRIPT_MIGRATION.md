@@ -1,0 +1,232 @@
+## Current Problem
+
+`chat-app-frontend` is still written in plain JavaScript even though the app is already growing in scope and complexity.
+
+The current frontend includes:
+
+- Page-level orchestration in `src/pages/ChatPage.js`
+- Shared runtime state in `src/context/WebSocketProvider.js`
+- API and WebSocket boundary code in `src/services/`
+- A growing set of presentational and feature components in `src/components/`
+
+As more features are added, JavaScript-only code increases the risk of:
+
+- prop and callback contract drift across components
+- message/group payload shape mismatches between backend and frontend
+- weaker refactoring safety when moving logic into hooks or new modules
+- slower onboarding because data contracts live only in runtime behavior and comments
+
+We want TypeScript primarily to improve maintainability and refactoring safety, not to block feature delivery with a full rewrite.
+
+## Possible Solutions
+
+### 1. Big-bang conversion of the entire frontend
+
+- How it works: rename most or all frontend files to `.ts` / `.tsx`, add TypeScript config, and fix all compile issues in one migration.
+- Pros: fast arrival at a fully typed codebase; one migration story.
+- Cons: high risk, large diff, easy to stall feature work, harder to review, harder to debug if build/test issues appear.
+- Recommendation for our problem: No
+
+### 2. Incremental migration with `allowJs`
+
+- How it works: add TypeScript tooling and config first, keep JavaScript files working, then convert modules in a planned order over multiple small PRs.
+- Pros: low-risk rollout, easier review, preserves velocity, lets us prioritize the highest-value files first.
+- Cons: temporary mixed JS/TS codebase; some duplication while shared types settle.
+- Recommendation for our problem: Yes
+
+### 3. Combine TypeScript migration with a bundler migration
+
+- How it works: move from CRA / `react-scripts` to another toolchain such as Vite while also converting the codebase to TypeScript.
+- Pros: could modernize tooling and TypeScript support in one project.
+- Cons: mixes two large changes together; harder to isolate regressions; larger review and rollback surface.
+- Recommendation for our problem: No
+- When I'd use it (only if NOT recommended): only after TypeScript is established, or if we intentionally schedule a dedicated frontend platform migration.
+
+## High level Architecture/Design
+
+### Use cases
+
+- Add new frontend features with typed props, state, and service contracts.
+- Refactor existing chat flows with lower regression risk.
+- Reuse shared domain models such as messages, groups, auth state, and media payloads.
+- Catch integration mistakes earlier during local development and CI.
+
+### Component Diagram
+
+```text
+React Pages / Components
+        |
+        v
+Typed hooks / context providers
+        |
+        v
+Typed service layer (`api.ts`, `websocket.ts`)
+        |
+        v
+Backend REST + WebSocket contracts
+
+Shared `src/types/*` sits across the frontend layers and defines
+stable shapes for messages, groups, auth, theme, and websocket events.
+```
+
+### Core entities/models
+
+- `AuthState`: whether auth is being checked, whether the user is authenticated, and the active username.
+- `ChatMessage`: message id, sender, content, timestamp, optional `groupId`, and future media-related fields.
+- `ChatGroup`: id, name, latest message summary, latest message timestamp, and unread count.
+- `GroupSummaryUpdate`: real-time sidebar update payload for latest message and unread changes.
+- `ThemeOption` / resolved theme model: selectable theme id plus token metadata used by the app shell.
+- WebSocket subscription types: topic strings, unsubscribe handlers, connection state, and callback payloads.
+
+### API Draft
+
+This migration is intended to preserve the current external behavior.
+
+Frontend API draft changes are internal typing contracts, not backend API changes:
+
+- `checkAuth(): Promise<{ authenticated: boolean; username: string | null }>`
+- `getGroups(): Promise<ChatGroup[]>`
+- `getPublicMessages(): Promise<ChatMessage[]>`
+- `getGroupMessages(groupId, query): Promise<ChatMessage[]>`
+- `markGroupAsRead(groupId, messageId): Promise<void>`
+- `connectWebSocket(...)`, `subscribeToTopic(...)`, `sendMessage(...)` return typed values and accept typed payloads
+
+Backward-compatibility note:
+
+- No backend endpoint or websocket topic changes are required for Phase 1 of this migration.
+- If backend payloads are inconsistent today, TypeScript may expose that mismatch and force explicit normalization in the frontend service layer.
+
+## Recommendation
+
+Recommendation path:
+
+1. Phase 1: Add TypeScript support to the existing CRA frontend without changing runtime behavior.
+2. Phase 2: Introduce shared domain types for auth, messages, groups, themes, and websocket contracts.
+3. Phase 3: Convert app-shell and boundary files first (`index`, `App`, services, basic utilities).
+4. Phase 4: Convert state-heavy files (`WebSocketProvider`, `ChatPage`) after shared types are stable.
+5. Phase 5: Convert feature components and tests in small batches.
+6. Phase 6: Tighten TypeScript rules gradually and remove `allowJs` when the migration is nearly complete.
+7. Phase 7: Re-evaluate whether a later CRA-to-Vite migration is still worthwhile.
+
+### Recorded Decision
+
+- TypeScript comes first.
+- Vite, if we adopt it, comes later as a separate tooling migration.
+- We will keep the app as a React SPA for now and will not move to Next.js in this migration.
+- We should only revisit Next.js if future requirements demand SSR, SSG, or a React-owned server layer that Spring Boot does not already cover.
+
+## Chosen Solution + Implementation
+
+Planning only. No implementation has been done yet.
+
+Chosen path: **incremental migration with `allowJs`**, keeping runtime behavior stable while improving type coverage in reviewable slices.
+
+Planned implementation phases:
+
+### Phase 1: Tooling bootstrap
+
+- Add `typescript` and React type packages.
+- Add a `tsconfig.json` suitable for CRA.
+- Start with pragmatic settings such as:
+  - `allowJs: true`
+  - `checkJs: false`
+  - `noEmit: true`
+  - `strict: false` initially, or selectively enabled based on migration friction
+- Confirm the existing dev server, test runner, and production build still work.
+
+### Phase 2: Shared types foundation
+
+- Create `src/types/` for stable frontend contracts.
+- Suggested initial files:
+  - `src/types/auth.ts`
+  - `src/types/chat.ts`
+  - `src/types/groups.ts`
+  - `src/types/theme.ts`
+  - `src/types/websocket.ts`
+- Keep types close to current backend payloads, and normalize data in the service layer where needed.
+
+### Phase 3: Convert low-risk entry points
+
+- Rename:
+  - `src/index.js` -> `src/index.tsx`
+  - `src/App.js` -> `src/App.tsx`
+  - `src/reportWebVitals.js` -> `src/reportWebVitals.ts`
+- Convert tiny helper modules with minimal business logic first.
+- Avoid large component rewrites during this phase.
+
+### Phase 4: Convert service boundaries
+
+- Convert:
+  - `src/services/api.js` -> `src/services/api.ts`
+  - `src/services/websocket.js` -> `src/services/websocket.ts`
+  - `src/components/chat-area/mediaUtils.js` -> `src/components/chat-area/mediaUtils.ts` if still small and shared
+- Add typed request/response parsing here so React components can consume normalized data.
+- This phase should reduce the amount of `any` that leaks into the rest of the app.
+
+### Phase 5: Convert shared runtime state
+
+- Convert:
+  - `src/context/WebSocketProvider.js` -> `src/context/WebSocketProvider.tsx`
+- Type:
+  - context value
+  - unsubscribe handlers
+  - subscription registry entries
+  - callback payloads
+- Keep reconnect and cleanup behavior unchanged while clarifying the contracts.
+
+### Phase 6: Convert page-level orchestration
+
+- Convert:
+  - `src/pages/ChatPage.js` -> `src/pages/ChatPage.tsx`
+  - `src/pages/LoginPage.js` -> `src/pages/LoginPage.tsx`
+  - `src/pages/RegisterPage.js` -> `src/pages/RegisterPage.tsx`
+- Focus on typing state, route params, message/group flow, and handler props.
+- Expect this phase to uncover missing payload assumptions and nullable-state edge cases.
+
+### Phase 7: Convert presentational components and tests
+
+- Convert UI components in small groups:
+  - `src/components/Sidebar.js`
+  - `src/components/ChatArea.js`
+  - `src/components/CreateGroupModal.js`
+  - files under `src/components/chat-area/`
+- Convert tests as needed:
+  - `src/App.test.js`
+  - `src/setupTests.js` only if the tooling or imports benefit from TypeScript
+
+### Phase 8: Tighten constraints
+
+- Reduce `any` usage.
+- Enable stricter compiler options gradually.
+- Remove `allowJs` only when the remaining JavaScript surface is small enough not to block normal development.
+
+## Rollout Notes
+
+- Prefer small PRs grouped by concern, not by file extension alone.
+- Avoid mixing TypeScript migration with unrelated frontend behavior changes.
+- Keep each phase buildable and testable before moving to the next one.
+- If a file has unclear data contracts, add explicit TODOs rather than guessing field shapes silently.
+
+## Risks and Mitigations
+
+- Risk: backend payloads may not perfectly match frontend assumptions.
+  - Mitigation: normalize responses in `src/services/api.ts` and `src/services/websocket.ts` instead of spreading defensive checks across components.
+
+- Risk: migration slows active feature work.
+  - Mitigation: migrate only a few files per PR, starting with high-value boundaries and app shell files.
+
+- Risk: too many temporary `any` types reduce the benefit of migration.
+  - Mitigation: define shared types early and prefer `unknown` plus explicit narrowing at service boundaries when shape is uncertain.
+
+- Risk: CRA TypeScript support feels dated.
+  - Mitigation: keep the current bundler during this migration; reassess modern tooling after TypeScript is stable.
+
+## Future Higher-Scale Path
+
+- Extract domain-oriented hooks after type contracts settle, for example:
+  - `useAuth`
+  - `useGroups`
+  - `useMessages`
+  - `useChatSubscriptions`
+- Generate shared API types from backend contracts if the project later adopts OpenAPI or another schema source.
+- Revisit a CRA-to-Vite migration once the frontend has stronger type safety and smaller refactor risk.
