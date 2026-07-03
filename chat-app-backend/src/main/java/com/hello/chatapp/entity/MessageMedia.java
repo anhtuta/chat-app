@@ -20,6 +20,10 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
+/**
+ * media_uploads is the staging ledger for direct-to-storage uploads;
+ * message_media is the permanent attachment record once the message is published
+ */
 @Entity
 @Table(name = "message_media")
 @Getter

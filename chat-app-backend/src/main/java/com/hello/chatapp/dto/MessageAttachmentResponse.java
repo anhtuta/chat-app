@@ -27,9 +27,9 @@ public class MessageAttachmentResponse {
     private String thumbnailUrl;
     private String previewUrl;
     private String transcodedUrl;
-    private String thumbnailObjectKey;
-    private String previewObjectKey;
-    private String transcodedObjectKey;
+    // private String thumbnailObjectKey;
+    // private String previewObjectKey;
+    // private String transcodedObjectKey;
 
     public static MessageAttachmentResponse fromEntity(MessageMedia media) {
         if (media == null) {
@@ -46,9 +46,9 @@ public class MessageAttachmentResponse {
                 .width(media.getWidth())
                 .height(media.getHeight())
                 .durationMs(media.getDurationMs())
-                .thumbnailObjectKey(media.getThumbnailObjectKey())
-                .previewObjectKey(media.getPreviewObjectKey())
-                .transcodedObjectKey(media.getTranscodedObjectKey())
+                // .thumbnailObjectKey(media.getThumbnailObjectKey())
+                // .previewObjectKey(media.getPreviewObjectKey())
+                // .transcodedObjectKey(media.getTranscodedObjectKey())
                 .build();
     }
 }

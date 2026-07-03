@@ -20,6 +20,24 @@ import lombok.Setter;
 
 import java.time.LocalDateTime;
 
+/**
+ * <p>
+ * media_uploads is not the table that stores chat media messages. It's a temporary upload-workflow / staging table for the gap
+ * between prepare and complete, before a Message exists.
+ * Think of it as “upload session state”, or "workflow metadata", not “chat history”.
+ *
+ * Why persist this before upload? So the backend can:
+ * 
+ * 1. Tie a presigned URL to a known, server-chosen object_key
+ * 2. Know who may complete the upload
+ * 3. Group multiple files into one future message (upload_session_id)
+ * 4. Enforce expiry and status transitions
+ * 5. Reject spoofed /complete calls (must match a prepared row)
+ * 
+ * At prepare - create staging rows: for each file, the backend inserts a MediaUpload row.
+ * At complete - read staging rows: then copy into real message tables.
+ * </p>
+ */
 @Entity
 @Table(name = "media_uploads")
 @Getter

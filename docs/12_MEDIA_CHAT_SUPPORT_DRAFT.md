@@ -809,6 +809,8 @@ Recommendation path:
    - orphan upload cleanup
    - audit logging for upload, scan, and deletion events
    - scheduled hard-delete of expired files and related metadata cleanup
+     - Focus on orphan cleanup first. That’s where real waste is (DB rows + MinIO objects nobody will ever complete)
+     - Add optional purge of old `UPLOAD_SESSION_COMPLETED` rows if the table grows or you need GDPR-style retention
    - failure observability and alerts
 10. Phase 10: Add optional optimizations after v1 works end-to-end
     - better thumbnails and previews

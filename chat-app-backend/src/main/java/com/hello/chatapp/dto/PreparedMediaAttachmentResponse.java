@@ -18,5 +18,6 @@ public class PreparedMediaAttachmentResponse {
     private String presignedUrl;
     private String multipartUploadId;
     private Long recommendedPartSize;
+    // TODO: rename to expiresAt?
     private LocalDateTime completeBy;
 }
