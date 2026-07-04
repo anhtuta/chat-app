@@ -10,16 +10,17 @@ import type { ChatMessage } from "../types/chat";
 import type { GroupSummaryUpdate } from "../types/groups";
 import type {
   ChatTopicSubscriptionEntry,
-  PersonalSubscriptionEntry,
+  TopicCallback,
   Unsubscribe,
+  UserGroupUpdatesSubscription,
   WebSocketContextValue,
 } from "../types/websocket";
 
 const defaultContextValue: WebSocketContextValue = {
   isConnected: false,
-  subscribeSingleGroup: () => () => { },
-  unsubscribeSingleGroup: () => { },
-  subscribeGroupUpdates: () => () => { },
+  subscribeSingleGroup: () => () => {},
+  unsubscribeSingleGroup: () => {},
+  setGroupUpdatesHandler: () => {},
   sendMessage: () => false,
 };
 
@@ -27,157 +28,145 @@ const WebSocketContext = createContext<WebSocketContextValue>(defaultContextValu
 
 interface WebSocketProviderProps {
   children: React.ReactNode;
+  /** Authenticated username; when set, the provider keeps one persistent group-updates subscription. */
+  username: string | null;
+}
+
+function buildUserGroupUpdatesTopic(username: string): string {
+  return `/topic/user.${username}.group-updates`;
 }
 
 /**
- * Holds a single STOMP/SockJS connection for the whole app and
- * automatically re-subscribes registered topics after reconnects.
+ * Holds a single STOMP/SockJS connection for the whole app.
+ *
+ * Subscription model:
+ * 1. Chat topic (`/topic/public` or `/topic/group.{id}`) — changes when the user switches chat.
+ * 2. User group-updates (`/topic/user.{username}.group-updates`) — created once per login
+ *    session and torn down on logout or provider unmount.
  */
-export function WebSocketProvider({ children }: WebSocketProviderProps) {
+export function WebSocketProvider({ children, username }: WebSocketProviderProps) {
   const [isConnected, setIsConnected] = useState(false);
 
-  // Store single chat-topic subscription: { topic, callback, subscription }
-  const subscriptionRef = useRef<ChatTopicSubscriptionEntry | null>(null);
+  const chatSubscriptionRef = useRef<ChatTopicSubscriptionEntry | null>(null);
+  const userGroupUpdatesRef = useRef<UserGroupUpdatesSubscription | null>(null);
+  const groupUpdatesHandlerRef = useRef<TopicCallback<GroupSummaryUpdate> | null>(null);
 
-  // Store persistent personal-queue subscriptions:
-  // Map<topic, { callback, subscription, refCount, cleanupTimer }>
-  // These survive chat-switching (e.g. /user/queue/group-updates).
-  const personalSubscriptionsRef = useRef<Map<string, PersonalSubscriptionEntry<GroupSummaryUpdate>>>(new Map());
+  const subscribeChatTopic = () => {
+    if (!chatSubscriptionRef.current?.callback) return null;
 
-  const internalSubscribe = () => {
-    if (!subscriptionRef.current?.callback) return null;
-
-    const { topic } = subscriptionRef.current;
+    const { topic } = chatSubscriptionRef.current;
     const subscription = subscribeToTopic<ChatMessage>(topic, (message) => {
-      // Use latest callback reference
-      if (subscriptionRef.current?.callback) {
-        subscriptionRef.current.callback(message);
+      if (chatSubscriptionRef.current?.callback) {
+        chatSubscriptionRef.current.callback(message);
       }
     });
 
     if (subscription) {
-      subscriptionRef.current.subscription = subscription;
-      console.log("WebSocketProvider.internalSubscribe - subscribed to", topic, "id:", subscription?.id);
+      chatSubscriptionRef.current.subscription = subscription;
+      console.log("WebSocketProvider.subscribeChatTopic - subscribed to", topic, "id:", subscription.id);
     }
 
     return subscription;
   };
 
-  const unsubscribeSingleGroup = useCallback(() => {
-    if (subscriptionRef.current?.subscription) {
-      console.log("WebSocketProvider.unsubscribeSingleGroup - unsubscribing chat topic", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
-      unsubscribeSubscription(subscriptionRef.current.subscription);
+  const subscribeUserGroupUpdates = (activeUsername: string) => {
+    const topic = buildUserGroupUpdatesTopic(activeUsername);
+    const subscription = subscribeToTopic<GroupSummaryUpdate>(topic, (update) => {
+      groupUpdatesHandlerRef.current?.(update);
+    });
+
+    userGroupUpdatesRef.current = { username: activeUsername, subscription };
+    console.log("WebSocketProvider.subscribeUserGroupUpdates - subscribed to", topic, "id:", subscription?.id);
+  };
+
+  const unsubscribeUserGroupUpdates = () => {
+    if (userGroupUpdatesRef.current?.subscription) {
+      console.log("WebSocketProvider.unsubscribeUserGroupUpdates - id:", userGroupUpdatesRef.current.subscription.id);
+      unsubscribeSubscription(userGroupUpdatesRef.current.subscription);
     }
-    subscriptionRef.current = null;
+    userGroupUpdatesRef.current = null;
+  };
+
+  const resubscribeAll = () => {
+    if (chatSubscriptionRef.current) {
+      subscribeChatTopic();
+    }
+
+    const activeUsername = userGroupUpdatesRef.current?.username;
+    if (!activeUsername) return;
+
+    if (userGroupUpdatesRef.current?.subscription) {
+      unsubscribeSubscription(userGroupUpdatesRef.current.subscription);
+      userGroupUpdatesRef.current.subscription = null;
+    }
+
+    subscribeUserGroupUpdates(activeUsername);
+  };
+
+  const unsubscribeSingleGroup = useCallback(() => {
+    if (chatSubscriptionRef.current?.subscription) {
+      console.log(
+        "WebSocketProvider.unsubscribeSingleGroup - unsubscribing chat topic",
+        chatSubscriptionRef.current.topic,
+        "id:",
+        chatSubscriptionRef.current.subscription.id,
+      );
+      unsubscribeSubscription(chatSubscriptionRef.current.subscription);
+    }
+    chatSubscriptionRef.current = null;
   }, []);
 
-  const subscribeSingleGroup = useCallback((topic: string, callback: (message: ChatMessage) => void): Unsubscribe => {
-    // Unsubscribe from any existing subscription
-    if (subscriptionRef.current?.subscription) {
-      console.log("WebSocketProvider.subscribeSingleGroup - tearing down existing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
-      unsubscribeSubscription(subscriptionRef.current.subscription);
-    }
-
-    subscriptionRef.current = { topic, callback, subscription: null };
-
-    if (isConnected) {
-      internalSubscribe();
-    }
-
-    // Return an unsubscribe function to allow callers to remove interest
-    return () => unsubscribeSingleGroup();
-  }, [isConnected, unsubscribeSingleGroup]);
-
-  /**
-   * Subscribe to a personal (user-specific) topic that survives chat switching.
-   * Intended for topics like /user/queue/group-updates.
-   * Returns an unsubscribe function.
-   */
-  const subscribeGroupUpdates = useCallback((topic: string, callback: (update: GroupSummaryUpdate) => void): Unsubscribe => {
-    const existing = personalSubscriptionsRef.current.get(topic);
-    if (existing) {
-      // Reuse existing STOMP subscription for this topic.
-      existing.callback = callback;
-      existing.refCount = Number(existing.refCount || 0) + 1;
-      if (existing.cleanupTimer) {
-        clearTimeout(existing.cleanupTimer);
-        existing.cleanupTimer = null;
+  const subscribeSingleGroup = useCallback(
+    (topic: string, callback: TopicCallback<ChatMessage>): Unsubscribe => {
+      if (chatSubscriptionRef.current?.subscription) {
+        console.log(
+          "WebSocketProvider.subscribeSingleGroup - tearing down existing chat subscription",
+          chatSubscriptionRef.current.topic,
+          "id:",
+          chatSubscriptionRef.current.subscription.id,
+        );
+        unsubscribeSubscription(chatSubscriptionRef.current.subscription);
       }
-      console.log("WebSocketProvider.subscribeGroupUpdates - reusing topic", topic, "id:", existing.subscription?.id, "refCount:", existing.refCount);
 
-      return releasePersonalSubscription(topic);
-    }
+      chatSubscriptionRef.current = { topic, callback, subscription: null };
 
-    const entry: PersonalSubscriptionEntry<GroupSummaryUpdate> = {
-      callback,
-      subscription: null,
-      refCount: 1,
-      cleanupTimer: null,
-    };
-    personalSubscriptionsRef.current.set(topic, entry);
-
-    if (isConnected) {
-      const subscription = subscribeToTopic<GroupSummaryUpdate>(topic, (message) => {
-        const latest = personalSubscriptionsRef.current.get(topic);
-        if (latest?.callback) latest.callback(message);
-      });
-      entry.subscription = subscription;
-      console.log("WebSocketProvider.subscribeGroupUpdates - subscribed to", topic, "id:", subscription?.id);
-    }
-
-    return releasePersonalSubscription(topic);
-  }, [isConnected]);
-
-  const releasePersonalSubscription = (topic: string) => {
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-
-      const current = personalSubscriptionsRef.current.get(topic);
-      if (!current) return;
-
-      current.refCount = Math.max(0, Number(current.refCount || 0) - 1);
-      console.log("WebSocketProvider.subscribeGroupUpdates - release", topic, "id:", current.subscription?.id, "refCount:", current.refCount);
-
-      if (current.refCount > 0) return;
-
-      if (current.cleanupTimer) {
-        clearTimeout(current.cleanupTimer);
+      if (isConnected) {
+        subscribeChatTopic();
       }
-      current.cleanupTimer = setTimeout(() => {
-        const latest = personalSubscriptionsRef.current.get(topic);
-        if (!latest || Number(latest.refCount || 0) > 0) return;
 
-        if (latest.subscription) {
-          console.log("WebSocketProvider.subscribeGroupUpdates - unsubscribing topic", topic, "id:", latest.subscription?.id);
-          unsubscribeSubscription(latest.subscription);
-        }
-        personalSubscriptionsRef.current.delete(topic);
-      }, 250);
-    };
-  };
+      return () => unsubscribeSingleGroup();
+    },
+    [isConnected, unsubscribeSingleGroup],
+  );
 
-  // Re-subscribe after a reconnect
-  const resubscribeAll = () => {
-    if (subscriptionRef.current) {
-      internalSubscribe();
+  const setGroupUpdatesHandler = useCallback((callback: TopicCallback<GroupSummaryUpdate> | null) => {
+    groupUpdatesHandlerRef.current = callback;
+  }, []);
+
+  // Persistent user group-updates subscription: tied to login session, not chat switching.
+  useEffect(() => {
+    if (!username) {
+      unsubscribeUserGroupUpdates();
+      return;
     }
-    // Re-subscribe all personal queues after reconnect
-    personalSubscriptionsRef.current.forEach((entry, topic) => {
-      if (entry.cleanupTimer) {
-        clearTimeout(entry.cleanupTimer);
-        entry.cleanupTimer = null;
-      }
-      console.log("WebSocketProvider.resubscribeAll - re-subscribing personal topic", topic);
-      const subscription = subscribeToTopic<GroupSummaryUpdate>(topic, (message) => {
-        const latest = personalSubscriptionsRef.current.get(topic);
-        if (latest?.callback) latest.callback(message);
-      });
-      entry.subscription = subscription;
-      console.log("WebSocketProvider.resubscribeAll - subscribed", topic, "id:", subscription?.id);
-    });
-  };
+
+    const current = userGroupUpdatesRef.current;
+    if (current?.username === username && current.subscription) {
+      return;
+    }
+
+    if (current?.subscription) {
+      unsubscribeSubscription(current.subscription);
+    }
+
+    userGroupUpdatesRef.current = { username, subscription: null };
+
+    if (!isConnected) {
+      return;
+    }
+
+    subscribeUserGroupUpdates(username);
+  }, [username, isConnected]);
 
   useEffect(() => {
     connectWebSocket(
@@ -195,24 +184,20 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
 
     return () => {
       setIsConnected(false);
-      // Clean up chat subscription
-      if (subscriptionRef.current?.subscription) {
-        console.log("WebSocketProvider.cleanup - unsubscribing chat subscription", subscriptionRef.current.topic, "id:", subscriptionRef.current.subscription?.id);
-        unsubscribeSubscription(subscriptionRef.current.subscription);
+
+      if (chatSubscriptionRef.current?.subscription) {
+        console.log(
+          "WebSocketProvider.cleanup - unsubscribing chat subscription",
+          chatSubscriptionRef.current.topic,
+          "id:",
+          chatSubscriptionRef.current.subscription.id,
+        );
+        unsubscribeSubscription(chatSubscriptionRef.current.subscription);
       }
-      subscriptionRef.current = null;
-      // Clean up personal subscriptions
-      personalSubscriptionsRef.current.forEach((entry, topic) => {
-        if (entry.cleanupTimer) {
-          clearTimeout(entry.cleanupTimer);
-          entry.cleanupTimer = null;
-        }
-        if (entry.subscription) {
-          console.log("WebSocketProvider.cleanup - unsubscribing personal subscription", topic, "id:", entry.subscription?.id);
-          unsubscribeSubscription(entry.subscription);
-        }
-      });
-      personalSubscriptionsRef.current.clear();
+      chatSubscriptionRef.current = null;
+
+      unsubscribeUserGroupUpdates();
+      groupUpdatesHandlerRef.current = null;
       disconnectWebSocket();
     };
   }, []);
@@ -222,10 +207,10 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       isConnected,
       subscribeSingleGroup,
       unsubscribeSingleGroup,
-      subscribeGroupUpdates,
+      setGroupUpdatesHandler,
       sendMessage: sendWebSocketMessage,
     }),
-    [isConnected, subscribeSingleGroup, unsubscribeSingleGroup, subscribeGroupUpdates],
+    [isConnected, subscribeSingleGroup, unsubscribeSingleGroup, setGroupUpdatesHandler],
   );
 
   return <WebSocketContext.Provider value={value}>{children}</WebSocketContext.Provider>;

@@ -18,6 +18,7 @@ export interface UnreadSummaryResponse {
   totalUnreadCount: number;
 }
 
+// Similar to chat-app-backend/src/main/java/com/hello/chatapp/dto/GroupSummaryUpdate.java
 export interface GroupSummaryUpdate {
   groupId: number | string;
   latestMessage?: string | null;

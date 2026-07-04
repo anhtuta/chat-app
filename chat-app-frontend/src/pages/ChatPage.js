@@ -40,7 +40,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   const {
     isConnected: wsConnected,
     subscribeSingleGroup,
-    subscribeGroupUpdates,
+    setGroupUpdatesHandler,
     sendMessage: sendWebSocketMessage,
   } = useWebSocket();
 
@@ -80,15 +80,10 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     groupsRef.current = groups;
   }, [groups]);
 
-  // Subscribe to the user's group-summary topic to update the sidebar in real time.
-  // Ignored when WS disconnected or username missing; returns an unsubscribe.
+  // Register sidebar update handler. The STOMP subscription itself is owned by WebSocketProvider
+  // for the whole login session and is not tied to chat switching.
   useEffect(() => {
-    if (!wsConnected || !username) return;
-
-    const destination = `/topic/user.${username}.group-updates`;
-
-    // Type of groupSummaryUpdate is defined in backend as com.hello.chatapp.dto.GroupSummaryUpdate.
-    const unsubscribe = subscribeGroupUpdates(destination, (groupSummaryUpdate) => {
+    setGroupUpdatesHandler((groupSummaryUpdate) => {
       const updatedGroupId = Number(groupSummaryUpdate.groupId);
       setGroups((prev) => {
         const groupIndex = prev.findIndex((g) => Number(g.id) === updatedGroupId);
@@ -121,8 +116,8 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       });
     });
 
-    return unsubscribe;
-  }, [wsConnected, username, subscribeGroupUpdates]);
+    return () => setGroupUpdatesHandler(null);
+  }, [setGroupUpdatesHandler]);
 
   // For group chats (not public): when messages settle, mark the group as read
   // on the server up to the latest visible message. Guards against duplicates.

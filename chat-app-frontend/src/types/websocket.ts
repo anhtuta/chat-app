@@ -15,7 +15,7 @@ export interface WebSocketContextValue {
   isConnected: boolean;
   subscribeSingleGroup: (topic: string, callback: TopicCallback<ChatMessage>) => Unsubscribe;
   unsubscribeSingleGroup: () => void;
-  subscribeGroupUpdates: (topic: string, callback: TopicCallback<GroupSummaryUpdate>) => Unsubscribe;
+  setGroupUpdatesHandler: (callback: TopicCallback<GroupSummaryUpdate> | null) => void;
   sendMessage: (destination: string, message: WebSocketOutboundMessage) => boolean;
 }
 
@@ -25,9 +25,7 @@ export interface ChatTopicSubscriptionEntry {
   subscription: StompSubscription | null;
 }
 
-export interface PersonalSubscriptionEntry<TPayload> {
-  callback: TopicCallback<TPayload>;
+export interface UserGroupUpdatesSubscription {
+  username: string;
   subscription: StompSubscription | null;
-  refCount: number;
-  cleanupTimer: ReturnType<typeof setTimeout> | null;
 }

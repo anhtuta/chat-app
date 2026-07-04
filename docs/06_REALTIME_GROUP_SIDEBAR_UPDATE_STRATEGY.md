@@ -106,11 +106,21 @@ Implementation summary:
 
 ### Frontend
 
-- `WebSocketProvider` exposes `subscribeGroupUpdates(topic, callback)` for persistent user-scoped updates, independent of the chat-switching `subscribeSingleGroup` subscription.
-- On connect, `ChatPage` subscribes to `/topic/user.<username>.group-updates`.
+- `WebSocketProvider` owns two subscription kinds:
+  - **Chat topic** (`/topic/public` or `/topic/group.{id}`) via `subscribeSingleGroup` — changes when the user switches chat.
+  - **User group-updates** (`/topic/user.{username}.group-updates`) — created once per login session when `username` is set on the provider, torn down on logout or app unmount.
+- `ChatPage` registers sidebar patch logic with `setGroupUpdatesHandler(callback)`; it does not subscribe/unsubscribe the user topic on chat switches.
 - On receiving an update, `ChatPage` first checks `latestMessageAt` against the current sidebar state and ignores stale (older) events. If accepted, it patches the matching group and moves only that group to the top of the list.
 
 This gives every user real-time sidebar updates with a single extra subscription per user.
+
+Flow now:
+
+1. User logs in → `username` is set on the provider
+2. Provider subscribes to `/topic/user.{username}.group-updates` once
+3. `ChatPage` calls `setGroupUpdatesHandler` to handle sidebar updates
+4. User switches chat → only `subscribeSingleGroup` changes
+5. User logs out or closes app → provider unsubscribes the user topic
 
 The bot simulator also subscribes to the same `group-updates` topic so simulated clients keep consuming the real-time sidebar traffic pattern during load tests.
 

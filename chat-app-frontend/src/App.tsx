@@ -86,7 +86,8 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
   };
 
   return (
-    <Routes>
+    <WebSocketProvider username={authState.isAuth ? authState.username : null}>
+      <Routes>
       <Route path="/" element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />} />
       <Route
         path="/login"
@@ -118,7 +119,8 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </WebSocketProvider>
   );
 }
 
@@ -161,13 +163,11 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <BrowserRouter>
-        <WebSocketProvider>
-          <AppRoutes
-            selectedThemeId={resolvedTheme.id}
-            onThemeChange={setSelectedThemeId}
-            resolvedTheme={resolvedTheme}
-          />
-        </WebSocketProvider>
+        <AppRoutes
+          selectedThemeId={resolvedTheme.id}
+          onThemeChange={setSelectedThemeId}
+          resolvedTheme={resolvedTheme}
+        />
       </BrowserRouter>
     </ThemeProvider>
   );
