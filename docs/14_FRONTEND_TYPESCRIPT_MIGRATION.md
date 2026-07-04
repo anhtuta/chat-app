@@ -187,12 +187,24 @@ Planned implementation phases:
 
 ### Phase 4: Convert service boundaries
 
-- Convert:
+- Status: Implemented
+- Renamed and converted:
   - `src/services/api.js` -> `src/services/api.ts`
   - `src/services/websocket.js` -> `src/services/websocket.ts`
-  - `src/components/chat-area/mediaUtils.js` -> `src/components/chat-area/mediaUtils.ts` if still small and shared
-- Add typed request/response parsing here so React components can consume normalized data.
-- This phase should reduce the amount of `any` that leaks into the rest of the app.
+  - `src/components/chat-area/mediaUtils.js` -> `src/components/chat-area/mediaUtils.ts`
+- Wired API and WebSocket functions to shared types from Phase 2.
+- Added `SelectableUser` and `UnreadSummaryResponse` to `src/types/groups.ts` for group-related API responses.
+- Added typed upload helpers (`UploadHandle`, `UploadProgressOptions`) in `api.ts`.
+- Made `subscribeToTopic` generic so topic callbacks can be typed at call sites.
+
+### Phase 4 Notes
+
+- Existing JavaScript consumers (`WebSocketProvider.js`, `ChatArea.js`, pages, components) continue to import these modules without changes.
+- `handleErrorResponse` is now typed as `never` so TypeScript understands failed API calls do not return normally.
+- Verification:
+  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
+  - `npm run build` passes
+  - `CI=true npm test -- --watchAll=false --runInBand` passes
 
 ### Phase 5: Convert shared runtime state
 

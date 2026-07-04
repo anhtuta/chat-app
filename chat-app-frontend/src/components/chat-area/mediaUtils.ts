@@ -1,3 +1,12 @@
+import type {
+  ChatAttachment,
+  ChatMessage,
+  LocalUploadStatus,
+  MediaMessageType,
+  MessageType,
+  ProcessingIndicator,
+} from "../../types/chat";
+
 export const MESSAGE_TYPES = {
   TEXT: "TEXT",
   IMAGE: "IMAGE",
@@ -5,16 +14,21 @@ export const MESSAGE_TYPES = {
   AUDIO: "AUDIO",
   FILE: "FILE",
   SYSTEM: "SYSTEM",
-};
+} as const satisfies Record<string, MessageType>;
 
 export const LOCAL_UPLOAD_STATUSES = {
   UPLOAD_IN_PROGRESS: "UPLOAD_IN_PROGRESS",
   FINALIZING: "FINALIZING",
   UPLOAD_FAILED: "UPLOAD_FAILED",
   CANCELED: "CANCELED",
-};
+} as const satisfies Record<string, LocalUploadStatus>;
 
-export function isMediaMessageType(messageType) {
+export interface LocalUploadStatusCopy {
+  title: string;
+  description: string;
+}
+
+export function isMediaMessageType(messageType: MessageType | string | null | undefined): boolean {
   return (
     messageType === MESSAGE_TYPES.IMAGE ||
     messageType === MESSAGE_TYPES.VIDEO ||
@@ -23,7 +37,7 @@ export function isMediaMessageType(messageType) {
   );
 }
 
-export function resolveMessageTypeFromFiles(files) {
+export function resolveMessageTypeFromFiles(files: File[]): MediaMessageType | null {
   if (!files.length) {
     return null;
   }
@@ -47,7 +61,7 @@ export function resolveMessageTypeFromFiles(files) {
   return MESSAGE_TYPES.FILE;
 }
 
-export function validateSelectedFiles(files) {
+export function validateSelectedFiles(files: File[]): string | null {
   if (!files.length) {
     return "Choose at least one file.";
   }
@@ -60,7 +74,7 @@ export function validateSelectedFiles(files) {
   return null;
 }
 
-export function isPreviewableFile(file) {
+export function isPreviewableFile(file: File | null | undefined): boolean {
   const mimeType = file?.type || "";
   return (
     mimeType.startsWith("image/") ||
@@ -69,7 +83,7 @@ export function isPreviewableFile(file) {
   );
 }
 
-export function formatBytes(bytes) {
+export function formatBytes(bytes: number | string | null | undefined): string {
   if (bytes === undefined || bytes === null || Number.isNaN(Number(bytes))) {
     return "";
   }
@@ -91,7 +105,10 @@ export function formatBytes(bytes) {
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-export function getAttachmentDisplayUrl(messageType, attachment) {
+export function getAttachmentDisplayUrl(
+  messageType: MessageType | string,
+  attachment: ChatAttachment | null | undefined,
+): string | null {
   if (!attachment) {
     return null;
   }
@@ -115,7 +132,7 @@ export function getAttachmentDisplayUrl(messageType, attachment) {
   return attachment.contentUrl || null;
 }
 
-export function getProcessingIndicator(message) {
+export function getProcessingIndicator(message: ChatMessage | null | undefined): ProcessingIndicator | null {
   if (!message || !Array.isArray(message.attachments)) {
     return null;
   }
@@ -155,7 +172,9 @@ export function getProcessingIndicator(message) {
   return null;
 }
 
-export function getLocalUploadStatusCopy(status) {
+export function getLocalUploadStatusCopy(
+  status: LocalUploadStatus | string,
+): LocalUploadStatusCopy {
   switch (status) {
     case LOCAL_UPLOAD_STATUSES.FINALIZING:
       return {

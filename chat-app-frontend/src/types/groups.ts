@@ -7,6 +7,17 @@ export interface ChatGroup {
   unreadCount?: number;
 }
 
+export interface SelectableUser {
+  id: number;
+  username: string;
+  fullname?: string | null;
+  createdAt?: string | null;
+}
+
+export interface UnreadSummaryResponse {
+  totalUnreadCount: number;
+}
+
 export interface GroupSummaryUpdate {
   groupId: number | string;
   latestMessage?: string | null;

@@ -3,13 +3,31 @@
  * In development: requests are proxied via "proxy" in package.json
  * In production: requests go directly to the backend
  */
+import type { AuthCheckResponse, LoginResponse, RegisterResponse } from "../types/auth";
+import type {
+  ChatMessage,
+  CompleteMediaAttachmentInput,
+  GroupMessagesQuery,
+  PrepareMediaMessageRequest,
+  PrepareMediaMessageResponse,
+} from "../types/chat";
+import type { ChatGroup, SelectableUser, UnreadSummaryResponse } from "../types/groups";
 
 const API_BASE_URL = "";
+
+export interface UploadProgressOptions {
+  onProgress?: (loadedBytes: number, totalBytes: number) => void;
+}
+
+export interface UploadHandle {
+  promise: Promise<string>;
+  abort: () => void;
+}
 
 /**
  * Check if user is authenticated
  */
-export async function checkAuth() {
+export async function checkAuth(): Promise<AuthCheckResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/check`, {
     credentials: "include",
   });
@@ -19,7 +37,7 @@ export async function checkAuth() {
 /**
  * Login
  */
-export async function login(username, password) {
+export async function login(username: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: {
@@ -34,7 +52,7 @@ export async function login(username, password) {
 /**
  * Register
  */
-export async function register(username, password) {
+export async function register(username: string, password: string): Promise<RegisterResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
     method: "POST",
     headers: {
@@ -49,7 +67,7 @@ export async function register(username, password) {
 /**
  * Logout user
  */
-export async function logout() {
+export async function logout(): Promise<Response> {
   const response = await fetch(`${API_BASE_URL}/api/auth/logout`, {
     method: "POST",
     credentials: "include",
@@ -60,33 +78,36 @@ export async function logout() {
 /**
  * Get all groups for the current user
  */
-export async function getGroups() {
+export async function getGroups(): Promise<ChatGroup[]> {
   const response = await fetch(`${API_BASE_URL}/api/groups`, {
     credentials: "include",
   });
   if (response.ok) {
     return response.json();
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Get public chat messages
  */
-export async function getPublicMessages() {
+export async function getPublicMessages(): Promise<ChatMessage[]> {
   const response = await fetch(`${API_BASE_URL}/api/messages/public`, {
     credentials: "include",
   });
   if (response.ok) {
     return response.json();
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Get group messages
  */
-export async function getGroupMessages(groupId, { beforeTimestamp, beforeId, size = 10 } = {}) {
+export async function getGroupMessages(
+  groupId: number | string,
+  { beforeTimestamp, beforeId, size = 10 }: GroupMessagesQuery = {},
+): Promise<ChatMessage[]> {
   const queryParams = new URLSearchParams({ size: String(size) });
 
   if (beforeTimestamp) {
@@ -97,32 +118,35 @@ export async function getGroupMessages(groupId, { beforeTimestamp, beforeId, siz
     queryParams.set("beforeId", String(beforeId));
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/messages/groups/${groupId}?${queryParams.toString()}`, {
-    credentials: "include",
-  });
+  const response = await fetch(
+    `${API_BASE_URL}/api/messages/groups/${groupId}?${queryParams.toString()}`,
+    {
+      credentials: "include",
+    },
+  );
   if (response.ok) {
     return response.json();
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Get all users (for creating groups)
  */
-export async function getUsers() {
+export async function getUsers(): Promise<SelectableUser[]> {
   const response = await fetch(`${API_BASE_URL}/api/groups/users`, {
     credentials: "include",
   });
   if (response.ok) {
     return response.json();
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Create a new group
  */
-export async function createGroup(name, participantIds) {
+export async function createGroup(name: string, participantIds: number[]): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups`, {
     method: "POST",
     headers: {
@@ -144,7 +168,7 @@ export async function createGroup(name, participantIds) {
 /**
  * Mark a group as read up to the provided latest visible message id.
  */
-export async function markGroupAsRead(groupId, lastReadMessageId) {
+export async function markGroupAsRead(groupId: number | string, lastReadMessageId: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/read`, {
     method: "POST",
     headers: {
@@ -157,38 +181,35 @@ export async function markGroupAsRead(groupId, lastReadMessageId) {
   if (response.ok) {
     return;
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Get aggregated unread count across all groups for current user.
  */
-export async function getTotalUnreadCount() {
+export async function getTotalUnreadCount(): Promise<UnreadSummaryResponse> {
   const response = await fetch(`${API_BASE_URL}/api/groups/unread/total`, {
     credentials: "include",
   });
   if (response.ok) {
     return response.json();
   }
-  handleErrorResponse(response);
+  return handleErrorResponse(response);
 }
 
 /**
  * Prepare a media message upload session.
  */
-export async function prepareMediaMessage({ chatScope, groupId, messageType, attachments }) {
+export async function prepareMediaMessage(
+  request: PrepareMediaMessageRequest,
+): Promise<PrepareMediaMessageResponse> {
   const response = await fetch(`${API_BASE_URL}/api/media/messages/prepare`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     credentials: "include",
-    body: JSON.stringify({
-      chatScope,
-      groupId,
-      messageType,
-      attachments,
-    }),
+    body: JSON.stringify(request),
   });
 
   if (response.ok) {
@@ -201,15 +222,21 @@ export async function prepareMediaMessage({ chatScope, groupId, messageType, att
 /**
  * Complete a prepared media upload session and publish the final message.
  */
-export async function completeMediaMessage(uploadSessionId, attachments) {
-  const response = await fetch(`${API_BASE_URL}/api/media/messages/upload-sessions/${uploadSessionId}/complete`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+export async function completeMediaMessage(
+  uploadSessionId: string,
+  attachments: CompleteMediaAttachmentInput[],
+): Promise<ChatMessage> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/media/messages/upload-sessions/${uploadSessionId}/complete`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ attachments }),
     },
-    credentials: "include",
-    body: JSON.stringify({ attachments }),
-  });
+  );
 
   if (response.ok) {
     return response.json();
@@ -221,10 +248,14 @@ export async function completeMediaMessage(uploadSessionId, attachments) {
 /**
  * Upload a file directly to a storage-provider presigned URL.
  */
-export function uploadFileToPresignedUrl(url, file, { onProgress } = {}) {
+export function uploadFileToPresignedUrl(
+  url: string,
+  file: File,
+  { onProgress }: UploadProgressOptions = {},
+): UploadHandle {
   const xhr = new XMLHttpRequest();
 
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<string>((resolve, reject) => {
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && onProgress) {
         onProgress(event.loaded, event.total);
@@ -264,16 +295,14 @@ export function uploadFileToPresignedUrl(url, file, { onProgress } = {}) {
   };
 }
 
-function handleErrorResponse(response) {
+function handleErrorResponse(response: Response): never {
   if (response.status === 403) {
-    // redirect to login
     window.location.href = "/login";
-  } else {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
+  throw new Error(`API error: ${response.status} ${response.statusText}`);
 }
 
-async function readErrorMessage(response, fallbackMessage) {
+async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
   if (response.status === 403) {
     window.location.href = "/login";
     return fallbackMessage;

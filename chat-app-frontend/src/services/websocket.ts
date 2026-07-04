@@ -2,17 +2,20 @@
  * WebSocket service using STOMP over SockJS
  * In development: requests are proxied via "proxy" in package.json
  * In production: requests go directly to the backend
- * 
+ *
  * Note: Only WebSocketProvider should use this service directly. Other components
  * should use the WebSocket context via useWebSocket().
  */
-import { Client } from "@stomp/stompjs";
+import { Client, type IFrame, type StompSubscription } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
+import type { TopicCallback, WebSocketOutboundMessage } from "../types/websocket";
 
 const WS_BASE_URL = "";
 
-/** @type {Client | null} */
-let stompClient = null;
+let stompClient: Client | null = null;
+
+type WebSocketErrorHandler = (error: IFrame | Event) => void;
+type WebSocketDisconnectHandler = (frame?: IFrame) => void;
 
 /**
  * Create and connect WebSocket client
@@ -21,7 +24,11 @@ let stompClient = null;
  * @param {function} onDisconnect - Callback on disconnect
  * @returns {Client} STOMP client instance
  */
-export function connectWebSocket(onConnect, onError, onDisconnect) {
+export function connectWebSocket(
+  onConnect?: (frame: IFrame) => void,
+  onError?: WebSocketErrorHandler,
+  onDisconnect?: WebSocketDisconnectHandler,
+): Client {
   if (stompClient?.connected) {
     console.log("WebSocket already connected, reusing existing connection");
     return stompClient;
@@ -37,7 +44,7 @@ export function connectWebSocket(onConnect, onError, onDisconnect) {
       // It will automatically upgrade to WebSocket if available
       let sockJsUrl = wsUrl;
 
-      if (!wsUrl.startsWith('http://') && !wsUrl.startsWith('https://')) {
+      if (!wsUrl.startsWith("http://") && !wsUrl.startsWith("https://")) {
         // Convert relative path to absolute HTTP URL
         sockJsUrl = `${window.location.protocol}//${window.location.host}${wsUrl}`;
       }
@@ -77,7 +84,7 @@ export function connectWebSocket(onConnect, onError, onDisconnect) {
 /**
  * Disconnect WebSocket
  */
-export function disconnectWebSocket() {
+export function disconnectWebSocket(): void {
   console.log("Disconnecting WebSocket...");
   if (stompClient) {
     stompClient.deactivate();
@@ -88,7 +95,10 @@ export function disconnectWebSocket() {
 /**
  * Subscribe to a topic
  */
-export function subscribeToTopic(topic, callback) {
+export function subscribeToTopic<TPayload>(
+  topic: string,
+  callback: TopicCallback<TPayload>,
+): StompSubscription | null {
   if (!stompClient?.connected) {
     console.error("STOMP client not connected");
     return null;
@@ -98,7 +108,7 @@ export function subscribeToTopic(topic, callback) {
   return stompClient.subscribe(topic, (message) => {
     try {
       console.log("Received message on topic:", message, topic);
-      const data = JSON.parse(message.body);
+      const data = JSON.parse(message.body) as TPayload;
       callback(data);
     } catch (error) {
       console.error("Error parsing message:", error);
@@ -108,25 +118,29 @@ export function subscribeToTopic(topic, callback) {
 
 /**
  * Unsubscribe a previously created subscription
+ * Note: when unsubscribe, we only know the subscription id, not the topic/destination (so we cannot use: subscription?.destination)
  */
-export function unsubscribeSubscription(subscription) {
+export function unsubscribeSubscription(subscription: StompSubscription | null | undefined): void {
   if (!subscription) return;
   try {
-    console.log("Unsubscribing subscription id:", subscription?.id, "topic:", subscription?.destination);
+    console.log("Unsubscribing subscription id:", subscription?.id);
     subscription.unsubscribe();
-  } catch (e) {
-    console.warn("Failed to unsubscribe subscription:", e);
+  } catch (error) {
+    console.warn("Failed to unsubscribe subscription:", error);
   }
 }
 
 /**
  * Send message to a destination
  */
-export function sendMessage(destination, message) {
+export function sendMessage(destination: string, message: WebSocketOutboundMessage): boolean {
   console.log("Attempting to send message:", { destination, connected: stompClient?.connected });
 
   if (!stompClient?.connected) {
-    console.error("❌ STOMP client not connected. Current state:", stompClient?.active ? "active but not connected" : "not active");
+    console.error(
+      "❌ STOMP client not connected. Current state:",
+      stompClient?.active ? "active but not connected" : "not active",
+    );
     return false;
   }
 
@@ -141,6 +155,6 @@ export function sendMessage(destination, message) {
 /**
  * Get the STOMP client instance
  */
-export function getStompClient() {
+export function getStompClient(): Client | null {
   return stompClient;
 }
