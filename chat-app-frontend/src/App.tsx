@@ -5,18 +5,29 @@ import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import {
-  DEFAULT_THEME_ID,
-  THEME_STORAGE_KEY,
-  resolveThemeTokens,
-  themeOptions,
-} from "./theme/tokens";
+import { DEFAULT_THEME_ID, THEME_STORAGE_KEY, resolveThemeTokens, themeOptions } from "./theme/tokens";
 import { WebSocketProvider } from "./context/WebSocketProvider";
+import type { AuthState } from "./types/auth";
+import type { ResolvedTheme, ThemeId } from "./types/theme";
 import "./App.css";
 
-function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }) {
+interface AppRoutesProps {
+  selectedThemeId: ThemeId;
+  onThemeChange: (themeId: ThemeId) => void;
+  resolvedTheme: ResolvedTheme;
+}
+
+interface RequireAuthProps {
+  children: React.ReactNode;
+}
+
+function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesProps) {
   const navigate = useNavigate();
-  const [authState, setAuthState] = useState({ checking: true, isAuth: false, username: null });
+  const [authState, setAuthState] = useState<AuthState>({
+    checking: true,
+    isAuth: false,
+    username: null,
+  });
 
   useEffect(() => {
     const fetchAuth = async () => {
@@ -36,7 +47,7 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }) {
     fetchAuth();
   }, []);
 
-  const handleLoginSuccess = (username) => {
+  const handleLoginSuccess = (username: string) => {
     setAuthState({ checking: false, isAuth: true, username });
   };
 
@@ -67,30 +78,30 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }) {
     );
   }
 
-  const RequireAuth = ({ children }) => {
+  const RequireAuth = ({ children }: RequireAuthProps) => {
     if (!authState.isAuth) {
       return <Navigate to="/login" replace />;
     }
-    return children;
+    return <>{children}</>;
   };
 
   return (
     <Routes>
-      <Route
-        path="/"
-        element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />}
-      />
+      <Route path="/" element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />} />
       <Route
         path="/login"
-        element={authState.isAuth ? <Navigate to="/group/public" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} />}
+        element={
+          authState.isAuth ? <Navigate to="/group/public" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} />
+        }
       />
-      <Route
-        path="/register"
-        element={authState.isAuth ? <Navigate to="/group/public" replace /> : <RegisterPage />}
-      />
+      <Route path="/register" element={authState.isAuth ? <Navigate to="/group/public" replace /> : <RegisterPage />} />
       <Route
         path="/group"
-        element={<RequireAuth><Navigate to="/group/public" replace /></RequireAuth>}
+        element={
+          <RequireAuth>
+            <Navigate to="/group/public" replace />
+          </RequireAuth>
+        }
       />
       <Route
         path="/group/:groupId"
@@ -112,14 +123,11 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }) {
 }
 
 function App() {
-  const [selectedThemeId, setSelectedThemeId] = useState(
-    () => localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID,
+  const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>(
+    () => (localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID) as ThemeId,
   );
 
-  const resolvedTheme = useMemo(
-    () => resolveThemeTokens(selectedThemeId),
-    [selectedThemeId],
-  );
+  const resolvedTheme = useMemo(() => resolveThemeTokens(selectedThemeId), [selectedThemeId]);
 
   const theme = useMemo(
     () =>

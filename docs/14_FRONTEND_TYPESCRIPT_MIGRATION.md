@@ -167,12 +167,23 @@ Planned implementation phases:
 
 ### Phase 3: Convert low-risk entry points
 
-- Rename:
+- Status: Implemented
+- Renamed and converted:
   - `src/index.js` -> `src/index.tsx`
   - `src/App.js` -> `src/App.tsx`
   - `src/reportWebVitals.js` -> `src/reportWebVitals.ts`
-- Convert tiny helper modules with minimal business logic first.
-- Avoid large component rewrites during this phase.
+- Wired `App.tsx` to shared types from Phase 2 (`AuthState`, `ThemeId`, `ResolvedTheme`).
+- Added a null check for the root DOM element in `index.tsx`.
+- Left page, service, and component files in JavaScript for later phases.
+
+### Phase 3 Notes
+
+- `App.test.js` still imports `./App` and continues to work without changes.
+- `theme/tokens.js` remains JavaScript for now; `App.tsx` consumes its exports as-is.
+- Verification:
+  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
+  - `npm run build` passes
+  - `CI=true npm test -- --watchAll=false --runInBand` passes
 
 ### Phase 4: Convert service boundaries
 
