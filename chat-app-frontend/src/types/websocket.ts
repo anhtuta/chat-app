@@ -19,13 +19,16 @@ export interface WebSocketContextValue {
   sendMessage: (destination: string, message: WebSocketOutboundMessage) => boolean;
 }
 
-export interface ChatTopicSubscriptionEntry {
+/** Active chat channel subscription (`/topic/public` or `/topic/group.{id}`). */
+export interface GroupSubscription {
   topic: string;
   callback: TopicCallback<ChatMessage>;
   subscription: StompSubscription | null;
 }
 
+/** Persistent per-user sidebar update subscription (`/topic/user.{username}.group-updates`). */
 export interface UserGroupUpdatesSubscription {
   username: string;
+  callback: TopicCallback<GroupSummaryUpdate> | null;
   subscription: StompSubscription | null;
 }
