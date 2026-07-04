@@ -1,15 +1,10 @@
+import type { StompSubscription } from "@stomp/stompjs";
 import type { ChatMessage } from "./chat";
 import type { GroupSummaryUpdate } from "./groups";
 
 export type TopicCallback<TPayload> = (payload: TPayload) => void;
 
 export type Unsubscribe = () => void;
-
-export interface WebSocketSubscription {
-  id?: string;
-  destination?: string;
-  unsubscribe: () => void;
-}
 
 export interface WebSocketOutboundMessage {
   content: string;
@@ -24,9 +19,15 @@ export interface WebSocketContextValue {
   sendMessage: (destination: string, message: WebSocketOutboundMessage) => boolean;
 }
 
+export interface ChatTopicSubscriptionEntry {
+  topic: string;
+  callback: TopicCallback<ChatMessage>;
+  subscription: StompSubscription | null;
+}
+
 export interface PersonalSubscriptionEntry<TPayload> {
   callback: TopicCallback<TPayload>;
-  subscription: WebSocketSubscription | null;
+  subscription: StompSubscription | null;
   refCount: number;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
 }

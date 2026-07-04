@@ -208,14 +208,27 @@ Planned implementation phases:
 
 ### Phase 5: Convert shared runtime state
 
-- Convert:
+- Status: Implemented
+- Renamed and converted:
   - `src/context/WebSocketProvider.js` -> `src/context/WebSocketProvider.tsx`
-- Type:
-  - context value
-  - unsubscribe handlers
-  - subscription registry entries
-  - callback payloads
-- Keep reconnect and cleanup behavior unchanged while clarifying the contracts.
+- Typed:
+  - `WebSocketContextValue` context default and provider value
+  - `ChatTopicSubscriptionEntry` for the active chat topic subscription
+  - `PersonalSubscriptionEntry<GroupSummaryUpdate>` for persistent personal-queue subscriptions
+  - `subscribeSingleGroup` callbacks as `ChatMessage`
+  - `subscribeGroupUpdates` callbacks as `GroupSummaryUpdate`
+  - `useWebSocket()` return type
+- Extracted shared personal-subscription release logic into `releasePersonalSubscription` without changing reconnect/cleanup behavior.
+
+### Phase 5 Notes
+
+- `src/types/websocket.ts` now uses `StompSubscription` from `@stomp/stompjs` for subscription registry entries.
+- Map iteration uses `.forEach()` to stay compatible with the current `tsconfig` `target: "es5"` setting.
+- Pre-existing ESLint hook warnings in the provider remain unchanged in this phase.
+- Verification:
+  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
+  - `npm run build` passes
+  - `CI=true npm test -- --watchAll=false --runInBand` passes
 
 ### Phase 6: Convert page-level orchestration
 
