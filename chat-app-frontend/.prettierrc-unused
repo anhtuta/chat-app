@@ -1,3 +1,4 @@
+// Never use prettier anymore, use: Format with "Typescript and Javascript language features" in VS Code instead.
 {
   "arrowParens": "always",
   "bracketSameLine": false,
