@@ -6,11 +6,36 @@ import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
+import type { ChatMessage } from "../types/chat";
+import type { ChatGroup } from "../types/groups";
+import type { ThemeId, ThemeOption } from "../types/theme";
+import type { Unsubscribe } from "../types/websocket";
 
-function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOptions }) {
+type ChatRouteId = "public" | number;
+
+interface GroupMessageCursor {
+  timestamp: string;
+  id: number;
+}
+
+interface ChatPageProps {
+  username: string | null;
+  onLogout: () => void | Promise<void>;
+  selectedThemeId: ThemeId;
+  onThemeChange: (themeId: ThemeId) => void;
+  themeOptions: ThemeOption[];
+}
+
+function ChatPage({
+  username,
+  onLogout,
+  selectedThemeId,
+  onThemeChange,
+  themeOptions,
+}: ChatPageProps) {
   const GROUP_PAGE_SIZE = 10;
 
-  const toEpochMillis = (value) => {
+  const toEpochMillis = (value: string | null | undefined): number => {
     if (!value) {
       return 0;
     }
@@ -19,24 +44,24 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
   };
 
   const navigate = useNavigate();
-  const { groupId } = useParams();
+  const { groupId } = useParams<{ groupId?: string }>();
 
-  const [groups, setGroups] = useState([]);
-  const [currentChatId, setCurrentChatId] = useState("public");
+  const [groups, setGroups] = useState<ChatGroup[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<ChatRouteId>("public");
   const [currentChatName, setCurrentChatName] = useState("Public Chat");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasMoreGroupMessages, setHasMoreGroupMessages] = useState(true);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
-  const currentUnsubscribeRef = useRef(null);
-  const oldestGroupCursorRef = useRef(null);
-  const groupsRef = useRef([]);
-  const lastMarkedMessagePerGroupRef = useRef(new Map());
+  const currentUnsubscribeRef = useRef<Unsubscribe | null>(null);
+  const oldestGroupCursorRef = useRef<GroupMessageCursor | null>(null);
+  const groupsRef = useRef<ChatGroup[]>([]);
+  const lastMarkedMessagePerGroupRef = useRef<Map<number, number>>(new Map());
 
-  const currentChatIdRef = useRef("public");
+  const currentChatIdRef = useRef<ChatRouteId>("public");
   const {
     isConnected: wsConnected,
     subscribeSingleGroup,
@@ -44,7 +69,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     sendMessage: sendWebSocketMessage,
   } = useWebSocket();
 
-  const upsertMessage = (previousMessages, incomingMessage) => {
+  const upsertMessage = (previousMessages: ChatMessage[], incomingMessage: ChatMessage | null | undefined) => {
     if (!incomingMessage) {
       return previousMessages;
     }
@@ -86,7 +111,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     setGroupUpdatesHandler((groupSummaryUpdate) => {
       const updatedGroupId = Number(groupSummaryUpdate.groupId);
       setGroups((prev) => {
-        const groupIndex = prev.findIndex((g) => Number(g.id) === updatedGroupId);
+        const groupIndex = prev.findIndex((group) => Number(group.id) === updatedGroupId);
         if (groupIndex === -1) {
           return prev;
         }
@@ -100,7 +125,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
           return prev;
         }
 
-        const updatedGroup = {
+        const updatedGroup: ChatGroup = {
           ...currentGroup,
           latestMessage: groupSummaryUpdate.latestMessage,
           latestMessageSender: groupSummaryUpdate.latestMessageSender,
@@ -132,20 +157,20 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
       return;
     }
 
-    const groupId = Number(currentChatId);
-    const lastMarkedMessageId = lastMarkedMessagePerGroupRef.current.get(groupId);
+    const activeGroupId = Number(currentChatId);
+    const lastMarkedMessageId = lastMarkedMessagePerGroupRef.current.get(activeGroupId);
     if (lastMarkedMessageId === latestVisibleMessageId) {
       return;
     }
 
-    markGroupAsRead(groupId, latestVisibleMessageId)
+    markGroupAsRead(activeGroupId, latestVisibleMessageId)
       .then(() => {
-        lastMarkedMessagePerGroupRef.current.set(groupId, latestVisibleMessageId);
-        setGroups((prev) => prev.map((group) => (
-          Number(group.id) === groupId
-            ? { ...group, unreadCount: 0 }
-            : group
-        )));
+        lastMarkedMessagePerGroupRef.current.set(activeGroupId, latestVisibleMessageId);
+        setGroups((prev) =>
+          prev.map((group) =>
+            Number(group.id) === activeGroupId ? { ...group, unreadCount: 0 } : group,
+          ),
+        );
       })
       .catch((error) => {
         console.error("Error marking group as read:", error);
@@ -185,7 +210,6 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL param changes
   }, [groupId]);
 
-
   const loadGroups = async () => {
     try {
       const groupsData = await getGroups();
@@ -200,7 +224,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
 
   const totalUnreadCount = groups.reduce((total, group) => total + Number(group.unreadCount || 0), 0);
 
-  const switchToChat = async (chatId, chatName) => {
+  const switchToChat = async (chatId: ChatRouteId, chatName: string) => {
     // Update ref immediately so subscriptions can use the latest value
     currentChatIdRef.current = chatId;
 
@@ -218,7 +242,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     oldestGroupCursorRef.current = null;
 
     // Subscribe to new topic (works for both public and groups)
-    const topicPath = chatId === 'public' ? '/topic/public' : `/topic/group.${chatId}`;
+    const topicPath = chatId === "public" ? "/topic/public" : `/topic/group.${chatId}`;
     const unsubscribe = subscribeSingleGroup(topicPath, (message) => {
       if (currentChatIdRef.current === chatId) {
         setMessages((prev) => upsertMessage(prev, message));
@@ -246,7 +270,10 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     }
   };
 
-  const loadGroupMessages = async (groupId, { prepend = false, cursor = null } = {}) => {
+  const loadGroupMessages = async (
+    targetGroupId: number,
+    { prepend = false, cursor = null }: { prepend?: boolean; cursor?: GroupMessageCursor | null } = {},
+  ) => {
     if (prepend) {
       setIsLoadingOlder(true);
     } else {
@@ -254,7 +281,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     }
 
     try {
-      const messagesData = await getGroupMessages(groupId, {
+      const messagesData = await getGroupMessages(targetGroupId, {
         size: GROUP_PAGE_SIZE,
         beforeTimestamp: cursor?.timestamp,
         beforeId: cursor?.id,
@@ -294,27 +321,24 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     return true;
   };
 
-  const sendMessage = (content) => {
+  const sendMessage = (content: string) => {
     if (!content.trim() || !wsConnected) {
       return;
     }
 
-    const chatMessage = { content };
-
-    if (currentChatId === 'public') {
-      sendWebSocketMessage("/app/chat.send", chatMessage);
+    if (currentChatId === "public") {
+      sendWebSocketMessage("/app/chat.send", { content });
     } else {
-      chatMessage.groupId = currentChatId;
-      sendWebSocketMessage("/app/group.send", chatMessage);
+      sendWebSocketMessage("/app/group.send", { content, groupId: Number(currentChatId) });
     }
   };
 
-  const handleGroupCreated = (newGroup) => {
+  const handleGroupCreated = (newGroup: ChatGroup) => {
     loadGroups();
     switchToChat(newGroup.id, newGroup.name);
   };
 
-  const handleMediaMessageDelivered = (message) => {
+  const handleMediaMessageDelivered = (message: ChatMessage | null | undefined) => {
     if (!message) {
       return;
     }
@@ -327,7 +351,7 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
     setMessages((prev) => upsertMessage(prev, message));
   };
 
-  const handleChatNavigate = (chatId) => {
+  const handleChatNavigate = (chatId: ChatRouteId) => {
     navigate(`/group/${chatId}`);
   };
 
@@ -359,7 +383,10 @@ function ChatPage({ username, onLogout, selectedThemeId, onThemeChange, themeOpt
           onLogout={onLogout}
         />
         {showCreateGroupModal && (
-          <CreateGroupModal onClose={() => setShowCreateGroupModal(false)} onGroupCreated={handleGroupCreated} />
+          <CreateGroupModal
+            onClose={() => setShowCreateGroupModal(false)}
+            onGroupCreated={handleGroupCreated}
+          />
         )}
       </Box>
     </div>

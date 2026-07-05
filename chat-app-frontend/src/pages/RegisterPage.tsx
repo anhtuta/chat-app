@@ -18,15 +18,15 @@ function RegisterPage() {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         document.title = "Register - Chat App";
     }, []);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
         setError(null);
 
         if (!username.trim() || !password || !confirmPassword) {
@@ -100,7 +100,7 @@ function RegisterPage() {
                                     label="Username"
                                     type="text"
                                     value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
+                                    onChange={(event) => setUsername(event.target.value)}
                                     autoComplete="username"
                                     required
                                     fullWidth
@@ -110,7 +110,7 @@ function RegisterPage() {
                                     label="Password"
                                     type="password"
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={(event) => setPassword(event.target.value)}
                                     autoComplete="new-password"
                                     required
                                     fullWidth
@@ -120,7 +120,7 @@ function RegisterPage() {
                                     label="Confirm Password"
                                     type="password"
                                     value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    onChange={(event) => setConfirmPassword(event.target.value)}
                                     autoComplete="new-password"
                                     required
                                     fullWidth
