@@ -26,7 +26,6 @@ function ChatArea({
   onLoadOlderMessages,
   onLogout,
 }) {
-  const [messageInput, setMessageInput] = useState("");
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [mediaComposerError, setMediaComposerError] = useState("");
   const [pendingMediaMessages, setPendingMediaMessages] = useState([]);
@@ -332,34 +331,25 @@ function ChatArea({
     }
   };
 
-  const handleSend = () => {
-    if (selectedMedia.length > 0) {
-      if (messageInput.trim()) {
-        setMediaComposerError("Text captions with media are not supported yet. Clear the text box or send the text separately.");
-        return;
-      }
+  const handleSendText = (content) => {
+    onSendMessage(content);
+    setMediaComposerError("");
+  };
 
-      const messageType = resolveMessageTypeFromFiles(selectedMedia.map((attachment) => attachment.file));
-      if (!messageType) {
-        setMediaComposerError(
-          "Only image batches are supported. Video, audio, and file messages must contain exactly one attachment.",
-        );
-        return;
-      }
-
-      const pendingMessage = buildPendingMessage(selectedMedia, messageType);
-      setPendingMediaMessages((previousMessages) => [...previousMessages, pendingMessage]);
-      setMediaComposerError("");
-      clearSelectedMedia({ revoke: false });
-      uploadPendingMessage(pendingMessage);
+  const handleSendMedia = () => {
+    const messageType = resolveMessageTypeFromFiles(selectedMedia.map((attachment) => attachment.file));
+    if (!messageType) {
+      setMediaComposerError(
+        "Only image batches are supported. Video, audio, and file messages must contain exactly one attachment.",
+      );
       return;
     }
 
-    if (messageInput.trim()) {
-      onSendMessage(messageInput);
-      setMessageInput("");
-      setMediaComposerError("");
-    }
+    const pendingMessage = buildPendingMessage(selectedMedia, messageType);
+    setPendingMediaMessages((previousMessages) => [...previousMessages, pendingMessage]);
+    setMediaComposerError("");
+    clearSelectedMedia({ revoke: false });
+    uploadPendingMessage(pendingMessage);
   };
 
   const handleRetryPendingMedia = (localId) => {
@@ -407,13 +397,6 @@ function ChatArea({
     }));
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   return (
     <div className="chat-area-wrapper">
       <Box className="chat-area-flex-container">
@@ -431,10 +414,8 @@ function ChatArea({
           onDismissPendingMessage={removePendingMessage}
         />
         <ChatMessageComposer
-          messageInput={messageInput}
-          onChange={(event) => setMessageInput(event.target.value)}
-          onKeyPress={handleKeyPress}
-          onSend={handleSend}
+          onSendMessage={handleSendText}
+          onSendMedia={handleSendMedia}
           selectedMedia={selectedMedia}
           onSelectFiles={handleFilesSelected}
           onRemoveSelectedMedia={handleRemoveSelectedMedia}

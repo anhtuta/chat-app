@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   Box,
   TextField,
@@ -15,10 +15,8 @@ import { formatBytes } from "./mediaUtils";
 import "./ChatMessageComposer.css";
 
 function ChatMessageComposer({
-  messageInput,
-  onChange,
-  onKeyPress,
-  onSend,
+  onSendMessage,
+  onSendMedia,
   selectedMedia,
   onSelectFiles,
   onRemoveSelectedMedia,
@@ -26,6 +24,7 @@ function ChatMessageComposer({
   mediaError,
 }) {
   const fileInputRef = useRef(null);
+  const [messageInput, setMessageInput] = useState("");
   const hasSelectedMedia = selectedMedia.length > 0;
   const hasText = Boolean(messageInput.trim());
   const sendButtonLabel = hasSelectedMedia ? "Upload" : "Send";
@@ -34,6 +33,28 @@ function ChatMessageComposer({
   const handleFileInputChange = (event) => {
     onSelectFiles(event.target.files);
     event.target.value = "";
+  };
+
+  const handleSend = () => {
+    if (hasSelectedMedia) {
+      if (hasText) {
+        return;
+      }
+      onSendMedia?.();
+      return;
+    }
+
+    if (hasText) {
+      onSendMessage(messageInput.trim());
+      setMessageInput("");
+    }
+  };
+
+  const handleKeyPress = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
   };
 
   return (
@@ -133,8 +154,8 @@ function ChatMessageComposer({
             fullWidth
             placeholder={hasSelectedMedia ? "Media message ready to upload" : "Type a message..."}
             value={messageInput}
-            onChange={onChange}
-            onKeyDown={onKeyPress}
+            onChange={(event) => setMessageInput(event.target.value)}
+            onKeyDown={handleKeyPress}
             variant="outlined"
             size="small"
             multiline
@@ -143,7 +164,7 @@ function ChatMessageComposer({
               endAdornment: (
                 <InputAdornment position="end">
                   <Button
-                    onClick={onSend}
+                    onClick={handleSend}
                     disabled={disableSend}
                     startIcon={<SendIcon />}
                     sx={{ minWidth: "auto" }}
@@ -155,7 +176,7 @@ function ChatMessageComposer({
           <Button
             className="chat-send-button"
             variant="contained"
-            onClick={onSend}
+            onClick={handleSend}
             disabled={disableSend}
             endIcon={<SendIcon />}
           >

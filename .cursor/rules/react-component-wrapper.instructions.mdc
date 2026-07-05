@@ -1,8 +1,6 @@
 ---
 description: React components must use a root wrapper div with a kebab-case -wrapper className
-globs:
-  - "**/*.jsx"
-  - "**/*.tsx"
+globs: chat-app-frontend/**/*.js, chat-app-frontend/**/*.tsx
 alwaysApply: false
 ---
 

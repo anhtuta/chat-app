@@ -116,3 +116,68 @@ When user switches groups, websocket messages after:
 
 - We still see the expected unsubscribe/subscribe for the group topic.
 - We no longer see any unsubscribe/subscribe for the personal topic, which means the fix is working as intended.
+
+# Fix unnecessary re-renders in `ChatMessageList`
+
+`ChatMessageList` re-renders on every keystroke because **its parent `ChatArea` re-renders**, not because the message list data changed.
+
+## The chain of events
+
+1. **Typing updates state in `ChatArea`**
+
+```js
+// 29:29:chat-app-frontend/src/components/ChatArea.js
+const [messageInput, setMessageInput] = useState("");
+```
+
+```js
+// 433:436:chat-app-frontend/src/components/ChatArea.js
+<ChatMessageComposer
+  messageInput={messageInput}
+  onChange={(event) => setMessageInput(event.target.value)}
+  onKeyPress={handleKeyPress}
+```
+
+Each keystroke calls `setMessageInput`, which triggers a `ChatArea` re-render.
+
+2. **React re-renders all children by default**
+
+`ChatMessageList` and `ChatMessageComposer` are siblings inside `ChatArea`. When `ChatArea` re-renders, both children re-render unless you opt out.
+
+3. **`ChatMessageList` is not memoized**
+
+It’s a plain function component with no `React.memo`, so it always re-renders when `ChatArea` does.
+
+## Visual flow
+
+```mermaid
+flowchart TD
+    A[User types in composer] --> B[setMessageInput in ChatArea]
+    B --> C[ChatArea re-renders]
+    C --> D[ChatMessageList re-renders]
+    C --> E[ChatMessageComposer re-renders]
+```
+
+## Is this a problem?
+
+Usually **no** for a typical chat — React reconciles the DOM and only updates what changed. It becomes a problem if you have hundreds of messages, heavy media, or expensive per-message work (your `formatMessage` runs for every message on each render).
+
+## How to fix it (if you want to)
+
+### **Option A — Keep input state local to the composer (simplest, selected)**
+
+Move `messageInput` into `ChatMessageComposer`. Only call `onSend` with the final text. Typing then won’t re-render `ChatArea` or `ChatMessageList`.
+
+### **Option B — Memoize the list**
+
+```js
+const ChatMessageList = React.memo(function ChatMessageList({ ... }) { ... });
+```
+
+Also wrap handlers in `useCallback` in `ChatArea`, or the memo won’t help much.
+
+### **Option C — Split the layout**
+
+Extract a `ChatAreaMessages` wrapper that only receives message-related props, keeping composer state in a sibling subtree.
+
+Option A is usually the cleanest: the input field’s state belongs in the composer, not in the parent that owns the message list.
