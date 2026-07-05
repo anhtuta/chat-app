@@ -7,71 +7,136 @@ alwaysApply: true
 
 - Treat feature documentation updates as required whenever feature behavior, API, data flow, config, UX, or operational behavior changes.
 - Store feature documentation as markdown files under `docs/`.
-- If the feature already has a docs file, update that file in the same change.
-- If the feature has no docs file yet, create a new markdown file in `docs/` for that feature.
-- Keep each docs file focused on exactly one feature; do not combine multiple features in one file.
-- Filename should start with a number and a underscore.
-- Use clear feature-specific filenames in `docs/` (for example, `01_AUTH_LOGIN_FLOW.md`).
+- If the feature already has a docs file, update it, otherwise, create a new markdown file in `docs/` for that feature.
+- Keep each docs file focused on exactly one feature.
+- Filename should start with a number and a underscore, e.g, `01_AUTH_LOGIN_FLOW.md`.
 - In feature docs updates, include at minimum:
   - What changed
   - Why it changed
   - Any API/contract/config impacts
   - Rollout, migration, or backward-compatibility notes (if applicable)
-- The format of the documentation should have following sections:
 
-  ```md
-  ## Current Problem
+# Types of documentation
 
-  (Describe the current behavior or problem that the feature change is addressing.)
+1. Brand-new feature docs: This is a new feature that is being added to the system.
+2. Optimization docs: This is an optimization to an existing feature.
 
-  ## Possible Solutions
+# Format of the documentation
 
-  ### 1. Solution A
+## 1. Brand-new feature feature docs
 
-  - How it works
-  - Pros
-  - Cons
-  - Recommendation for our problem: Yes/No (optional)
-  - When I’d use it (only if NOT recommended) (optional)
+Use following format:
 
-  ### 2. Solution B
+```md
+## Intro
 
-  ## High level Architecture/Design (optional)
+(Describe the new feature in a few sentences.)
 
-  ### Use cases
+## Functional Requirements
 
-  List all use cases. Keep them short and concise.
+## Non-Functional Requirements
 
-  ### Component Diagram
+## Use cases
 
-  Draw a component diagram and show how they interact with each other.
+## Possible Solutions
 
-  ### Core entities/models
+(Introduce the possible solutions for some use cases that are difficult/complex/important, no need for all use cases.)
 
-  List core entities/models and their relationships.
+### 1. How to implement [difficult/complex/important part here]?
 
-  ### API Draft
+#### 1.1. Solution A
 
-  Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
+- How it works
+- Pros
+- Cons
+- Recommendation for our problem: Yes/No (optional)
+- (If above is NO, then) When I’d use it (optional)
 
-  ## Recommendation (optional)
+#### 1.2. Solution B
 
-  (Just a recommendation path, do NOT implement anything in this section)
+...
 
-  Recommendation path:
+## High level Architecture/Design
 
-  1. Phase 1: Implement the solution
-  2. Phase 2: Implement the solution
+### Component Diagram
 
-  ...
+(Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
 
-  N. Phase N: Implement the solution
+### Core entities/models
 
-  ## Chosen Solution + Implementation
+List core entities/models and their relationships.
 
-  (Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+### API Draft
 
-  ## Future Higher-Scale Path
+Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
 
-  ## (Other sections you can add if needed)
-  ```
+## Recommendation (optional)
+
+(Just a recommendation path, do NOT implement anything in this section)
+
+Recommendation path:
+
+1. Phase 1: Implement the solution
+2. Phase 2: Implement the solution
+
+...
+
+N. Phase N: Implement the solution
+
+## Implementation details
+
+(Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+
+## Future Higher-Scale Path
+
+## (Other sections you can add if needed)
+```
+
+## 2. Optimization docs
+
+Use following format:
+
+```md
+## Current Problem
+
+(Describe the current behavior or problem that we need to optimize/solve.)
+
+## Possible Solutions
+
+### 1. Solution A
+
+- How it works
+- Pros
+- Cons
+- Recommendation for our problem: Yes/No (optional)
+- (If above is NO, then) When I’d use it (optional)
+
+### 2. Solution B
+
+## High level Architecture/Design (optional)
+
+### Component Diagram
+
+(Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
+
+## Recommendation
+
+(Just a recommendation path, or recommended solution, do NOT implement anything in this section)
+
+Recommendation path (optional, we may have only one phase):
+
+1. Phase 1: Implement the solution
+2. Phase 2: Implement the solution
+
+...
+
+N. Phase N: Implement the solution
+
+## Implementation details
+
+(Implementation summary for each phase, or the selected solution. After implementing, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+
+## Future Higher-Scale Path
+
+## (Other sections you can add if needed)
+```
