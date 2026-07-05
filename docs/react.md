@@ -58,32 +58,10 @@ Ref: GPT-5 mini
 
 # Fix unnecessary `group-updates` topic unsubscribe/subscribe on chat switch
 
-I’ve identified a likely lifecycle issue (effect cleanup firing on route transitions/remount-like behavior), so I’m implementing a robust fix in `WebSocketProvider`: reference-counted personal subscriptions with delayed cleanup cancellation. This will prevent unnecessary UNSUBSCRIBE/SUBSCRIBE churn even if cleanup runs briefly during chat switches.
+Fixed with new solution in
 
-Implemented a deeper fix that should stop the unnecessary `group-updates` unsubscribe/resubscribe even if React effect cleanup runs during chat switches.
-
-What I found
-
-- Your logs prove the personal unsubscribe is being triggered by the cleanup function returned from `subscribeGroupUpdates` (`"2. unsubscribe called..."`).
-- That means a cleanup/re-subscribe lifecycle is happening on chat switch (effect rerun or remount-like transition).
-- Previous fixes were too brittle because they still unsubscribed immediately on cleanup.
-
-What I changed
-
-- Updated WebSocketProvider.js with robust personal subscription lifecycle handling:
-  - Added reference counting per personal topic (`refCount`).
-  - Added delayed cleanup (`cleanupTimer`) before actual unsubscribe.
-  - If the same topic is re-subscribed quickly (common during route/effect churn), cleanup timer is canceled and existing subscription is reused.
-  - This prevents STOMP UNSUBSCRIBE/SUBSCRIBE flapping for `/topic/user.<username>.group-updates`.
-- Also improved context value memo dependencies to include `subscribeSingleGroup`, `unsubscribeSingleGroup`, and `subscribeGroupUpdates` references.
-- Verified the edited file has no syntax errors using diagnostics.
-
-Why this should work now
-
-- On chat switch, even if cleanup runs transiently:
-  - `refCount` drops to `0`, but unsubscribe is delayed.
-  - The immediate re-subscribe for the same topic increments `refCount` and cancels pending cleanup.
-  - Result: no wire-level UNSUBSCRIBE/SUBSCRIBE for personal topic.
+- [`WebSocketProvider.tsx`](../chat-app-frontend/src/context/WebSocketProvider.tsx):
+- [06_REALTIME_GROUP_SIDEBAR_UPDATE_STRATEGY.md](06_REALTIME_GROUP_SIDEBAR_UPDATE_STRATEGY.md#frontend)
 
 ## My manual testing
 

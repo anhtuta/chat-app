@@ -10,6 +10,7 @@
         "amqp",
         "assertj",
         "chatapp",
+        "colocating",
         "Configurer",
         "Fanout",
         "Previewable",
