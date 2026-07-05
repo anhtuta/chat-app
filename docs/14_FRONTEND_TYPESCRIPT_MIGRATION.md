@@ -232,12 +232,23 @@ Planned implementation phases:
 
 ### Phase 6: Convert page-level orchestration
 
-- Convert:
+- Status: Implemented
+- Renamed and converted:
   - `src/pages/ChatPage.js` -> `src/pages/ChatPage.tsx`
   - `src/pages/LoginPage.js` -> `src/pages/LoginPage.tsx`
   - `src/pages/RegisterPage.js` -> `src/pages/RegisterPage.tsx`
-- Focus on typing state, route params, message/group flow, and handler props.
-- Expect this phase to uncover missing payload assumptions and nullable-state edge cases.
+- Typed page props, route params, chat/group state, message pagination cursor, and handler contracts.
+- Introduced local page types such as `ChatRouteId` (`"public" | number`) and `GroupMessageCursor` in `ChatPage.tsx`.
+- Wired pages to shared types (`ChatMessage`, `ChatGroup`, `ThemeId`, `ThemeOption`, `Unsubscribe`).
+
+### Phase 6 Notes
+
+- `ChatPage` still consumes JavaScript presentational components (`Sidebar`, `ChatArea`, `CreateGroupModal`) without changes.
+- `themeOptions` is still exported from `src/theme/tokens.js`; `ChatPage` types it as `ThemeOption[]` at the page boundary.
+- Verification:
+  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
+  - `npm run build` passes
+  - `CI=true npm test -- --watchAll=false --runInBand` passes
 
 ### Phase 7: Convert presentational components and tests
 

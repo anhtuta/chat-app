@@ -13,19 +13,23 @@ import {
 } from "@mui/material";
 import { login } from "../services/api";
 
-function LoginPage({ onLoginSuccess }) {
+interface LoginPageProps {
+    onLoginSuccess: (username: string) => void;
+}
+
+function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const navigate = useNavigate();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         document.title = "Login - Chat App";
     }, []);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
         setError(null);
 
         if (!username.trim() || !password) {
@@ -37,7 +41,7 @@ function LoginPage({ onLoginSuccess }) {
         try {
             const result = await login(username.trim(), password);
             if (result.success) {
-                onLoginSuccess(result.username);
+                onLoginSuccess(result.username ?? username.trim());
                 navigate("/group/public", { replace: true });
             } else {
                 setError(result.message || "Login failed");
@@ -90,7 +94,7 @@ function LoginPage({ onLoginSuccess }) {
                                     label="Username"
                                     type="text"
                                     value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
+                                    onChange={(event) => setUsername(event.target.value)}
                                     autoComplete="username"
                                     required
                                     fullWidth
@@ -100,7 +104,7 @@ function LoginPage({ onLoginSuccess }) {
                                     label="Password"
                                     type="password"
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={(event) => setPassword(event.target.value)}
                                     autoComplete="current-password"
                                     required
                                     fullWidth
@@ -108,18 +112,8 @@ function LoginPage({ onLoginSuccess }) {
                                 />
                             </Stack>
 
-                            <Button
-                                type="submit"
-                                disabled={loading}
-                                fullWidth
-                                variant="contained"
-                                sx={{ py: 1.5, mb: 2 }}
-                            >
-                                {loading ? (
-                                    <CircularProgress size={24} sx={{ color: "var(--color-surface)" }} />
-                                ) : (
-                                    "Login"
-                                )}
+                            <Button type="submit" disabled={loading} fullWidth variant="contained" sx={{ py: 1.5, mb: 2 }}>
+                                {loading ? <CircularProgress size={24} sx={{ color: "var(--color-surface)" }} /> : "Login"}
                             </Button>
                         </form>
 
