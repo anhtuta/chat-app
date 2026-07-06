@@ -9,10 +9,8 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
-import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupBanRepository;
 import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,23 +21,20 @@ import java.util.Objects;
 @Transactional(readOnly = true)
 public class GroupAuthorizationService {
 
-    private final GroupRepository groupRepository;
     private final GroupParticipantRepository groupParticipantRepository;
     private final GroupBanRepository groupBanRepository;
 
     public GroupAuthorizationService(
-            GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             GroupBanRepository groupBanRepository) {
-        this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.groupBanRepository = groupBanRepository;
     }
 
     public GroupParticipant requireMember(User user, Long groupId) {
-        Group group = loadGroup(groupId);
-        requireNotBanned(user, group);
-        return loadParticipant(group, user);
+        GroupParticipant participant = loadParticipant(groupId, user);
+        requireNotBanned(user, groupId);
+        return participant;
     }
 
     public Group requirePermission(User user, Long groupId, GroupPermission permission) {
@@ -108,7 +103,12 @@ public class GroupAuthorizationService {
     }
 
     public void requireNotBanned(User user, Long groupId) {
-        requireNotBanned(user, loadGroup(groupId));
+        User safeUser = requireUser(user);
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        Long safeUserId = Objects.requireNonNull(safeUser.getId(), "user id must not be null");
+        if (groupBanRepository.existsByGroup_IdAndUser_Id(safeGroupId, safeUserId)) {
+            throw new ForbiddenException("You are banned from this group");
+        }
     }
 
     public void requireUserTopicAccess(User user, String topicUsername) {
@@ -119,21 +119,10 @@ public class GroupAuthorizationService {
         }
     }
 
-    private Group loadGroup(Long groupId) {
+    private GroupParticipant loadParticipant(Long groupId, User user) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-        return groupRepository.findById(safeGroupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
-    }
-
-    private GroupParticipant loadParticipant(Group group, User user) {
-        return groupParticipantRepository.findByGroupAndUser(group, requireUser(user))
+        return groupParticipantRepository.findByGroupIdAndUser(safeGroupId, requireUser(user))
                 .orElseThrow(() -> new ForbiddenException("You are not a member of this group"));
-    }
-
-    private void requireNotBanned(User user, Group group) {
-        if (groupBanRepository.existsByGroupAndUser(group, requireUser(user))) {
-            throw new ForbiddenException("You are banned from this group");
-        }
     }
 
     private User requireUser(User user) {

@@ -32,6 +32,13 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             """)
     List<String> findParticipantUsernamesByGroupId(@Param("groupId") Long groupId);
 
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.group g
+            WHERE g.id = :groupId AND gp.user = :user
+            """)
+    Optional<GroupParticipant> findByGroupIdAndUser(@Param("groupId") Long groupId, @Param("user") User user);
+
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);
     boolean existsByGroupAndUser(Group group, User user);
 }

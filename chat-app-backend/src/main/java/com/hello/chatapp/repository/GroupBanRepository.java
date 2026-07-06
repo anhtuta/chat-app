@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface GroupBanRepository extends JpaRepository<GroupBan, Long> {
     boolean existsByGroupAndUser(Group group, User user);
+    boolean existsByGroup_IdAndUser_Id(Long groupId, Long userId);
 }

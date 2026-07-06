@@ -565,6 +565,7 @@ API/contract/config impacts:
 - No new public API endpoints were added in Phase 2.
 - Existing read/send/upload/mark-read behavior now goes through permission checks rather than raw membership checks.
 - Personal topic subscriptions `/topic/user.{username}.group-updates` are now validated against the authenticated username.
+- Protected group access now resolves membership directly from `group_participants`, **so invalid `groupId` and non-membership are treated the same** unless a later feature explicitly needs a separate existence check.
 
 Rollout, migration, and backward-compatibility notes:
 

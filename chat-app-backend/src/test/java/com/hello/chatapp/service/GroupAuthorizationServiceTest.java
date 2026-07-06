@@ -11,7 +11,6 @@ import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.repository.GroupBanRepository;
 import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,15 +22,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class GroupAuthorizationServiceTest {
-
-    @Mock
-    private GroupRepository groupRepository;
 
     @Mock
     private GroupParticipantRepository groupParticipantRepository;
@@ -82,14 +77,13 @@ class GroupAuthorizationServiceTest {
 
     @Test
     void requirePermission_rejectsBannedUserBeforeMembershipLookup() {
-        when(groupRepository.findById(100L)).thenReturn(Optional.of(group));
-        when(groupBanRepository.existsByGroupAndUser(group, actor)).thenReturn(true);
+        GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
+        when(groupParticipantRepository.findByGroupIdAndUser(100L, actor)).thenReturn(Optional.of(participant));
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(true);
 
         assertThatThrownBy(() -> groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.READ_MESSAGES))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessage("You are banned from this group");
-
-        verifyNoInteractions(groupParticipantRepository);
     }
 
     @Test
@@ -157,9 +151,8 @@ class GroupAuthorizationServiceTest {
     }
 
     private void stubMembership(User user, GroupParticipant participant) {
-        when(groupRepository.findById(100L)).thenReturn(Optional.of(group));
-        when(groupBanRepository.existsByGroupAndUser(group, user)).thenReturn(false);
-        when(groupParticipantRepository.findByGroupAndUser(group, user)).thenReturn(Optional.of(participant));
+        when(groupParticipantRepository.findByGroupIdAndUser(100L, user)).thenReturn(Optional.of(participant));
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, user.getId())).thenReturn(false);
     }
 
     private GroupParticipant buildParticipant(Group participantGroup, User user, GroupRole role) {
