@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.dto.GroupUnreadCountDto;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
@@ -45,6 +46,7 @@ public class GroupService {
 
         // Add creator as participant
         GroupParticipant creatorParticipant = new GroupParticipant(group, creator);
+        creatorParticipant.setRole(GroupRole.LEADER);
         groupParticipantRepository.save(creatorParticipant);
 
         // Add other participants

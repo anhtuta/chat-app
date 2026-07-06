@@ -30,6 +30,9 @@ public class Group {
     @Column(nullable = false)
     private String name;
 
+    @Column(length = 1000)
+    private String description;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
@@ -45,6 +48,16 @@ public class Group {
 
     @Column(name = "latest_message_at")
     private LocalDateTime latestMessageAt;
+
+    @Column(name = "archived_at")
+    private LocalDateTime archivedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "archived_by")
+    private User archivedBy;
+
+    @Column(name = "archive_reason", length = 64)
+    private String archiveReason;
 
     @PrePersist
     protected void onCreate() {

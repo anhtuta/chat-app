@@ -98,7 +98,7 @@ This is better than hard delete because message history, media references, unrea
 - No role can edit media messages. Media messages can only be deleted.
 - Message edits must save edit history.
 - Message deletion should be soft delete so history, pagination, media references, latest-message behavior, and audit trails remain safe.
-- If a privileged user edits someone else's message, the response should include enough metadata for the frontend to show who edited it and what role they had at edit time.
+- If a privileged user edits someone else's message, the response should include enough metadata for the frontend to show who edited it. The editor's role can be inferred from `updated_by` when needed.
 
 ### System Events
 
@@ -123,7 +123,7 @@ System messages should be stored as structured events, not as pre-rendered human
 Recommended approach:
 
 - Store a `messages` row with `message_type = SYSTEM`.
-- Store structured event metadata such as `system_event_type`, `actor_user_id`, `target_user_id`, `old_value`, `new_value`, and optional JSON payload.
+- Store a stable `SystemEventType` enum value in `messages.content`, not a pre-rendered sentence. The application can use that enum value to infer and render the final user-facing system text.
 - Let the application/frontend infer localized display text from the event type and metadata.
 
 ### Backend Authorization
@@ -319,9 +319,10 @@ flowchart TB
   - `archive_reason`
 - `GroupParticipant`: existing membership row. Add:
   - `role`
-  - optional `left_at` if we choose to preserve membership history instead of deleting participant rows on leave/kick.
+  - When a user leaves or is kicked from a group, delete the `group_participants` relationship row instead of preserving an inactive membership row.
 - `GroupRole`: enum values `LEADER`, `CO_LEADER`, `ELDER`, `MEMBER`; includes rank and static permission mapping.
 - `GroupPermission`: enum values such as `READ_MESSAGES`, `SEND_MESSAGES`, `CREATE_JOIN_LINK`, `ADD_MEMBERS`, `KICK_MEMBERS`, `BAN_MEMBERS`, `MANAGE_ROLES`, `MANAGE_GROUP_DETAILS`, `EDIT_ANY_TEXT_MESSAGE`, `DELETE_ANY_MESSAGE`, `TRANSFER_LEADERSHIP`.
+- TODO since GroupRole and GroupPermission are static, we can store them in a static variable as cache and load them from the database during startup.
 - `GroupBan`: records permanent bans:
   - `group_id`
   - `user_id`
@@ -339,20 +340,14 @@ flowchart TB
 - `Message`: add moderation/system fields as needed:
   - `updated_by`
   - `updated_at`
-  - `updated_by_role`
   - `deleted_by`
   - `deleted_at`
-  - `deleted_by_role`
-  - `system_event_type`
-  - optional structured payload column, if not using a separate event table.
+  - For `SYSTEM` messages, store the `SystemEventType` enum value in `content`.
 - `MessageEditHistory`: records text edits:
   - `message_id`
   - `old_content`
-  - `new_content`
   - `updated_by`
-  - `updated_by_role`
   - `updated_at`
-- `MessageSystemEvent`: optional separate table for system-message metadata if we do not want to put event fields directly on `messages`.
 
 Prefer `EnumType.STRING` for persisted enum values. Do not store role weights as integers in the database unless there is a strong reason; keep rank behavior in code.
 
@@ -400,7 +395,7 @@ Membership:
   - Requires actor to be allowed to manage the target role.
   - Creates a structured `SYSTEM` message.
 - `POST /api/groups/{groupId}/bans`
-  - Ban a user and remove/deactivate their participant row if present.
+  - Ban a user and delete their participant row if present.
   - Requires `BAN_MEMBERS`.
   - Requires actor to be allowed to manage the target role.
   - Creates a structured `SYSTEM` message.
@@ -436,7 +431,7 @@ Messages:
   - Leader/co-leader can delete another user's message.
 - `GET /api/messages/groups/{groupId}`
   - Include `SYSTEM` messages in chronological history.
-  - Include structured event metadata for application-level rendering.
+  - Return structured system-event `content` for application-level rendering.
 
 WebSocket:
 
@@ -480,17 +475,23 @@ Recommendation path:
 
 ## Implementation details
 
-Draft only. No implementation has been completed yet.
+Phase 1 has been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
 ### Phase 1: Schema And Entity Changes
 
-- Create a Flyway migration, likely `V8__add_group_roles_and_permissions.sql`.
-- Add `role varchar(32) not null default 'MEMBER'` to `group_participants`.
-- Backfill each group's creator participant row as `LEADER`.
-- Backfill all other participants as `MEMBER`.
-- Add a partial unique index to enforce one leader per active group:
+Status: Implemented.
+
+What changed:
+
+- Added Flyway migration `V8__add_group_roles_and_permissions_phase1.sql`.
+- Added rollback migration `down/U8__drop_group_roles_and_permissions_phase1.sql`.
+- Added `role varchar(32) not null default 'MEMBER'` to `group_participants`.
+- Backfilled each existing group's creator participant row as `LEADER`.
+- Backfilled all other existing participants as `MEMBER`.
+- Updated group creation so new group creators are stored as `LEADER`.
+- Added a partial unique index to enforce one leader per group:
 
 ```sql
 CREATE UNIQUE INDEX ux_group_participants_one_leader
@@ -498,13 +499,35 @@ ON public.group_participants (group_id)
 WHERE role = 'LEADER';
 ```
 
-- Add `group_bans` with unique `(group_id, user_id)`.
-- Add `group_join_links`.
-- Add group archive fields.
-- Add message edit/delete audit fields to `messages`.
-- Add structured system-event fields to `messages` or add a `message_system_events` table.
-- Add `message_edit_history`.
-- Add down migration scripts matching the existing migration style.
+- Added `group_bans` with unique `(group_id, user_id)`.
+- Added `group_join_links` for future self-join links.
+- Added group `description`, `archived_at`, `archived_by`, and `archive_reason` fields.
+- Added message edit/delete audit fields to `messages`.
+- System messages now use `message_type = SYSTEM` and store the `SystemEventType` enum value in `messages.content`, without extra system-event columns.
+- Added `message_edit_history`.
+- Added Java enum `GroupRole`.
+- Added JPA entities `GroupBan`, `GroupJoinLink`, and `MessageEditHistory`.
+- Updated `Group`, `GroupParticipant`, and `Message` entities for the new columns.
+
+Why it changed:
+
+- Phase 1 creates the data foundation for later authorization, membership management, join links, group archive, message moderation, and structured system events.
+- The creator-as-leader write path was included now so new groups created after the migration do not start without a leader.
+
+API/contract/config impacts:
+
+- No new public API is available yet.
+- Existing group creation now writes the creator's participant role as `LEADER`.
+- Existing responses do not yet expose role, archive, moderation, or system-event metadata.
+- Flyway migration must be applied before running the backend with Hibernate schema validation.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Existing group creators are backfilled as `LEADER`.
+- Existing non-creator participants remain `MEMBER`.
+- Existing groups are not archived by default.
+- Existing messages keep null edit/delete/system-event metadata.
+- Rollback removes the Phase 1 tables, indexes, and columns, including role data.
 
 ### Phase 2: Authorization Service
 
@@ -553,7 +576,7 @@ WHERE role = 'LEADER';
 - Add delete message endpoint using soft delete.
 - Support deletion for both text and media messages.
 - Include edit/delete metadata in `MessageResponse`.
-- Store editor/deleter role at action time if the UI must show historical labels accurately after roles change.
+- Infer editor/deleter role from `updated_by` or `deleted_by` if the UI needs role labels.
 
 ### Phase 7: Real-Time Notifications
 
