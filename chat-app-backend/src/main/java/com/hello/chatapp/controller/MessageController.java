@@ -1,14 +1,12 @@
 package com.hello.chatapp.controller;
 
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
-import com.hello.chatapp.exception.ForbiddenException;
-import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.exception.UnauthorizedException;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
+import com.hello.chatapp.service.GroupAuthorizationService;
 import com.hello.chatapp.service.MessageHistoryService;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.http.ResponseEntity;
@@ -27,15 +25,12 @@ import java.util.List;
 @RequestMapping("/api/messages")
 public class MessageController {
 
-    private final GroupRepository groupRepository;
-    private final GroupParticipantRepository groupParticipantRepository;
+    private final GroupAuthorizationService groupAuthorizationService;
     private final MessageHistoryService messageHistoryService;
 
-    public MessageController(GroupRepository groupRepository,
-            GroupParticipantRepository groupParticipantRepository,
+    public MessageController(GroupAuthorizationService groupAuthorizationService,
             MessageHistoryService messageHistoryService) {
-        this.groupRepository = groupRepository;
-        this.groupParticipantRepository = groupParticipantRepository;
+        this.groupAuthorizationService = groupAuthorizationService;
         this.messageHistoryService = messageHistoryService;
     }
 
@@ -60,14 +55,7 @@ public class MessageController {
             throw new UnauthorizedException("User is not authenticated");
         }
 
-        // Find group
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-
-        // Check if user is a member of the group
-        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-            throw new ForbiddenException("You are not a member of this group");
-        }
+        Group group = groupAuthorizationService.requirePermission(user, groupId, GroupPermission.READ_MESSAGES);
 
         int validatedSize = Math.min(Math.max(size, 1), 100);
         boolean hasCursorTimestamp = beforeTimestamp != null;

@@ -6,7 +6,6 @@ import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
-import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
@@ -27,15 +26,18 @@ public class GroupService {
     private final GroupParticipantRepository groupParticipantRepository;
     private final UserRepository userRepository;
     private final MessageRepository messageRepository;
+    private final GroupAuthorizationService groupAuthorizationService;
 
     public GroupService(GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             UserRepository userRepository,
-            MessageRepository messageRepository) {
+            MessageRepository messageRepository,
+            GroupAuthorizationService groupAuthorizationService) {
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.userRepository = userRepository;
         this.messageRepository = messageRepository;
+        this.groupAuthorizationService = groupAuthorizationService;
     }
 
     @Transactional
@@ -101,12 +103,7 @@ public class GroupService {
     @Transactional
     public void markGroupAsRead(User user, Long groupId, Long lastReadMessageId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-
-        Group group = groupRepository.findById(safeGroupId)
-            .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
-
-        GroupParticipant participant = groupParticipantRepository.findByGroupAndUser(group, user)
-                .orElseThrow(() -> new ForbiddenException("You are not a member of this group"));
+        GroupParticipant participant = groupAuthorizationService.requireMember(user, safeGroupId);
 
         if (lastReadMessageId != null && !messageRepository.existsByIdAndGroup_Id(lastReadMessageId, safeGroupId)) {
             throw new BadRequestException("lastReadMessageId does not belong to this group");

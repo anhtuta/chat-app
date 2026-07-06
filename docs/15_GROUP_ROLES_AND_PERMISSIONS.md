@@ -531,17 +531,45 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 2: Authorization Service
 
-- Add `GroupRole` and `GroupPermission` enums.
-- Encode role rank and static permissions in code.
-- Add `GroupAuthorizationService`.
-- Provide methods such as:
+Status: Implemented.
+
+What changed:
+
+- Added `GroupRole` and `GroupPermission` enums.
+- Added `GroupAuthorizationService`.
+- Added `GroupBanRepository` so the authorization layer can reject banned users centrally.
+- Encoded current static role permissions in code for `LEADER`, `CO_LEADER`, `ELDER`, and `MEMBER`.
+- Implemented these authorization methods:
   - `requireMember(user, groupId)`
   - `requirePermission(user, groupId, permission)`
-  - `requireCanManageTarget(actor, target, action)`
+  - `requireCanManageTarget(actor, groupId, target, permission)`
   - `requireCanEditMessage(user, message)`
   - `requireCanDeleteMessage(user, message)`
   - `requireNotBanned(user, groupId)`
-- Replace direct authorization uses of `existsByGroupAndUser` outside repositories.
+  - `requireUserTopicAccess(user, topicUsername)`
+- Replaced direct membership checks with `GroupAuthorizationService` in:
+  - `MessageController`
+  - `WebSocketController`
+  - `WebSocketSecurityChannelInterceptor`
+  - `MediaUploadSessionService`
+  - `GroupService.markGroupAsRead`
+- Added unit tests for `GroupAuthorizationService`.
+
+Why it changed:
+
+- Authorization rules now live in one place instead of being duplicated across controllers, services, and WebSocket code.
+- This reduces drift and creates a single service that later phases can reuse for join links, member management, role changes, and moderation APIs.
+
+API/contract/config impacts:
+
+- No new public API endpoints were added in Phase 2.
+- Existing read/send/upload/mark-read behavior now goes through permission checks rather than raw membership checks.
+- Personal topic subscriptions `/topic/user.{username}.group-updates` are now validated against the authenticated username.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No schema changes were needed for Phase 2 beyond the Phase 1 schema foundation.
+- Current permission behavior for existing features remains effectively the same because all current roles can read/send, while higher-privilege permissions are now encoded for future phases.
 
 ### Phase 3: Membership Management
 
