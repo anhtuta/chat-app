@@ -33,3 +33,5 @@ chat-app.code-workspace
 **/.pnpm-store/
 **/node/
 **/npm/
+
+out/

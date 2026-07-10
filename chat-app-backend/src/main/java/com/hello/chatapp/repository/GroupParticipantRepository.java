@@ -39,6 +39,31 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             """)
     Optional<GroupParticipant> findByGroupIdAndUser(@Param("groupId") Long groupId, @Param("user") User user);
 
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.user
+            WHERE gp.group.id = :groupId
+            ORDER BY gp.joinedAt ASC, gp.id ASC
+            """)
+    List<GroupParticipant> findByGroupIdWithUser(@Param("groupId") Long groupId);
+
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.user
+            JOIN FETCH gp.group
+            WHERE gp.group.id = :groupId AND gp.user.id = :userId
+            """)
+    Optional<GroupParticipant> findByGroupIdAndUserId(
+            @Param("groupId") Long groupId,
+            @Param("userId") Long userId);
+
+    @Query("""
+            SELECT COUNT(gp)
+            FROM GroupParticipant gp
+            WHERE gp.group.id = :groupId
+            """)
+    long countByGroupId(@Param("groupId") Long groupId);
+
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);
     boolean existsByGroupAndUser(Group group, User user);
 }

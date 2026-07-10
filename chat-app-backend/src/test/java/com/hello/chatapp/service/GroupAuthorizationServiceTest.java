@@ -22,6 +22,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings("null")
@@ -77,13 +78,13 @@ class GroupAuthorizationServiceTest {
 
     @Test
     void requirePermission_rejectsBannedUserBeforeMembershipLookup() {
-        GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
-        when(groupParticipantRepository.findByGroupIdAndUser(100L, actor)).thenReturn(Optional.of(participant));
         when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(true);
 
         assertThatThrownBy(() -> groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.READ_MESSAGES))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessage("You are banned from this group");
+
+        verifyNoInteractions(groupParticipantRepository);
     }
 
     @Test

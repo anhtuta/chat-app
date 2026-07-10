@@ -32,9 +32,8 @@ public class GroupAuthorizationService {
     }
 
     public GroupParticipant requireMember(User user, Long groupId) {
-        GroupParticipant participant = loadParticipant(groupId, user);
         requireNotBanned(user, groupId);
-        return participant;
+        return loadParticipant(groupId, user);
     }
 
     public Group requirePermission(User user, Long groupId, GroupPermission permission) {

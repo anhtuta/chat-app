@@ -291,17 +291,16 @@ Recommended approach:
 ```mermaid
 flowchart TB
     GroupController --> GroupService
-    GroupMemberController --> GroupMembershipService
-    GroupJoinController --> GroupJoinLinkService
+    GroupMembershipController --> GroupMembershipService
     MessageController --> MessageModerationService
     WebSocketController --> GroupAuthorizationService
     WebSocketSecurityChannelInterceptor --> GroupAuthorizationService
     MediaUploadSessionService --> GroupAuthorizationService
     GroupMembershipService --> GroupAuthorizationService
-    GroupJoinLinkService --> GroupAuthorizationService
     MessageModerationService --> GroupAuthorizationService
     GroupAuthorizationService --> GroupParticipantRepository
     GroupMembershipService --> GroupBanRepository
+    GroupMembershipService --> GroupJoinLinkRepository
     GroupMembershipService --> GroupParticipantRepository
     GroupMembershipService --> SystemMessageService
     GroupService --> SystemMessageService
@@ -475,7 +474,7 @@ Recommendation path:
 
 ## Implementation details
 
-Phase 1 has been implemented. Later phases are still draft-only.
+Phases 1, 2, and 3 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -574,14 +573,58 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 3: Membership Management
 
-- Add request/response DTOs for members, roles, bans, join links, and leadership transfer.
-- Add controllers such as `GroupMemberController` and `GroupJoinController`.
-- Add `GroupMembershipService` and `GroupJoinLinkService`.
-- Implement join-link creation, self-join, direct add, kick, ban, unban, promote, demote, leave, and transfer leadership.
-- Reject banned users in add/self-join flows.
-- Reject membership changes for archived groups.
-- Ensure transfer leadership updates old leader and new leader in one transaction.
-- Ensure kick/ban/promote/demote checks compare actor and target role ranks.
+Status: Implemented.
+
+What changed:
+
+- Added request/response DTOs for member, role, ban, join-link, and leadership-transfer APIs.
+- Added `GroupJoinLinkRepository`.
+- Expanded `GroupParticipantRepository` with group member list, participant lookup, and participant count queries.
+- Added `GroupMembershipService`.
+- Added `GroupMembershipController` as the single controller for member management and join-link operations.
+- Implemented:
+  - member list
+  - direct add member
+  - join-link creation
+  - self-join by token
+  - join-link revocation
+  - kick member
+  - ban member
+  - unban member
+  - promote/demote member role
+  - leave group
+  - leadership transfer
+- Rejects banned users in direct add and self-join flows.
+- Rejects membership changes for archived groups.
+- Archives a group when the last member leaves.
+- Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
+- Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
+- Ensures kick, ban, promote, and demote checks compare actor and target role ranks.
+
+Why it changed:
+
+- This phase exposes the role and membership lifecycle APIs that the frontend needs for group moderation.
+- `GroupMembershipController` owns join-link endpoints too, so the API surface stays grouped around membership instead of splitting into a separate join controller.
+
+API/contract/config impacts:
+
+- Added `GET /api/groups/{groupId}/members`.
+- Added `POST /api/groups/{groupId}/members`.
+- Added `DELETE /api/groups/{groupId}/members/{userId}`.
+- Added `DELETE /api/groups/{groupId}/members/me`.
+- Added `PATCH /api/groups/{groupId}/members/{userId}/role`.
+- Added `POST /api/groups/{groupId}/bans`.
+- Added `DELETE /api/groups/{groupId}/bans/{userId}`.
+- Added `POST /api/groups/{groupId}/leadership-transfer`.
+- Added `POST /api/groups/{groupId}/join-links`.
+- Added `DELETE /api/groups/{groupId}/join-links/{joinLinkId}`.
+- Added `POST /api/groups/join-links/{token}/join`.
+- Join links return the raw token only when created; only `token_hash` is stored.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No additional schema migration was needed beyond Phase 1.
+- Phase 3 does not emit `SYSTEM` messages yet. Visible membership and role-change system messages are still planned for Phase 5.
 
 ### Phase 4: Group Details And DTOs
 
