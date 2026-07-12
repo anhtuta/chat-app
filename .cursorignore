@@ -34,3 +34,5 @@ chat-app.code-workspace
 **/npm/
 
 out/
+chat-app-backend/cursor.md
+chat-app-backend/README.md
