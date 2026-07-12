@@ -179,6 +179,7 @@ public class CustomRabbitMQBrokerHandler {
             Message message = rabbitTemplate.getMessageConverter().toMessage(Objects.requireNonNull(payload),
                     new MessageProperties());
             message.getMessageProperties().setHeader("source-instance-id", instanceId);
+            // Listener will use this header to forward the message to only users that subscribed to this destination.
             message.getMessageProperties().setHeader(DESTINATION_HEADER, destination);
 
             rabbitTemplate.send(route.exchange(), route.routingKey(), message);

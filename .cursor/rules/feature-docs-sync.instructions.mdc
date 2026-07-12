@@ -12,7 +12,6 @@ alwaysApply: false
 - In feature docs updates, include at minimum:
   - What changed
   - Why it changed
-  - Any API/contract/config impacts
   - Rollout, migration, or backward-compatibility notes (if applicable)
 
 # Types of documentation
