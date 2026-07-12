@@ -1,14 +1,13 @@
 ---
 description: "Use when implementing, changing, or refactoring any feature. Ensure feature documentation in docs is created or updated, with one markdown file per feature."
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Keep Feature Docs In Sync
 
-- Treat feature documentation updates as required whenever feature behavior, API, data flow, config, UX, or operational behavior changes.
+- Update the docs whenever feature behavior, API, data flow, config, UX, or operational behavior changes. No need to always do it, unless you are asked to do so, or you knew the docs file in current context of the conversation.
 - Store feature documentation as markdown files under `docs/`.
 - If the feature already has a docs file, update it, otherwise, create a new markdown file in `docs/` for that feature.
-- Keep each docs file focused on exactly one feature.
 - Filename should start with a number and a underscore, e.g, `01_AUTH_LOGIN_FLOW.md`.
 - In feature docs updates, include at minimum:
   - What changed
