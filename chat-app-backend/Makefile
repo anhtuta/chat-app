@@ -21,7 +21,9 @@ check.env.local:
 	fi
 
 # Host-side Spring Boot / Flyway (not used by docker-compose).
-LOAD_ENV_LOCAL = export $$(cat .env.local 2>/dev/null | grep -v '^#' | xargs)
+# Source .env.local instead of xargs+export — empty xargs output would re-export the
+# whole shell environment and break on values containing quotes.
+LOAD_ENV_LOCAL = set -a && . ./.env.local && set +a
 
 help:
 	@echo "Chat App Docker Commands"
