@@ -12,10 +12,12 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CreateGroupRequest {
-    
+
     @NotBlank(message = "Group name is required")
     private String name;
-    
+
+    private String description;
+
     @NotEmpty(message = "At least one participant is required")
     private List<Long> participantIds;
 }

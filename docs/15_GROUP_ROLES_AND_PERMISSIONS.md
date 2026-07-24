@@ -357,9 +357,13 @@ Groups:
 - `POST /api/groups`
   - Create group.
   - Creator becomes `LEADER`.
+  - Accept optional `description`.
   - Initial participants become `MEMBER`.
 - `GET /api/groups`
   - Return active groups for current user.
+  - Include `currentUserRole` and optionally `currentUserPermissions`.
+- `GET /api/groups/{groupId}`
+  - Return group details for the current member.
   - Include `currentUserRole` and optionally `currentUserPermissions`.
 - `PATCH /api/groups/{groupId}`
   - Update group name and description.
@@ -474,7 +478,7 @@ Recommendation path:
 
 ## Implementation details
 
-Phases 1, 2, and 3 have been implemented. Later phases are still draft-only.
+Phases 1, 2, 3, and 4 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -628,11 +632,40 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 4: Group Details And DTOs
 
-- Add `description` to `groups`.
-- Add archive filtering to group-list queries.
-- Add `currentUserRole` and optionally `currentUserPermissions` to `GroupResponse`.
-- Add member list response with role, joined time, and user summary.
-- Update group list and group details endpoints to include enough role data for frontend gating.
+Status: Implemented.
+
+What changed:
+
+- Extended `CreateGroupRequest` so new groups can include an optional `description`.
+- Added `UpdateGroupRequest`.
+- Extended `GroupResponse` with:
+  - `description`
+  - `currentUserRole`
+  - `currentUserPermissions`
+- Added `GET /api/groups/{groupId}` for member-scoped group details.
+- Added `PATCH /api/groups/{groupId}` for name/description updates.
+- Updated group creation, group list, and group detail responses to include role-aware frontend gating data.
+- Filtered archived groups out of the normal `GET /api/groups` list query.
+- Kept member list responses returning role, joined time, and user summary fields introduced in Phase 3.
+
+Why it changed:
+
+- The frontend needs the current user’s role and permissions on each group payload so it can show or hide moderation and settings controls without extra round trips.
+- Group metadata now needs a dedicated read/update path beyond the basic list response.
+- Archived groups should not appear in the normal active group list.
+
+API/contract/config impacts:
+
+- `POST /api/groups` now accepts optional `description`.
+- Added `GET /api/groups/{groupId}`.
+- Added `PATCH /api/groups/{groupId}`.
+- `GroupResponse` now includes `description`, `currentUserRole`, and `currentUserPermissions`.
+- `GET /api/groups` now returns only active (non-archived) groups.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No new schema migration was needed because `groups.description` and archive fields were already added in Phase 1.
+- Existing clients that ignore new JSON fields remain compatible.
 
 ### Phase 5: Structured System Messages
 

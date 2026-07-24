@@ -1,6 +1,7 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.GroupRole;
+import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.dto.GroupUnreadCountDto;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
@@ -41,9 +42,10 @@ public class GroupService {
     }
 
     @Transactional
-    public Group createGroup(String name, User creator, List<Long> participantIds) {
+    public GroupResponse createGroup(String name, String description, User creator, List<Long> participantIds) {
         // Create the group
-        Group group = new Group(name, creator);
+        Group group = new Group(normalizeRequiredName(name), creator);
+        group.setDescription(normalizeDescription(description));
         group = groupRepository.save(group);
 
         // Add creator as participant
@@ -69,7 +71,12 @@ public class GroupService {
         }
 
         // Fetch group with creator to avoid LazyInitializationException
-        return groupRepository.findByIdWithCreator(group.getId()).orElse(group);
+        Group persistedGroup = groupRepository.findByIdWithCreator(group.getId()).orElse(group);
+        return GroupResponse.fromGroup(
+                persistedGroup,
+                GroupRole.LEADER,
+                groupAuthorizationService.getPermissions(GroupRole.LEADER),
+                0L);
     }
 
     public List<User> getAllUsers() {
@@ -79,24 +86,68 @@ public class GroupService {
     public List<Group> getGroupsByUser(User user) {
         List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
         return participants.stream()
-                .map(GroupParticipant::getGroup)
+                .map(participant -> participant.getGroup())
                 .collect(Collectors.toList());
     }
 
-    public List<GroupParticipant> getGroupParticipantsByUser(User user) {
-        return groupParticipantRepository.findByUser(user);
+    @Transactional(readOnly = true)
+    public List<GroupResponse> getUserGroups(User user) {
+        List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
+        Map<Long, Long> unreadCountByGroupId = getUnreadCountByGroupId(user);
+        return participants.stream()
+                .map(participant -> toGroupResponse(
+                        participant,
+                        unreadCountByGroupId.getOrDefault(participant.getGroup().getId(), 0L)))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public GroupResponse getGroupDetails(User user, Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        GroupParticipant participant = groupAuthorizationService.requireMember(user, safeGroupId);
+        long unreadCount = getUnreadCountByGroupId(user).getOrDefault(safeGroupId, 0L);
+        return toGroupResponse(participant, unreadCount);
+    }
+
+    @Transactional
+    public GroupResponse updateGroupDetails(User user, Long groupId, String name, String description) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        if (name == null && description == null) {
+            throw new BadRequestException("At least one of name or description must be provided");
+        }
+
+        Group group = groupAuthorizationService.requirePermission(user, safeGroupId,
+                com.hello.chatapp.constant.GroupPermission.MANAGE_GROUP_DETAILS);
+        ensureActive(group);
+
+        if (name != null) {
+            group.setName(normalizeRequiredName(name));
+        }
+        if (description != null) {
+            group.setDescription(normalizeDescription(description));
+        }
+
+        Group savedGroup = groupRepository.save(group);
+        GroupParticipant participant = groupParticipantRepository.findByGroupIdAndUserId(safeGroupId, requireUserId(user))
+                .orElseThrow(() -> new NotFoundException("Current user is not a member of this group"));
+        long unreadCount = getUnreadCountByGroupId(user).getOrDefault(safeGroupId, 0L);
+        return GroupResponse.fromGroup(
+                savedGroup,
+                groupAuthorizationService.getRole(participant),
+                groupAuthorizationService.getPermissions(participant),
+                unreadCount);
     }
 
     public Map<Long, Long> getUnreadCountByGroupId(User user) {
         Long userId = Objects.requireNonNull(user.getId(), "user id must not be null");
         List<GroupUnreadCountDto> unreadRows = messageRepository.findUnreadCountRowsByUserId(userId);
         return unreadRows.stream()
-                .collect(Collectors.toMap(GroupUnreadCountDto::getGroupId, GroupUnreadCountDto::getUnreadCount));
+                .collect(Collectors.toMap(row -> row.getGroupId(), row -> row.getUnreadCount()));
     }
 
     public long getTotalUnreadCount(User user) {
         return getUnreadCountByGroupId(user).values().stream()
-                .mapToLong(Long::longValue)
+                .mapToLong(unreadCount -> unreadCount)
                 .sum();
     }
 
@@ -111,5 +162,40 @@ public class GroupService {
 
         participant.setLastReadMessageId(lastReadMessageId);
         groupParticipantRepository.save(participant);
+    }
+
+    private GroupResponse toGroupResponse(GroupParticipant participant, long unreadCount) {
+        return GroupResponse.fromParticipant(
+                participant,
+                groupAuthorizationService.getPermissions(participant),
+                unreadCount);
+    }
+
+    private String normalizeRequiredName(String name) {
+        String normalizedName = Objects.requireNonNull(name, "name must not be null").trim();
+        if (normalizedName.isEmpty()) {
+            throw new BadRequestException("Group name is required");
+        }
+        return normalizedName;
+    }
+
+    private String normalizeDescription(String description) {
+        if (description == null) {
+            return null;
+        }
+        String normalizedDescription = description.trim();
+        return normalizedDescription.isEmpty() ? null : normalizedDescription;
+    }
+
+    private Long requireUserId(User user) {
+        User safeUser = Objects.requireNonNull(user, "user must not be null");
+        return Objects.requireNonNull(safeUser.getId(), "user id must not be null");
+    }
+
+    private void ensureActive(Group group) {
+        Group safeGroup = Objects.requireNonNull(group, "group must not be null");
+        if (safeGroup.getArchivedAt() != null) {
+            throw new BadRequestException("Group is archived");
+        }
     }
 }

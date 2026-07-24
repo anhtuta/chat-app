@@ -20,6 +20,7 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             JOIN FETCH gp.group g
             JOIN FETCH g.createdBy
             WHERE gp.user = :user
+              AND g.archivedAt IS NULL
             ORDER BY COALESCE(g.latestMessageAt, g.createdAt) DESC, g.id DESC
             """)
     List<GroupParticipant> findByUser(User user);

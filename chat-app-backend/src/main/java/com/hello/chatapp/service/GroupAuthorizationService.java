@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -118,6 +119,19 @@ public class GroupAuthorizationService {
         }
     }
 
+    public GroupRole getRole(GroupParticipant participant) {
+        return resolveRole(Objects.requireNonNull(participant, "participant must not be null"));
+    }
+
+    public List<GroupPermission> getPermissions(GroupParticipant participant) {
+        return getPermissions(getRole(participant));
+    }
+
+    public List<GroupPermission> getPermissions(GroupRole role) {
+        GroupRole safeRole = Objects.requireNonNull(role, "role must not be null");
+        return List.copyOf(permissionsForRole(safeRole));
+    }
+
     private GroupParticipant loadParticipant(Long groupId, User user) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
         return groupParticipantRepository.findByGroupIdAndUser(safeGroupId, requireUser(user))
@@ -134,8 +148,12 @@ public class GroupAuthorizationService {
     }
 
     private boolean hasPermission(GroupRole role, GroupPermission permission) {
+        return permissionsForRole(role).contains(permission);
+    }
+
+    private EnumSet<GroupPermission> permissionsForRole(GroupRole role) {
         return switch (role) {
-            case LEADER -> true;
+            case LEADER -> EnumSet.allOf(GroupPermission.class);
             case CO_LEADER -> EnumSet.of(
                     GroupPermission.READ_MESSAGES,
                     GroupPermission.SEND_MESSAGES,
@@ -147,16 +165,16 @@ public class GroupAuthorizationService {
                     GroupPermission.MANAGE_ROLES,
                     GroupPermission.MANAGE_GROUP_DETAILS,
                     GroupPermission.EDIT_ANY_TEXT_MESSAGE,
-                    GroupPermission.DELETE_ANY_MESSAGE).contains(permission);
+                    GroupPermission.DELETE_ANY_MESSAGE);
             case ELDER -> EnumSet.of(
                     GroupPermission.READ_MESSAGES,
                     GroupPermission.SEND_MESSAGES,
                     GroupPermission.CREATE_JOIN_LINK,
                     GroupPermission.ADD_MEMBERS,
-                    GroupPermission.KICK_MEMBERS).contains(permission);
+                    GroupPermission.KICK_MEMBERS);
             case MEMBER -> EnumSet.of(
                     GroupPermission.READ_MESSAGES,
-                    GroupPermission.SEND_MESSAGES).contains(permission);
+                    GroupPermission.SEND_MESSAGES);
         };
     }
 

@@ -1,10 +1,13 @@
 export interface ChatGroup {
   id: number;
   name: string;
+  description?: string | null;
   latestMessage?: string | null;
   latestMessageSender?: string | null;
   latestMessageAt?: string | null;
   unreadCount?: number;
+  currentUserRole?: string | null;
+  currentUserPermissions?: string[];
 }
 
 export interface SelectableUser {

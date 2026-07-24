@@ -146,7 +146,11 @@ export async function getUsers(): Promise<SelectableUser[]> {
 /**
  * Create a new group
  */
-export async function createGroup(name: string, participantIds: number[]): Promise<ChatGroup> {
+export async function createGroup(
+  name: string,
+  participantIds: number[],
+  description?: string,
+): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups`, {
     method: "POST",
     headers: {
@@ -155,6 +159,7 @@ export async function createGroup(name: string, participantIds: number[]): Promi
     credentials: "include",
     body: JSON.stringify({
       name,
+      description,
       participantIds,
     }),
   });
