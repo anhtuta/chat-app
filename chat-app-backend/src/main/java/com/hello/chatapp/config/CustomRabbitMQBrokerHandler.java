@@ -40,6 +40,12 @@ public class CustomRabbitMQBrokerHandler {
     private static final String USER_UPDATES_EXCHANGE = "chat.user-updates";
     private static final String DESTINATION_HEADER = "stomp-destination";
 
+    /**
+     * Key: destination.
+     * Value: total subscribers.
+     * This is a per-destination refcount on this JVM instance.
+     * It answers: “how many active local STOMP subscriptions exist for this destination?” — not “which users are subscribed".
+     */
     private final ConcurrentHashMap<String, Integer> destinationSubscriptionCount = new ConcurrentHashMap<>();
 
     /**
