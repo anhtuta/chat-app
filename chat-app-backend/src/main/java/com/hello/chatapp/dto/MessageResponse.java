@@ -1,6 +1,7 @@
 package com.hello.chatapp.dto;
 
 import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +22,8 @@ public class MessageResponse {
     private Long groupId;
     private MessageType messageType;
     private String content;
+    private SystemEventType systemEventType;
+    private UserResponse systemEventActor;
     private List<MessageAttachmentResponse> attachments;
     private LocalDateTime timestamp;
 
@@ -34,11 +37,24 @@ public class MessageResponse {
                 .groupId(message.getGroup() != null ? message.getGroup().getId() : null)
                 .messageType(message.getMessageType())
                 .content(message.getContent())
+                .systemEventType(resolveSystemEventType(message))
+                .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .attachments(message.getAttachments() == null
                         ? Collections.emptyList()
                         : message.getAttachments().stream().map(MessageAttachmentResponse::fromEntity).toList())
                 .timestamp(message.getTimestamp())
                 .build();
+    }
+
+    private static SystemEventType resolveSystemEventType(Message message) {
+        if (message == null || message.getMessageType() != MessageType.SYSTEM || message.getContent() == null) {
+            return null;
+        }
+        try {
+            return SystemEventType.valueOf(message.getContent());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }
 

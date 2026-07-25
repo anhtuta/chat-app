@@ -64,7 +64,55 @@ function formatAbsoluteTimeVi(timestamp) {
   }).format(date);
 }
 
+function getDisplayUserName(user) {
+  if (!user) {
+    return "Someone";
+  }
+  return user.fullname || user.username || "Someone";
+}
+
+function formatStructuredSystemMessage(message) {
+  const actorName = getDisplayUserName(message.systemEventActor);
+  const subjectName = getDisplayUserName(message.user);
+
+  switch (message.systemEventType) {
+    case "USER_JOINED":
+      return actorName === subjectName ? `${subjectName} joined the group` : `${actorName} added ${subjectName}`;
+    case "USER_LEFT":
+      return `${subjectName} left the group`;
+    case "USER_KICKED":
+      return `${actorName} removed ${subjectName}`;
+    case "USER_BANNED":
+      return `${actorName} banned ${subjectName}`;
+    case "USER_UNBANNED":
+      return `${actorName} unbanned ${subjectName}`;
+    case "USER_PROMOTED":
+      return `${actorName} promoted ${subjectName}`;
+    case "USER_DEMOTED":
+      return `${actorName} demoted ${subjectName}`;
+    case "LEADERSHIP_TRANSFERRED":
+      return `${actorName} transferred leadership to ${subjectName}`;
+    case "GROUP_NAME_UPDATED":
+      return `${actorName} updated the group name`;
+    case "GROUP_DESCRIPTION_UPDATED":
+      return `${actorName} updated the group description`;
+    case "GROUP_ARCHIVED":
+      return `${actorName} archived the group`;
+    default:
+      return message.content || "System event";
+  }
+}
+
 function formatMessage(message, username) {
+  if (message.messageType === MESSAGE_TYPES.SYSTEM && message.systemEventType) {
+    return {
+      type: "system",
+      content: formatStructuredSystemMessage(message),
+      isDisconnected: false,
+      isConnected: false,
+    };
+  }
+
   const isSystemMessage = message.content && message.content.startsWith("[SYSTEM] ");
 
   if (isSystemMessage) {

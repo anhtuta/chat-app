@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
@@ -42,6 +43,7 @@ public class GroupMembershipService {
     private final GroupBanRepository groupBanRepository;
     private final GroupJoinLinkRepository groupJoinLinkRepository;
     private final GroupRepository groupRepository;
+    private final SystemMessageService systemMessageService;
     private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -51,12 +53,14 @@ public class GroupMembershipService {
             GroupBanRepository groupBanRepository,
             GroupJoinLinkRepository groupJoinLinkRepository,
             GroupRepository groupRepository,
+            SystemMessageService systemMessageService,
             UserRepository userRepository) {
         this.groupAuthorizationService = groupAuthorizationService;
         this.groupParticipantRepository = groupParticipantRepository;
         this.groupBanRepository = groupBanRepository;
         this.groupJoinLinkRepository = groupJoinLinkRepository;
         this.groupRepository = groupRepository;
+        this.systemMessageService = systemMessageService;
         this.userRepository = userRepository;
     }
 
@@ -81,7 +85,9 @@ public class GroupMembershipService {
 
         GroupParticipant participant = new GroupParticipant(group, target);
         participant.setRole(GroupRole.MEMBER);
-        return GroupMemberResponse.fromParticipant(groupParticipantRepository.save(participant));
+        GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
+        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_JOINED);
+        return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
     @Transactional
@@ -120,7 +126,9 @@ public class GroupMembershipService {
                 .orElseGet(() -> {
                     GroupParticipant participant = new GroupParticipant(group, user);
                     participant.setRole(GroupRole.MEMBER);
-                    return GroupMemberResponse.fromParticipant(groupParticipantRepository.save(participant));
+                    GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
+                    systemMessageService.recordGroupEvent(group, user, user, SystemEventType.USER_JOINED);
+                    return GroupMemberResponse.fromParticipant(savedParticipant);
                 });
     }
 
@@ -141,6 +149,7 @@ public class GroupMembershipService {
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         ensureActive(targetParticipant.getGroup());
         groupParticipantRepository.delete(targetParticipant);
+        systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor, SystemEventType.USER_KICKED);
     }
 
     @Transactional
@@ -168,6 +177,7 @@ public class GroupMembershipService {
         ban.setBannedBy(actor);
         ban.setReason(reason);
         groupBanRepository.save(ban);
+        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_BANNED);
     }
 
     @Transactional
@@ -177,6 +187,7 @@ public class GroupMembershipService {
         GroupBan ban = groupBanRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new NotFoundException("Ban not found"));
         groupBanRepository.delete(Objects.requireNonNull(ban));
+        systemMessageService.recordGroupEvent(group, ban.getUser(), actor, SystemEventType.USER_UNBANNED);
     }
 
     @Transactional
@@ -192,8 +203,16 @@ public class GroupMembershipService {
         groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.MANAGE_ROLES);
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         ensureActive(targetParticipant.getGroup());
+        GroupRole previousRole = targetParticipant.getRole() == null ? GroupRole.MEMBER : targetParticipant.getRole();
         targetParticipant.setRole(role);
-        return GroupMemberResponse.fromParticipant(groupParticipantRepository.save(targetParticipant));
+        GroupParticipant savedParticipant = groupParticipantRepository.save(targetParticipant);
+        if (previousRole != role) {
+            SystemEventType eventType = role.getRank() < previousRole.getRank()
+                    ? SystemEventType.USER_PROMOTED
+                    : SystemEventType.USER_DEMOTED;
+            systemMessageService.recordGroupEvent(targetParticipant.getGroup(), target, actor, eventType);
+        }
+        return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
     @Transactional
@@ -213,6 +232,7 @@ public class GroupMembershipService {
 
         newLeader.setRole(GroupRole.LEADER);
         groupParticipantRepository.save(newLeader);
+        systemMessageService.recordGroupEvent(currentLeader.getGroup(), newLeader.getUser(), actor, SystemEventType.LEADERSHIP_TRANSFERRED);
     }
 
     @Transactional
@@ -234,6 +254,10 @@ public class GroupMembershipService {
         }
 
         groupParticipantRepository.delete(participant);
+        systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT);
+        if (memberCount <= 1) {
+            systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED);
+        }
     }
 
     private User loadUser(Long userId) {

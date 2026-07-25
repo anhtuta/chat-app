@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
@@ -52,6 +53,9 @@ class GroupMembershipServiceTest {
     private GroupRepository groupRepository;
 
     @Mock
+    private SystemMessageService systemMessageService;
+
+    @Mock
     private UserRepository userRepository;
 
     @InjectMocks
@@ -99,6 +103,7 @@ class GroupMembershipServiceTest {
         assertThat(response.getUserId()).isEqualTo(2L);
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
+        verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_JOINED);
     }
 
     @Test
@@ -128,6 +133,7 @@ class GroupMembershipServiceTest {
         assertThat(response.getUserId()).isEqualTo(2L);
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
+        verify(systemMessageService).recordGroupEvent(group, targetUser, targetUser, SystemEventType.USER_JOINED);
     }
 
     @Test
@@ -153,6 +159,7 @@ class GroupMembershipServiceTest {
         assertThat(savedBan.getUser()).isSameAs(targetUser);
         assertThat(savedBan.getBannedBy()).isSameAs(actor);
         assertThat(savedBan.getReason()).isEqualTo("spam");
+        verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_BANNED);
     }
 
     @Test
@@ -175,6 +182,7 @@ class GroupMembershipServiceTest {
         InOrder repositoryInOrder = inOrder(groupParticipantRepository);
         repositoryInOrder.verify(groupParticipantRepository).saveAndFlush(currentLeader);
         repositoryInOrder.verify(groupParticipantRepository).save(newLeader);
+        verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.LEADERSHIP_TRANSFERRED);
     }
 
     @Test
@@ -192,5 +200,7 @@ class GroupMembershipServiceTest {
         assertThat(group.getArchivedAt()).isNotNull();
         verify(groupRepository).save(group);
         verify(groupParticipantRepository).delete(participant);
+        verify(systemMessageService).recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT);
+        verify(systemMessageService).recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED);
     }
 }

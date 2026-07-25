@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.dto.GroupUnreadCountDto;
@@ -28,17 +29,20 @@ public class GroupService {
     private final UserRepository userRepository;
     private final MessageRepository messageRepository;
     private final GroupAuthorizationService groupAuthorizationService;
+    private final SystemMessageService systemMessageService;
 
     public GroupService(GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             UserRepository userRepository,
             MessageRepository messageRepository,
-            GroupAuthorizationService groupAuthorizationService) {
+            GroupAuthorizationService groupAuthorizationService,
+            SystemMessageService systemMessageService) {
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.userRepository = userRepository;
         this.messageRepository = messageRepository;
         this.groupAuthorizationService = groupAuthorizationService;
+        this.systemMessageService = systemMessageService;
     }
 
     @Transactional
@@ -119,6 +123,8 @@ public class GroupService {
         Group group = groupAuthorizationService.requirePermission(user, safeGroupId,
                 com.hello.chatapp.constant.GroupPermission.MANAGE_GROUP_DETAILS);
         ensureActive(group);
+        String originalName = group.getName();
+        String originalDescription = group.getDescription();
 
         if (name != null) {
             group.setName(normalizeRequiredName(name));
@@ -130,6 +136,12 @@ public class GroupService {
         Group savedGroup = groupRepository.save(group);
         GroupParticipant participant = groupParticipantRepository.findByGroupIdAndUserId(safeGroupId, requireUserId(user))
                 .orElseThrow(() -> new NotFoundException("Current user is not a member of this group"));
+        if (!Objects.equals(group.getName(), originalName)) {
+            systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_NAME_UPDATED);
+        }
+        if (!Objects.equals(group.getDescription(), originalDescription)) {
+            systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_DESCRIPTION_UPDATED);
+        }
         long unreadCount = getUnreadCountByGroupId(user).getOrDefault(safeGroupId, 0L);
         return GroupResponse.fromGroup(
                 savedGroup,

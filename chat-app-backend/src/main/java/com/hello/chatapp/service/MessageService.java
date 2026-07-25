@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
@@ -140,6 +141,34 @@ public class MessageService {
         return savedMessage;
     }
 
+    @Transactional
+    public Message saveGroupSystemMessage(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String latestPreview) {
+        Long groupId = Objects.requireNonNull(group.getId());
+        Group existingGroup = groupRepository.findById(groupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
+
+        Message message = new Message();
+        message.setUser(Objects.requireNonNull(subjectUser, "subjectUser must not be null"));
+        message.setUpdatedBy(actor);
+        message.setGroup(existingGroup);
+        message.setMessageType(MessageType.SYSTEM);
+        message.setContent(Objects.requireNonNull(eventType, "eventType must not be null").name());
+
+        Message savedMessage = messageRepository.saveAndFlush(message);
+        updateLatestMessageSummary(
+                groupId,
+                latestPreview,
+                "System",
+                savedMessage.getTimestamp(),
+                Objects.requireNonNull(savedMessage.getId()));
+        return savedMessage;
+    }
+
     public static String buildLatestMessagePreview(String content) {
         if (content == null) {
             return null;
@@ -169,6 +198,25 @@ public class MessageService {
                     : buildLatestMessagePreview(message.getAttachments().getFirst().getOriginalFilename());
             default -> buildLatestMessagePreview(message.getContent());
         };
+    }
+
+    private void updateLatestMessageSummary(
+            Long groupId,
+            String latestMessagePreview,
+            String latestMessageSender,
+            java.time.LocalDateTime latestMessageAt,
+            Long messageId) {
+        int rowsUpdated = groupRepository.updateLatestMessageIfNewer(
+                groupId,
+                latestMessagePreview,
+                latestMessageSender,
+                latestMessageAt,
+                messageId);
+
+        if (rowsUpdated == 0) {
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists",
+                    groupId);
+        }
     }
 
     private void attachMedia(Message message, List<MessageMedia> attachments) {

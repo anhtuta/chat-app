@@ -478,7 +478,7 @@ Recommendation path:
 
 ## Implementation details
 
-Phases 1, 2, 3, and 4 have been implemented. Later phases are still draft-only.
+Phases 1, 2, 3, 4, and 5 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -669,10 +669,42 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 5: Structured System Messages
 
-- Add `SystemMessageService`.
-- Insert `SYSTEM` messages for join, leave, kick, ban, unban if visible, promote, demote, leadership transfer, group name update, group description update, and group archive.
-- Store event metadata, not final rendered text.
-- Update `MessageResponse` so frontend can render localized/inferred system text.
+Status: Implemented.
+
+What changed:
+
+- Added `SystemMessageService`.
+- Persisted `SYSTEM` messages for:
+  - join
+  - leave
+  - kick
+  - ban
+  - unban
+  - promote
+  - demote
+  - leadership transfer
+  - group name update
+  - group description update
+  - group archive
+- Kept `messages.content` as the stable `SystemEventType` value.
+- Exposed system-message metadata in `MessageResponse` / `MessageResponseMapper` so the frontend can render inferred text.
+- Updated the frontend chat message model/rendering to use structured system-event metadata when available.
+
+Why it changed:
+
+- Membership and group-profile actions should appear in chat history as durable events.
+- The frontend needs structured event metadata instead of pre-rendered English sentences in persisted message rows.
+
+API/contract/config impacts:
+
+- Group message history now includes persisted `SYSTEM` messages for membership and group-profile events.
+- `MessageResponse` now includes `systemEventType` and `systemEventActor` for structured system-event rendering.
+- Group latest-message summaries now use derived system previews like `Member joined` or `Group archived`.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No new schema migration was needed because Phase 1 already reserved `SYSTEM` messages and audit fields.
+- Legacy transient `[SYSTEM] ...` WebSocket notifications still work; the frontend now prefers structured metadata when present.
 
 ### Phase 6: Message Moderation
 

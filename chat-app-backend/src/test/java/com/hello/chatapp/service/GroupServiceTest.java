@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
@@ -23,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SuppressWarnings("null")
@@ -43,6 +45,9 @@ class GroupServiceTest {
 
     @Mock
     private GroupAuthorizationService groupAuthorizationService;
+
+    @Mock
+    private SystemMessageService systemMessageService;
 
     @InjectMocks
     private GroupService groupService;
@@ -129,5 +134,7 @@ class GroupServiceTest {
         assertThat(response.getName()).isEqualTo("API Team");
         assertThat(response.getDescription()).isNull();
         assertThat(response.getCurrentUserRole()).isEqualTo(GroupRole.CO_LEADER);
+        verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED);
+        verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_DESCRIPTION_UPDATED);
     }
 }

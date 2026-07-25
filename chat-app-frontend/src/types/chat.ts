@@ -1,6 +1,18 @@
 export type ChatScope = "PUBLIC" | "GROUP";
 
 export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "FILE" | "SYSTEM";
+export type SystemEventType =
+  | "USER_JOINED"
+  | "USER_LEFT"
+  | "USER_KICKED"
+  | "USER_BANNED"
+  | "USER_UNBANNED"
+  | "USER_PROMOTED"
+  | "USER_DEMOTED"
+  | "LEADERSHIP_TRANSFERRED"
+  | "GROUP_NAME_UPDATED"
+  | "GROUP_DESCRIPTION_UPDATED"
+  | "GROUP_ARCHIVED";
 
 export type MediaMessageType = Extract<MessageType, "IMAGE" | "VIDEO" | "AUDIO" | "FILE">;
 
@@ -58,6 +70,8 @@ export interface ChatMessage {
   timestamp?: string | null;
   user?: ChatUser | null;
   messageType?: MessageType | null;
+  systemEventType?: SystemEventType | null;
+  systemEventActor?: ChatUser | null;
   attachments?: ChatAttachment[];
   localUploadState?: LocalUploadState | null;
 }

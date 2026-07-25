@@ -1,5 +1,7 @@
 package com.hello.chatapp.dto;
 
+import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.storage.ObjectStorageProvider;
@@ -29,9 +31,22 @@ public class MessageResponseMapper {
                 .groupId(message.getGroup() != null ? message.getGroup().getId() : null)
                 .messageType(message.getMessageType())
                 .content(message.getContent())
+                .systemEventType(resolveSystemEventType(message))
+                .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .attachments(toAttachmentResponses(message.getAttachments()))
                 .timestamp(message.getTimestamp())
                 .build();
+    }
+
+    private SystemEventType resolveSystemEventType(Message message) {
+        if (message == null || message.getMessageType() != MessageType.SYSTEM || message.getContent() == null) {
+            return null;
+        }
+        try {
+            return SystemEventType.valueOf(message.getContent());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private List<MessageAttachmentResponse> toAttachmentResponses(List<MessageMedia> attachments) {

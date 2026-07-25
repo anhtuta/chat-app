@@ -22,7 +22,7 @@ import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({GroupService.class})
+@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class, SystemMessageService.class})
 public class GroupServiceMarkReadValidationTest {
 
     @DynamicPropertySource
