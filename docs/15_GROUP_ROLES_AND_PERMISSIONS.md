@@ -478,7 +478,7 @@ Recommendation path:
 
 ## Implementation details
 
-Phases 1, 2, 3, 4, and 5 have been implemented. Later phases are still draft-only.
+Phases 1, 2, 3, 4, 5, and 6 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -708,12 +708,40 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 6: Message Moderation
 
-- Add edit message endpoint for text messages only.
-- Persist `MessageEditHistory` for every edit.
-- Add delete message endpoint using soft delete.
-- Support deletion for both text and media messages.
-- Include edit/delete metadata in `MessageResponse`.
-- Infer editor/deleter role from `updated_by` or `deleted_by` if the UI needs role labels.
+Status: Implemented.
+
+What changed:
+
+- Added `PATCH /api/messages/{messageId}` for text-message edits.
+- Added `DELETE /api/messages/{messageId}` for soft delete.
+- Added `MessageModerationService`.
+- Added `MessageEditHistoryRepository`.
+- Persisted a `MessageEditHistory` row for every successful text edit.
+- Extended `MessageResponse` / `MessageResponseMapper` with:
+  - `updatedBy`
+  - `updatedAt`
+  - `deletedBy`
+  - `deletedAt`
+- Hid deleted message content and attachments from API responses while keeping the row for history/audit purposes.
+- Refreshed group latest-message summaries after edits/deletes so sidebar state stays coherent.
+- Updated frontend chat message rendering to show deleted placeholders and edited markers.
+
+Why it changed:
+
+- Message edits and deletes need permission-aware moderation behavior without losing chronology or audit history.
+- Soft delete keeps pagination, ordering, and message history stable while preventing deleted content/media from being re-served to clients.
+
+API/contract/config impacts:
+
+- Added `PATCH /api/messages/{messageId}`.
+- Added `DELETE /api/messages/{messageId}`.
+- `MessageResponse` now includes edit/delete metadata.
+- Deleted messages now return null content and no attachments, plus `deletedBy` / `deletedAt`.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No new schema migration was needed because Phase 1 already added message moderation audit fields and `message_edit_history`.
+- Older clients that ignore the new response fields remain compatible, but they will not show edit/delete state unless updated.
 
 ### Phase 7: Real-Time Notifications
 

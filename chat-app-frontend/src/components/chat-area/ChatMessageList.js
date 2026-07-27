@@ -136,10 +136,11 @@ function formatMessage(message, username) {
   return {
     type: isOwnMessage ? "sent" : "received",
     displayName,
-    content: message.content,
+    content: message.deletedAt ? "Message deleted" : message.content,
     timestamp: message.timestamp,
     relativeTimestamp: formatRelativeTime(message.timestamp),
     absoluteTimestamp: formatAbsoluteTimeVi(message.timestamp),
+    isEdited: Boolean(message.updatedAt) && !message.deletedAt,
     messageType: message.messageType || MESSAGE_TYPES.TEXT,
     attachments: Array.isArray(message.attachments) ? message.attachments : [],
     localUploadState: message.localUploadState || null,
@@ -222,6 +223,7 @@ function ChatMessageList({
                     title={formatted.absoluteTimestamp}
                   >
                     {formatted.relativeTimestamp}
+                    {formatted.isEdited ? " (edited)" : ""}
                   </Box>
                 </Typography>
                 <Typography variant="body2" className="chat-message-text">

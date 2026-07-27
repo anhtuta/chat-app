@@ -203,6 +203,40 @@ export async function getTotalUnreadCount(): Promise<UnreadSummaryResponse> {
 }
 
 /**
+ * Edit an existing text message.
+ */
+export async function updateMessage(messageId: number | string, content: string): Promise<ChatMessage> {
+  const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ content }),
+  });
+
+  if (response.ok) {
+    return response.json();
+  }
+  return handleErrorResponse(response);
+}
+
+/**
+ * Soft-delete an existing message.
+ */
+export async function deleteMessage(messageId: number | string): Promise<ChatMessage> {
+  const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (response.ok) {
+    return response.json();
+  }
+  return handleErrorResponse(response);
+}
+
+/**
  * Prepare a media message upload session.
  */
 export async function prepareMediaMessage(

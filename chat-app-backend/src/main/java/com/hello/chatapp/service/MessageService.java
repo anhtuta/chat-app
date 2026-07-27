@@ -184,6 +184,9 @@ public class MessageService {
         if (message == null) {
             return null;
         }
+        if (message.getDeletedAt() != null) {
+            return "Message deleted";
+        }
         MessageType messageType = message.getMessageType();
         if (messageType == null || messageType == MessageType.TEXT || messageType == MessageType.SYSTEM) {
             return buildLatestMessagePreview(message.getContent());
@@ -198,6 +201,28 @@ public class MessageService {
                     : buildLatestMessagePreview(message.getAttachments().getFirst().getOriginalFilename());
             default -> buildLatestMessagePreview(message.getContent());
         };
+    }
+
+    @Transactional
+    public void refreshGroupLatestMessage(Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        Group group = groupRepository.findById(safeGroupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
+
+        java.util.Optional<Message> latestMessage = messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(safeGroupId);
+        if (latestMessage.isEmpty()) {
+            group.setLatestMessage(null);
+            group.setLatestMessageSender(null);
+            group.setLatestMessageAt(null);
+            groupRepository.save(group);
+            return;
+        }
+
+        Message latest = latestMessage.get();
+        group.setLatestMessage(buildLatestMessagePreview(latest));
+        group.setLatestMessageSender(latest.getMessageType() == MessageType.SYSTEM ? "System" : latest.getUser().getUsername());
+        group.setLatestMessageAt(latest.getTimestamp());
+        groupRepository.save(group);
     }
 
     private void updateLatestMessageSummary(

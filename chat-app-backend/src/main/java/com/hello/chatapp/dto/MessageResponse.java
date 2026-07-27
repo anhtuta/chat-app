@@ -24,6 +24,10 @@ public class MessageResponse {
     private String content;
     private SystemEventType systemEventType;
     private UserResponse systemEventActor;
+    private UserResponse updatedBy;
+    private LocalDateTime updatedAt;
+    private UserResponse deletedBy;
+    private LocalDateTime deletedAt;
     private List<MessageAttachmentResponse> attachments;
     private LocalDateTime timestamp;
 
@@ -36,14 +40,32 @@ public class MessageResponse {
                 .user(message.getUser() != null ? UserResponse.fromUser(message.getUser()) : null)
                 .groupId(message.getGroup() != null ? message.getGroup().getId() : null)
                 .messageType(message.getMessageType())
-                .content(message.getContent())
+                .content(resolveContent(message))
                 .systemEventType(resolveSystemEventType(message))
                 .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
-                .attachments(message.getAttachments() == null
-                        ? Collections.emptyList()
-                        : message.getAttachments().stream().map(MessageAttachmentResponse::fromEntity).toList())
+                .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
+                .updatedAt(message.getUpdatedAt())
+                .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)
+                .deletedAt(message.getDeletedAt())
+                .attachments(resolveAttachments(message))
                 .timestamp(message.getTimestamp())
                 .build();
+    }
+
+    private static String resolveContent(Message message) {
+        if (message == null || message.getDeletedAt() != null) {
+            return null;
+        }
+        return message.getContent();
+    }
+
+    private static List<MessageAttachmentResponse> resolveAttachments(Message message) {
+        if (message == null || message.getDeletedAt() != null) {
+            return Collections.emptyList();
+        }
+        return message.getAttachments() == null
+                ? Collections.emptyList()
+                : message.getAttachments().stream().map(MessageAttachmentResponse::fromEntity).toList();
     }
 
     private static SystemEventType resolveSystemEventType(Message message) {

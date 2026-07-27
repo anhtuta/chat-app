@@ -67,10 +67,13 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
      * Why we use this name? If we use `findById`, we cannot add that overload on JpaRepository without conflicting with the
      * inherited findById. That is why teams often use a descriptive alias like findWithMediaById or findMessageGraphById.
      */
-    @EntityGraph(attributePaths = {"user", "group", "attachments"})
+    @EntityGraph(attributePaths = {"user", "group", "updatedBy", "deletedBy", "attachments"})
     Optional<Message> findWithMediaById(Long id);
 
-    @EntityGraph(attributePaths = {"user", "group", "attachments"})
+    @EntityGraph(attributePaths = {"user", "group", "updatedBy", "deletedBy", "attachments"})
     List<Message> findWithMediaByIdIn(Collection<Long> ids);
+
+    @EntityGraph(attributePaths = {"user", "updatedBy", "deletedBy", "attachments"})
+    Optional<Message> findTopByGroup_IdOrderByTimestampDescIdDesc(Long groupId);
 }
 

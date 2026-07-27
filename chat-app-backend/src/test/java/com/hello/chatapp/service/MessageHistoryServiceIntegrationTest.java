@@ -109,6 +109,33 @@ class MessageHistoryServiceIntegrationTest {
         assertThat(responses.get(1).getAttachments().getFirst().getOriginalFilename()).isEqualTo("report.pdf");
     }
 
+    @Test
+    void getGroupMessages_hidesDeletedContentAndAttachmentsButKeepsDeleteMetadata() {
+        User sender = userRepository.saveAndFlush(new User("deleted-user", "secret", "Deleted User"));
+        User deleter = userRepository.saveAndFlush(new User("moderator-user", "secret", "Moderator User"));
+        Group group = groupRepository.saveAndFlush(new Group("Deleted Group", sender));
+
+        Message message = new Message();
+        message.setUser(sender);
+        message.setGroup(group);
+        message.setMessageType(MessageType.FILE);
+        message.setTimestamp(LocalDateTime.now());
+        message.setContent("should-hide");
+        message.setDeletedBy(deleter);
+        message.setDeletedAt(LocalDateTime.now());
+        message.addAttachment(buildAttachment("hidden.pdf", 0));
+        messageRepository.saveAndFlush(message);
+
+        List<MessageResponse> responses = messageHistoryService.getGroupMessages(group, null, null, 10);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.getFirst().getContent()).isNull();
+        assertThat(responses.getFirst().getAttachments()).isEmpty();
+        assertThat(responses.getFirst().getDeletedAt()).isNotNull();
+        assertThat(responses.getFirst().getDeletedBy()).isNotNull();
+        assertThat(responses.getFirst().getDeletedBy().getUsername()).isEqualTo("moderator-user");
+    }
+
     private MessageMedia buildAttachment(String filename, int order) {
         MessageMedia attachment = new MessageMedia();
         attachment.setAttachmentOrder(order);

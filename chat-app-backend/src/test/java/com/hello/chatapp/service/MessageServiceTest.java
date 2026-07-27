@@ -85,6 +85,23 @@ class MessageServiceTest {
         assertThat(result.getGroup()).isNull();
     }
 
+    @Test
+    void refreshGroupLatestMessage_usesDeletedPreviewForDeletedLatestMessage() {
+        Message deletedMessage = buildMessage(300L, user, group, "secret", LocalDateTime.now());
+        deletedMessage.setDeletedAt(LocalDateTime.now());
+        Long groupId = Objects.requireNonNull(group.getId());
+
+        when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.of(deletedMessage));
+        when(groupRepository.save(group)).thenReturn(group);
+
+        messageService.refreshGroupLatestMessage(groupId);
+
+        assertThat(group.getLatestMessage()).isEqualTo("Message deleted");
+        assertThat(group.getLatestMessageSender()).isEqualTo("alice");
+        assertThat(group.getLatestMessageAt()).isEqualTo(deletedMessage.getTimestamp());
+    }
+
     private Message buildMessage(Long id, User messageUser, Group messageGroup, String content, LocalDateTime timestamp) {
         Message message = new Message();
         message.setId(id);
