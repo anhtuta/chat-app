@@ -503,7 +503,15 @@ Request fields:
 
 - `attachments`:
   - `attachmentId`
-  - `etag` or multipart completion metadata
+  - `etag` (single-part) — ETag returned by object storage after the client `PUT`; backend normalizes and compares it against the provider-stored ETag before creating the message
+  - `parts` (multipart) — per-part completion metadata with part-level etags
+
+Single-part verification behavior:
+
+- backend reads the stored object ETag from MinIO via `StatObject`
+- client-reported `etag` must match after quote/case normalization
+- placeholder client sentinel `etag-unavailable` is rejected with a clear error
+- object storage CORS must expose the `ETag` response header to the browser, or the client cannot complete the upload honestly
 
 Response:
 
@@ -1202,7 +1210,10 @@ Implemented in `chat-app-backend`:
   - `thumbnailUrl`
   - `previewUrl`
   - `transcodedUrl`
-- Updated media completion flow to perform real object-existence verification for single-part uploads
+- Updated media completion flow to perform real object verification for single-part uploads:
+  - object existence via MinIO `StatObject`
+  - stored-ETag comparison against client-reported `etag` from the upload `PUT` response
+- Added `ObjectEtagNormalizer` and `ObjectStorageProvider.findObjectEtag(...)` for provider-backed ETag reads
 - Updated REST history and realtime media publishing to use URL-aware response mapping
 - Added local MinIO service to `chat-app-backend/docker-compose.yml`
 - Wired backend containers in compose to MinIO using container-safe endpoint/credentials
@@ -1212,7 +1223,7 @@ Implemented in `chat-app-backend`:
 Phase-7 behavior currently covers:
 
 - local backend + MinIO can issue real presigned upload URLs for single-part media uploads
-- upload completion can verify the uploaded object is present in MinIO before creating the message
+- upload completion verifies the uploaded object is present in MinIO **and** that the client-reported `etag` matches the provider-stored ETag before creating the message
 - created media messages now return usable signed read/render URLs in:
   - completion responses
   - REST history responses
@@ -1226,10 +1237,11 @@ Phase-7 behavior currently covers:
 Current Phase-7 limitations:
 
 - real MinIO-backed flow is currently reliable for the first **single-part image** slice
-- multipart upload finalization is still not backed by a real MinIO multipart-complete flow yet
-- S3 remains abstraction-compatible but still placeholder-level compared to MinIO
+- multipart upload finalization is still not backed by a real MinIO multipart-complete flow yet; per-part ETag verification is still TODO there
+- S3 remains abstraction-compatible but still placeholder-level compared to MinIO; it skips stored-ETag verification until real HeadObject support lands
 - malware scan is still a no-op placeholder
 - derivative generation is still placeholder metadata, not real binary output
+- MinIO bucket CORS must expose `ETag` to browser clients, or completion will fail when the frontend cannot read the upload response header
 
 What Phase 7 intentionally does **not** implement yet:
 
@@ -1300,6 +1312,34 @@ What Phase 8 intentionally does **not** implement yet:
 Phase-8 implementation note:
 
 - the frontend now matches the backend media message contract closely enough to exercise the usable UI slice end to end, while still keeping the known multipart gap explicit until the backend storage flow is finished
+
+### Post-Phase-8 hardening - Single-part stored ETag verification
+
+#### What changed
+
+- `MediaUploadSessionService.completeUploadSession(...)` now compares the client-reported single-part `etag` against the ETag returned by object storage (`MinIO StatObject`) before creating the final message.
+- Added `ObjectStorageProvider.findObjectEtag(...)` and `ObjectEtagNormalizer` so quote/case differences between browser and provider values do not cause false mismatches.
+- Rejects the frontend fallback sentinel `etag-unavailable` with an explicit error so uploads cannot complete when browser CORS hides the upload response `ETag`.
+
+#### Why it changed
+
+- Existence-only checks were not enough: a client could call `/complete` after a failed or skipped upload as long as some object happened to exist at the prepared key.
+- Matching the provider-stored ETag proves the bytes the client claims to have uploaded are the bytes currently stored at the prepared object key.
+
+#### API / contract impacts
+
+- `POST /api/media/messages/upload-sessions/{uploadSessionId}/complete` now returns `400 Bad Request` when:
+  - `etag` is missing/blank for a single-part attachment
+  - `etag` is `etag-unavailable`
+  - the object does not exist in storage
+  - the client `etag` does not match the provider-stored ETag
+- No request-shape change; behavior is stricter for single-part MinIO uploads.
+
+#### Rollout / compatibility notes
+
+- Local/dev MinIO must allow the browser origin and expose `ETag` in CORS response headers for direct upload completion to work.
+- Placeholder `S3ObjectStorageProvider` still skips stored-ETag verification until real SDK `HeadObject` support is added.
+- Multipart completion still validates structure only; per-part stored-ETag verification remains future work.
 
 ## Future Higher-Scale Path
 

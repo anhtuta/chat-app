@@ -30,6 +30,7 @@ import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MediaUploadRepository;
+import com.hello.chatapp.storage.ObjectEtagNormalizer;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
@@ -45,6 +46,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -201,7 +203,7 @@ public class MediaUploadSessionService {
                 throw new BadRequestException("Missing completion metadata for attachment " + upload.getUploadId());
             }
             validateCompletionRequest(upload, attachmentRequest);
-            verifyUploadedObjectExists(upload);
+            verifyUploadedObject(upload, attachmentRequest);
             malwareScanService.assertClean(upload);
             upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
         }
@@ -343,17 +345,40 @@ public class MediaUploadSessionService {
         }
     }
 
-    private void verifyUploadedObjectExists(MediaUpload upload) {
+    private void verifyUploadedObject(MediaUpload upload, CompleteMediaAttachmentRequest request) {
         UploadStrategy uploadStrategy = resolveUploadStrategy(upload.getRequestedSizeBytes());
         if (uploadStrategy == UploadStrategy.MULTIPART) {
-            // TODO: Replace this with real MinIO multipart finalize + object verification.
+            // TODO: Replace this with real MinIO multipart finalize + per-part ETag verification.
             return;
         }
 
-        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(upload.getStorageProvider());
-        if (!provider.objectExists(upload.getObjectKey())) {
-            throw new BadRequestException("Uploaded object not found in storage for attachment " + upload.getUploadId());
+        if (isUnavailableClientEtag(request.getEtag())) {
+            throw new BadRequestException(
+                    "Upload etag is unavailable; object storage must expose ETag to the browser via CORS");
         }
+
+        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(upload.getStorageProvider());
+        if (!provider.supportsStoredEtagVerification()) {
+            if (!provider.objectExists(upload.getObjectKey())) {
+                throw new BadRequestException(
+                        "Uploaded object not found in storage for attachment " + upload.getUploadId());
+            }
+            return;
+        }
+
+        Optional<String> storageEtag = provider.findObjectEtag(upload.getObjectKey());
+        if (storageEtag.isEmpty()) {
+            throw new BadRequestException(
+                    "Uploaded object not found in storage for attachment " + upload.getUploadId());
+        }
+        if (!ObjectEtagNormalizer.matches(request.getEtag(), storageEtag.get())) {
+            throw new BadRequestException(
+                    "Upload etag does not match stored object for attachment " + upload.getUploadId());
+        }
+    }
+
+    private boolean isUnavailableClientEtag(String etag) {
+        return etag != null && "etag-unavailable".equalsIgnoreCase(etag.trim());
     }
 
     private Message persistFinalMessage(User user, List<MediaUpload> uploads) {
