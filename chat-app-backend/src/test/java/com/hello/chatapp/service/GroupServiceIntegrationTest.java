@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -24,7 +25,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class, SystemMessageService.class})
+@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class})
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class GroupServiceIntegrationTest {
@@ -48,6 +49,9 @@ class GroupServiceIntegrationTest {
 
     @Autowired
     private MessageRepository messageRepository;
+
+    @MockitoBean
+    private SystemMessageService systemMessageService;
 
     @Test
     void getUnreadCountByGroupId_andTotalUnread_areCorrect_andIncludeZeroForGroupsWithoutMessages() {

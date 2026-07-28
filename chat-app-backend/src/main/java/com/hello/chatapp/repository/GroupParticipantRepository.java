@@ -42,8 +42,9 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
 
     @Query("""
             SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.group g
             JOIN FETCH gp.user
-            WHERE gp.group.id = :groupId
+            WHERE g.id = :groupId
             ORDER BY gp.joinedAt ASC, gp.id ASC
             """)
     List<GroupParticipant> findByGroupIdWithUser(@Param("groupId") Long groupId);

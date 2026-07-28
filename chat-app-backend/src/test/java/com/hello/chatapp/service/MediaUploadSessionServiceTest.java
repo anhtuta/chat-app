@@ -33,6 +33,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -80,6 +81,9 @@ class MediaUploadSessionServiceTest {
     private CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
 
     @Mock
+    private GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
+
+    @Mock
     private ObjectStorageProvider objectStorageProvider;
 
     @InjectMocks
@@ -114,11 +118,14 @@ class MediaUploadSessionServiceTest {
                 completionRequest(ATTACHMENT_ID));
 
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(MessageResponse.class));
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(2);
 
         triggerAfterCommit();
 
         verify(mediaProcessingService).enqueueProcessing(MESSAGE_ID);
+        verify(messagingTemplate).convertAndSend(eq("/topic/public"), any(MessageResponse.class));
+        verify(rabbitMQBrokerHandler).publishToRabbitMQ(eq("/topic/public"), any(MessageResponse.class));
     }
 
     @Test
@@ -130,10 +137,11 @@ class MediaUploadSessionServiceTest {
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(2);
         triggerAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
 
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(MessageResponse.class));
     }
 
     @Test
@@ -145,8 +153,14 @@ class MediaUploadSessionServiceTest {
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(MessageResponse.class));
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
+
+        triggerAfterCommit();
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/public"), any(MessageResponse.class));
+        verify(rabbitMQBrokerHandler).publishToRabbitMQ(eq("/topic/public"), any(MessageResponse.class));
     }
 
     private void stubSuccessfulCompletion(MessageType messageType) {

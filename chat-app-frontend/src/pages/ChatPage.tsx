@@ -7,7 +7,7 @@ import CreateGroupModal from "../components/CreateGroupModal";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
 import type { ChatMessage } from "../types/chat";
-import type { ChatGroup } from "../types/groups";
+import type { ChatGroup, GroupSummaryUpdate } from "../types/groups";
 import type { ThemeId, ThemeOption } from "../types/theme";
 import type { Unsubscribe } from "../types/websocket";
 
@@ -108,12 +108,39 @@ function ChatPage({
   // Register sidebar update handler. The STOMP subscription itself is owned by WebSocketProvider
   // for the whole login session and is not tied to chat switching.
   useEffect(() => {
-    setGroupUpdatesHandler((groupSummaryUpdate) => {
+    setGroupUpdatesHandler((groupSummaryUpdate: GroupSummaryUpdate) => {
       const updatedGroupId = Number(groupSummaryUpdate.groupId);
+      const action = groupSummaryUpdate.action ?? "UPSERT";
+
+      if (action === "REMOVE" && currentChatIdRef.current === updatedGroupId) {
+        navigate("/group/public");
+      }
+
       setGroups((prev) => {
         const groupIndex = prev.findIndex((group) => Number(group.id) === updatedGroupId);
+        if (action === "REMOVE") {
+          return prev.filter((group) => Number(group.id) !== updatedGroupId);
+        }
+
         if (groupIndex === -1) {
-          return prev;
+          if (!groupSummaryUpdate.name) {
+            return prev;
+          }
+
+          return [
+            {
+              id: updatedGroupId,
+              name: groupSummaryUpdate.name,
+              description: groupSummaryUpdate.description,
+              latestMessage: groupSummaryUpdate.latestMessage,
+              latestMessageSender: groupSummaryUpdate.latestMessageSender,
+              latestMessageAt: groupSummaryUpdate.latestMessageAt,
+              unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : Number(groupSummaryUpdate.unreadCount || 0),
+              currentUserRole: groupSummaryUpdate.currentUserRole,
+              currentUserPermissions: groupSummaryUpdate.currentUserPermissions,
+            },
+            ...prev,
+          ];
         }
 
         const currentGroup = prev[groupIndex];
@@ -127,10 +154,20 @@ function ChatPage({
 
         const updatedGroup: ChatGroup = {
           ...currentGroup,
-          latestMessage: groupSummaryUpdate.latestMessage,
-          latestMessageSender: groupSummaryUpdate.latestMessageSender,
-          latestMessageAt: groupSummaryUpdate.latestMessageAt,
-          unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : (Number(currentGroup.unreadCount || 0) + 1),
+          name: groupSummaryUpdate.name ?? currentGroup.name,
+          description: groupSummaryUpdate.description ?? currentGroup.description,
+          latestMessage: groupSummaryUpdate.latestMessage ?? currentGroup.latestMessage,
+          latestMessageSender: groupSummaryUpdate.latestMessageSender ?? currentGroup.latestMessageSender,
+          latestMessageAt: groupSummaryUpdate.latestMessageAt ?? currentGroup.latestMessageAt,
+          unreadCount:
+            currentChatIdRef.current === updatedGroupId
+              ? 0
+              : incomingTimestamp > currentTimestamp
+                ? Number(currentGroup.unreadCount || 0) + 1
+                : Number(currentGroup.unreadCount || 0),
+          currentUserRole: groupSummaryUpdate.currentUserRole ?? currentGroup.currentUserRole,
+          currentUserPermissions:
+            groupSummaryUpdate.currentUserPermissions ?? currentGroup.currentUserPermissions,
         };
 
         return [
@@ -142,7 +179,7 @@ function ChatPage({
     });
 
     return () => setGroupUpdatesHandler(null);
-  }, [setGroupUpdatesHandler]);
+  }, [navigate, setGroupUpdatesHandler]);
 
   // For group chats (not public): when messages settle, mark the group as read
   // on the server up to the latest visible message. Guards against duplicates.

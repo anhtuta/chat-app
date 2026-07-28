@@ -31,6 +31,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.when;
 /**
  * Illustrates how {@code ConcurrentHashMap} plus per-group {@code synchronized (pendingUpdate)}
  * prevents lost updates and duplicate flush scheduling under concurrent publishes.
+ * todo rewrite this to understand the code
  */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
@@ -78,7 +81,7 @@ class GroupSummaryUpdatePublisherTest {
         scheduledFlushTasks.clear();
         scheduleInvocationCount.set(0);
 
-        when(groupSummaryUpdateScheduler.schedule(any(Runnable.class), any(Instant.class)))
+        lenient().when(groupSummaryUpdateScheduler.schedule(any(Runnable.class), any(Instant.class)))
                 .thenAnswer(invocation -> {
                     Runnable flushTask = invocation.getArgument(0);
                     scheduledFlushTasks.add(flushTask);
@@ -248,6 +251,16 @@ class GroupSummaryUpdatePublisherTest {
         assertThat(publishedUpdateCaptor.getAllValues())
                 .extracting(GroupSummaryUpdate::getLatestMessage)
                 .containsExactly("before-flush", "during-flush");
+    }
+
+    @Test
+    void publishToUsername_skipsOfflineUsers() {
+        when(groupUpdatesSubscriptionRegistry.hasClusterSubscriber("alice")).thenReturn(false);
+
+        publisher.publishToUsername("alice", update(GROUP_ONE, "sidebar-update"));
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(GroupSummaryUpdate.class));
+        verify(rabbitMQBrokerHandler, never()).publishToRabbitMQ(anyString(), any());
     }
 
     private Callable<Void> publishTask(

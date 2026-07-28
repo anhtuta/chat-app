@@ -10,6 +10,7 @@ import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
+import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.dto.MultipartPartResponse;
 import com.hello.chatapp.dto.PrepareMediaAttachmentRequest;
@@ -60,6 +61,7 @@ public class MediaUploadSessionService {
     private final MessageResponseMapper messageResponseMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
     public MediaUploadSessionService(
             MediaUploadRepository mediaUploadRepository,
@@ -71,7 +73,8 @@ public class MediaUploadSessionService {
             MediaProcessingService mediaProcessingService,
             MessageResponseMapper messageResponseMapper,
             SimpMessagingTemplate messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
         this.mediaUploadRepository = mediaUploadRepository;
         this.groupAuthorizationService = groupAuthorizationService;
         this.mediaStorageProperties = mediaStorageProperties;
@@ -82,6 +85,7 @@ public class MediaUploadSessionService {
         this.messageResponseMapper = messageResponseMapper;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.groupSummaryUpdatePublisher = groupSummaryUpdatePublisher;
     }
 
     @Transactional
@@ -206,7 +210,7 @@ public class MediaUploadSessionService {
         uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
 
         MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
-        publishFinalMessage(response, message);
+        scheduleRealtimePublishAfterCommit(response, message);
         scheduleAsyncProcessingAfterCommit(message);
         return response;
     }
@@ -397,6 +401,25 @@ public class MediaUploadSessionService {
         MessageResponse nonNullResponse = Objects.requireNonNull(response);
         messagingTemplate.convertAndSend(destination, nonNullResponse);
         rabbitMQBrokerHandler.publishToRabbitMQ(destination, nonNullResponse);
+
+        if (message.getGroup() != null) {
+            Long groupId = Objects.requireNonNull(message.getGroup().getId());
+            groupSummaryUpdatePublisher.publishToGroupMembers(
+                    groupId,
+                    GroupSummaryUpdate.fromMessage(
+                            groupId,
+                            message,
+                            MessageService.buildLatestMessagePreview(message)));
+        }
+    }
+
+    private void scheduleRealtimePublishAfterCommit(MessageResponse response, Message message) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishFinalMessage(response, message);
+            }
+        });
     }
 
     private void scheduleAsyncProcessingAfterCommit(Message message) {
@@ -438,4 +461,5 @@ public class MediaUploadSessionService {
         Long userId = Objects.requireNonNull(user.getId());
         return "media/" + userId + "/" + messageType.name().toLowerCase() + "/" + UUID.randomUUID() + "-" + safeFilename;
     }
+
 }

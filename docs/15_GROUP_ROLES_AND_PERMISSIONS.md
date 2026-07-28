@@ -474,11 +474,12 @@ Recommendation path:
 5. Phase 5: Add structured system messages for membership, role, and group-profile events.
 6. Phase 6: Add text edit and text/media delete moderation APIs, edit history, soft delete, and response DTO updates.
 7. Phase 7: Add WebSocket updates for role/member/system-message changes.
-8. Phase 8: Add integration tests for the role matrix, edge cases, and concurrency.
+8. Phase 8: Build the frontend group-management, moderation, and realtime UX on top of the Phase 3-7 APIs/contracts.
+9. Phase 9: Add integration/E2E tests for the role matrix, edge cases, realtime behavior, and UI flows.
 
 ## Implementation details
 
-Phases 1, 2, 3, 4, 5, and 6 have been implemented. Later phases are still draft-only.
+Phases 1, 2, 3, 4, 5, 6, and 7 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -745,12 +746,82 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 7: Real-Time Notifications
 
-- Publish role/member/group/system-message changes to affected group and user topics.
-- Ensure kicked or banned users stop receiving group summary updates.
-- Validate personal WebSocket topic subscription by authenticated username.
-- Ensure archived groups no longer accept sends, joins, or subscriptions.
+Status: Implemented.
 
-### Phase 8: Tests
+What changed:
+
+- Added after-commit realtime fanout for persisted group `SYSTEM` messages so membership, role, and group-detail events now appear live on `/topic/group.{groupId}`.
+- Extended the user-scoped group update payload to support both `UPSERT` and `REMOVE` sidebar events, plus current role/permission and group metadata fields.
+- Added targeted user-topic removal events for kicked, banned, and leaving users so the group disappears from their sidebar immediately.
+- Published refreshed sidebar snapshots to current members after membership/role/group-profile system events.
+- Reused authenticated-username checks for `/topic/user.{username}.group-updates`.
+- Rejected archived groups for WebSocket sends, media upload send paths, and group-topic subscriptions.
+
+Why it changed:
+
+- Persisted system events were already durable in Phase 5, but clients still needed a live push path to see them without a manual refresh.
+- Member add/remove and role/profile changes can add, update, or remove a sidebar entry, which the older latest-message-only payload could not express.
+- Archived groups should remain readable in history APIs but should stop accepting new realtime traffic.
+
+API/contract/config impacts:
+
+- `/topic/user.{username}.group-updates` can now deliver `UPSERT` or `REMOVE` events instead of only latest-message summary refreshes.
+- User-topic payloads may now include `name`, `description`, `currentUserRole`, and `currentUserPermissions` when the client should upsert a full sidebar entry.
+- Group-topic system messages are now pushed only after the surrounding transaction commits.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No schema migration was needed.
+- Older clients that only understand latest-message sidebar updates should still tolerate the superset payload, but they will not fully support live join/remove/sidebar metadata changes until updated.
+
+### Phase 8: Frontend Group Management And Moderation UI
+
+Status: Planned.
+
+What should change:
+
+- Add message action UI for Phase 6:
+  - own-message edit for text messages
+  - own-message delete for text/media messages
+  - leader/co-leader edit/delete actions for allowed target messages
+- Add inline edit UX with save/cancel/error states and local refresh after successful moderation calls.
+- Add role-aware member-management UI for Phase 3:
+  - member list
+  - promote/demote controls
+  - kick/ban/unban controls
+  - leadership transfer entry point
+- Add group settings UI for Phase 4:
+  - edit name
+  - edit description
+  - show/hide controls from `currentUserRole` / `currentUserPermissions`
+- Add join-link management UI:
+  - create link
+  - show token/share affordance
+  - revoke link
+  - self-join entry point if the product keeps a join-token screen
+- Finish the Phase 7 client-side realtime UX:
+  - apply sidebar `UPSERT` / `REMOVE` events cleanly
+  - show live system messages in open chats
+  - handle group removal while the removed group is currently open
+  - show permission/archived errors with usable user feedback instead of silent failures
+
+Why it is a separate phase:
+
+- Phases 3-7 now provide the backend contracts and most of the passive rendering support, but the feature is not truly user-complete until users can trigger those actions from the product UI.
+- Delaying the broad test phase until after this UI work gives us a stable end-to-end surface to verify instead of testing only backend behavior.
+
+API/contract/config impacts:
+
+- No new backend schema is expected.
+- This phase should primarily consume the existing role, membership, moderation, and realtime payloads already introduced in Phases 3-7.
+- If the current frontend needs any missing convenience fields for menus, optimistic updates, or error handling, add them only after verifying the existing contracts are insufficient.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Ship behind normal frontend release flow; no database migration is expected.
+- Keep graceful fallbacks where possible so older clients can still read messages and groups even if they lack moderation or realtime-management controls.
+
+### Phase 9: Tests
 
 - Test group creator becomes leader.
 - Test new participants and self-joined users become members.
@@ -766,6 +837,11 @@ Rollout, migration, and backward-compatibility notes:
 - Test structured system messages are returned in group history.
 - Test WebSocket subscribe/send checks.
 - Test media upload respects `SEND_MESSAGES`.
+- Test the main frontend moderation and group-management flows once Phase 8 ships:
+  - edit/delete controls visibility by role
+  - member-management control visibility by role
+  - realtime sidebar add/remove/update behavior
+  - archived-group UX and error handling
 
 ## Future Higher-Scale Path
 

@@ -81,6 +81,19 @@ public class GroupSummaryUpdatePublisher {
                 safeUpdate);
     }
 
+    public void publishToUsername(String username, GroupSummaryUpdate update) {
+        String safeUsername = Objects.requireNonNull(username);
+        GroupSummaryUpdate safeUpdate = Objects.requireNonNull(update);
+
+        // Check if the user is online on any instance
+        if (!groupUpdatesSubscriptionRegistry.hasClusterSubscriber(safeUsername)) {
+            logger.trace("[publishToUsername] Skip realtime sidebar update for offline user={}", safeUsername);
+            return;
+        }
+
+        publishToUserTopic(safeUsername, safeUpdate);
+    }
+
     /** Schedules one flush for this group; further updates before flush only coalesce into {@code latestUpdate}. */
     private void scheduleFlushIfAbsent(Long groupId, PendingGroupSummaryUpdate pendingUpdate) {
         if (pendingUpdate.scheduledFlush != null || pendingUpdate.latestUpdate == null) {
@@ -118,17 +131,8 @@ public class GroupSummaryUpdatePublisher {
                     continue;
                 }
 
-                String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
                 deliveredCount++;
-
-                // Local delivery on current instance.
-                // Check if the user is online on this instance (current instance that runs this code)
-                if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
-                    messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
-                }
-
-                // Cross-instance delivery via RabbitMQ.
-                rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, updateToPublish);
+                publishToUserTopic(safeUsername, updateToPublish);
             }
             logger.debug(
                     "[flushGroupMembers] Flushed buffered group summary update to {}/{} subscribed users in groupId={}, message={}",
@@ -150,6 +154,20 @@ public class GroupSummaryUpdatePublisher {
                 }
             }
         }
+    }
+
+    private void publishToUserTopic(String username, GroupSummaryUpdate update) {
+        String userScopedTopicDestination = "/topic/user." + username + ".group-updates";
+        GroupSummaryUpdate nonNullUpdate = Objects.requireNonNull(update);
+
+        // Local delivery on current instance.
+        // Check if the user is online on this instance (current instance that runs this code)
+        if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
+            messagingTemplate.convertAndSend(userScopedTopicDestination, nonNullUpdate);
+        }
+
+        // Cross-instance delivery via RabbitMQ.
+        rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, nonNullUpdate);
     }
 
     private static final class PendingGroupSummaryUpdate {

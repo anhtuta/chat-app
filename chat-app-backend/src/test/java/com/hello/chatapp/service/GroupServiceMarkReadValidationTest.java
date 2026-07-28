@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -22,7 +23,7 @@ import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class, SystemMessageService.class})
+@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class})
 public class GroupServiceMarkReadValidationTest {
 
     @DynamicPropertySource
@@ -44,6 +45,9 @@ public class GroupServiceMarkReadValidationTest {
 
     @Autowired
     private MessageRepository messageRepository;
+
+    @MockitoBean
+    private SystemMessageService systemMessageService;
 
     @Test
     public void markGroupAsRead_shouldRejectMessageFromDifferentGroup() {
