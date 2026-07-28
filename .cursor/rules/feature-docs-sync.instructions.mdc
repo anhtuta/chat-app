@@ -70,16 +70,7 @@ Usually should align with the use cases. Each use case should have a correspondi
 
 ## Recommendation (optional)
 
-(Just a recommendation path, do NOT implement anything in this section)
-
-Recommendation path:
-
-1. Phase 1: Implement the solution
-2. Phase 2: Implement the solution
-
-...
-
-N. Phase N: Implement the solution
+(Just a recommendation path, do NOT implement anything in this section. Keep this short and concise.)
 
 ## Implementation details
 
@@ -119,16 +110,7 @@ Use following format:
 
 ## Recommendation
 
-(Just a recommendation path, or recommended solution, do NOT implement anything in this section)
-
-Recommendation path (optional, we may have only one phase):
-
-1. Phase 1: Implement the solution
-2. Phase 2: Implement the solution
-
-...
-
-N. Phase N: Implement the solution
+(Just a recommendation path, or recommended solution, do NOT implement anything in this section. Keep this short and concise.)
 
 ## Implementation details
 

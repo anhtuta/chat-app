@@ -473,8 +473,13 @@ Recommendation path:
 4. Phase 4: Add group details update APIs and response DTO changes for role-aware UI.
 5. Phase 5: Add structured system messages for membership, role, and group-profile events.
 6. Phase 6: Add text edit and text/media delete moderation APIs, edit history, soft delete, and response DTO updates.
-7. Phase 7: Add WebSocket updates for role/member/system-message changes.
-8. Phase 8: Add integration tests for the role matrix, edge cases, and concurrency.
+7. Phase 7: Build group details/settings UI on top of `GET /api/groups`, `GET /api/groups/{groupId}`, and `PATCH /api/groups/{groupId}`.
+8. Phase 8: Build member-list and role-visibility UI on top of `GET /api/groups/{groupId}/members` and the role/permission DTO fields from Phase 4.
+9. Phase 9: Build membership-management UI for add, kick, ban, unban, promote, demote, transfer-leadership, and leave-group flows from the Phase 3 APIs.
+10. Phase 10: Build join-link management and self-join UI on top of the Phase 3 join-link APIs.
+11. Phase 11: Build message moderation UI for edit/delete on top of `PATCH /api/messages/{messageId}` and `DELETE /api/messages/{messageId}`.
+12. Phase 12: Re-introduce real-time notifications only after the above UI exists and can be manually exercised.
+13. Phase 13: Add integration/E2E tests for the role matrix, edge cases, UI flows, and realtime behavior.
 
 ## Implementation details
 
@@ -743,14 +748,158 @@ Rollout, migration, and backward-compatibility notes:
 - No new schema migration was needed because Phase 1 already added message moderation audit fields and `message_edit_history`.
 - Older clients that ignore the new response fields remain compatible, but they will not show edit/delete state unless updated.
 
-### Phase 7: Real-Time Notifications
+### Phase 7: Group Details And Settings UI
 
-- Publish role/member/group/system-message changes to affected group and user topics.
+Status: Planned.
+
+What should change:
+
+- Build a small group details/settings surface for the currently selected group.
+- Show:
+  - group name
+  - group description
+  - current user role
+  - role-aware settings affordances from `currentUserRole` / `currentUserPermissions`
+- Add edit name/description UI backed by:
+  - `GET /api/groups`
+  - `GET /api/groups/{groupId}`
+  - `PATCH /api/groups/{groupId}`
+- Keep this phase small: focus first on viewing and editing group metadata, not member actions.
+
+Why this phase exists:
+
+- Phase 4 already exposed the data and API contracts needed for a basic settings UI.
+- This gives us the first real UI for the role-aware DTOs before touching more complex moderation flows.
+
+### Phase 8: Member List And Role Visibility UI
+
+Status: Planned.
+
+What should change:
+
+- Build the member roster UI backed by `GET /api/groups/{groupId}/members`.
+- Show each member's:
+  - display name
+  - username
+  - joined time
+  - current role
+- Make role-based action visibility explicit in the UI:
+  - who can see moderation controls
+  - who can see settings controls
+  - who is protected from management because they are leader
+- Keep this phase read-heavy first; it should help us verify the role matrix visually before wiring all mutation actions.
+
+Why this phase exists:
+
+- The user should be able to inspect roles and membership state before trying add/kick/ban/promote flows.
+- This phase provides a low-risk UI slice to validate the Phase 3 member DTOs and Phase 4 permission data.
+
+### Phase 9: Membership Management UI
+
+TODO review this phase first, do not let AI implement it now!
+
+Status: Planned.
+
+What should change:
+
+- Add role-aware controls for the Phase 3 membership APIs:
+  - `POST /api/groups/{groupId}/members`
+  - `DELETE /api/groups/{groupId}/members/{userId}`
+  - `POST /api/groups/{groupId}/bans`
+  - `DELETE /api/groups/{groupId}/bans/{userId}`
+  - `PATCH /api/groups/{groupId}/members/{userId}/role`
+  - `POST /api/groups/{groupId}/leadership-transfer`
+  - `DELETE /api/groups/{groupId}/members/me`
+- Add confirmation/error UX for destructive actions:
+  - kick
+  - ban
+  - leadership transfer
+  - leave group
+- Make sure UI gating follows the backend permission matrix instead of duplicating custom frontend-only rules.
+
+Why this phase exists:
+
+- Phase 3 already built the core group-management APIs, but they are not product-usable until the UI can call them.
+- Splitting these actions from the member-list phase keeps the rollout small and easier to debug.
+
+### Phase 10: Join Link Management And Self-Join UI
+
+TODO review this phase first, do not let AI implement it now!
+
+Status: Planned.
+
+What should change:
+
+- Add UI for:
+  - `POST /api/groups/{groupId}/join-links`
+  - `DELETE /api/groups/{groupId}/join-links/{joinLinkId}`
+  - `POST /api/groups/join-links/{token}/join`
+- Support common product actions:
+  - create link
+  - copy/share token
+  - revoke link
+  - join from a token or join screen, if the product keeps that entry point
+- Show expiry/revocation state clearly if the UI exposes join-link history.
+
+Why this phase exists:
+
+- Join links are a distinct user journey from direct member management and deserve their own small UI phase.
+- It also gives us a focused place to verify banned/archive join rejection behavior before realtime is added.
+
+### Phase 11: Message Moderation UI
+
+TODO review this phase first, do not let AI implement it now!
+
+Status: Planned.
+
+What should change:
+
+- Add message action UI backed by:
+  - `PATCH /api/messages/{messageId}`
+  - `DELETE /api/messages/{messageId}`
+- Support:
+  - edit own text message
+  - delete own text or media message
+  - leader/co-leader moderation actions for allowed target messages
+- Add inline edit UX with save/cancel/error feedback.
+- After successful moderation, refresh or locally update the current message list so the user can immediately see:
+  - edited state
+  - deleted placeholder
+  - latest-message summary changes
+
+Why this phase exists:
+
+- Phase 6 already built the backend moderation behavior, but there is no UI to trigger it yet.
+- This should be implemented before realtime so we can manually test moderation flows in the normal product UI first.
+
+### Phase 12: Real-Time Notifications
+
+TODO review this phase first, do not let AI implement it now!
+
+Status: Planned.
+
+What should change:
+
+- Re-introduce WebSocket updates for:
+  - membership changes
+  - role changes
+  - group-profile changes
+  - visible system-message changes
 - Ensure kicked or banned users stop receiving group summary updates.
 - Validate personal WebSocket topic subscription by authenticated username.
 - Ensure archived groups no longer accept sends, joins, or subscriptions.
+- Keep the implementation intentionally smaller than the reverted attempt: only add the realtime paths needed by the finished UI flows from Phases 7-11.
 
-### Phase 8: Tests
+Why this phase exists:
+
+- Realtime is much easier to validate once each underlying action already has a working UI path.
+- This reduces the risk of building a long/complex realtime layer before we even know how the product wants each action to feel.
+
+### Phase 13: Tests
+
+Status: Planned.
+
+What should change:
 
 - Test group creator becomes leader.
 - Test new participants and self-joined users become members.
@@ -766,6 +915,13 @@ Rollout, migration, and backward-compatibility notes:
 - Test structured system messages are returned in group history.
 - Test WebSocket subscribe/send checks.
 - Test media upload respects `SEND_MESSAGES`.
+- Add UI/E2E coverage for the new frontend phases:
+  - group settings edit flow
+  - member-list visibility by role
+  - membership-management actions
+  - join-link creation/revocation/join
+  - message edit/delete actions
+  - realtime sidebar/chat updates after Phase 12 lands
 
 ## Future Higher-Scale Path
 
