@@ -74,8 +74,7 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
-        Group group = groupAuthorizationService.requirePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
-        ensureActive(group);
+        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
         User target = loadUser(userId);
         groupAuthorizationService.requireNotBanned(target, groupId);
 
@@ -92,8 +91,7 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, LocalDateTime expiresAt) {
-        Group group = groupAuthorizationService.requirePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
-        ensureActive(group);
+        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
         if (expiresAt != null && !expiresAt.isAfter(LocalDateTime.now())) {
             throw new BadRequestException("expiresAt must be in the future");
         }
@@ -154,8 +152,7 @@ public class GroupMembershipService {
 
     @Transactional
     public void banMember(User actor, Long groupId, Long userId, String reason) {
-        Group group = groupAuthorizationService.requirePermission(actor, groupId, GroupPermission.BAN_MEMBERS);
-        ensureActive(group);
+        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.BAN_MEMBERS);
         User target = loadUser(userId);
         if (Objects.equals(actor.getId(), target.getId())) {
             throw new ForbiddenException("You cannot perform this action on yourself");
@@ -182,8 +179,7 @@ public class GroupMembershipService {
 
     @Transactional
     public void unbanMember(User actor, Long groupId, Long userId) {
-        Group group = groupAuthorizationService.requirePermission(actor, groupId, GroupPermission.UNBAN_MEMBERS);
-        ensureActive(group);
+        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.UNBAN_MEMBERS);
         GroupBan ban = groupBanRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new NotFoundException("Ban not found"));
         groupBanRepository.delete(Objects.requireNonNull(ban));

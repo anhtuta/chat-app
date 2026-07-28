@@ -45,6 +45,30 @@ public class GroupAuthorizationService {
         return participant.getGroup();
     }
 
+    /**
+     * Ensures the user is a member, has the given permission, and the group is active.
+     * This is the helper for flows that must reject archived groups such as new sends,
+     * membership mutations, and live WebSocket subscriptions.
+     *
+     * <p>
+     * Why this exists separately from {@link #requirePermission(User, Long, GroupPermission)}:
+     * authorization and lifecycle state are different concerns. Some callers may still
+     * need a plain permission check for explicit history/audit/archive views, while
+     * active-only product flows should call this method.
+     * </p>
+     *
+     * @return the active group entity attached to the participant
+     * @throws ForbiddenException if banned, not a member, or lacking the permission
+     * @throws BadRequestException if the group is archived
+     */
+    public Group requireActivePermission(User user, Long groupId, GroupPermission permission) {
+        Group group = requirePermission(user, groupId, permission);
+        if (group.getArchivedAt() != null) {
+            throw new BadRequestException("Group is archived");
+        }
+        return group;
+    }
+
     public void requireCanManageTarget(User actor, Long groupId, User target, GroupPermission permission) {
         GroupParticipant actorParticipant = requireMember(actor, groupId);
         GroupParticipant targetParticipant = requireMember(target, groupId);

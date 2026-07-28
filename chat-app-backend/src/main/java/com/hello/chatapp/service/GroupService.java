@@ -1,6 +1,7 @@
 package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.SystemEventType;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.dto.GroupUnreadCountDto;
@@ -120,9 +121,10 @@ public class GroupService {
             throw new BadRequestException("At least one of name or description must be provided");
         }
 
-        Group group = groupAuthorizationService.requirePermission(user, safeGroupId,
-                com.hello.chatapp.constant.GroupPermission.MANAGE_GROUP_DETAILS);
-        ensureActive(group);
+        Group group = groupAuthorizationService.requireActivePermission(
+                user,
+                safeGroupId,
+                GroupPermission.MANAGE_GROUP_DETAILS);
         String originalName = group.getName();
         String originalDescription = group.getDescription();
 
@@ -204,10 +206,4 @@ public class GroupService {
         return Objects.requireNonNull(safeUser.getId(), "user id must not be null");
     }
 
-    private void ensureActive(Group group) {
-        Group safeGroup = Objects.requireNonNull(group, "group must not be null");
-        if (safeGroup.getArchivedAt() != null) {
-            throw new BadRequestException("Group is archived");
-        }
-    }
 }

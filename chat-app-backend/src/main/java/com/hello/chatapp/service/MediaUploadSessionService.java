@@ -270,7 +270,7 @@ public class MediaUploadSessionService {
             throw new BadRequestException("groupId is required for GROUP chat scope");
         }
 
-        return groupAuthorizationService.requirePermission(user, groupId, GroupPermission.SEND_MESSAGES);
+        return groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.SEND_MESSAGES);
     }
 
     private void validateMessageType(MessageType messageType) {

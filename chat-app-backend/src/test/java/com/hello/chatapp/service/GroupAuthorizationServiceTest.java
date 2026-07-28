@@ -88,6 +88,27 @@ class GroupAuthorizationServiceTest {
     }
 
     @Test
+    void requireActivePermission_allowsActiveGroup() {
+        GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
+        stubMembership(actor, participant);
+
+        Group result = groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.READ_MESSAGES);
+
+        assertThat(result).isSameAs(group);
+    }
+
+    @Test
+    void requireActivePermission_rejectsArchivedGroup() {
+        group.setArchivedAt(java.time.LocalDateTime.now());
+        GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
+        stubMembership(actor, participant);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.READ_MESSAGES))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group is archived");
+    }
+
+    @Test
     void requireCanManageTarget_rejectsCoLeaderManagingLeader() {
         GroupParticipant actorParticipant = buildParticipant(group, actor, GroupRole.CO_LEADER);
         GroupParticipant targetParticipant = buildParticipant(group, otherUser, GroupRole.LEADER);

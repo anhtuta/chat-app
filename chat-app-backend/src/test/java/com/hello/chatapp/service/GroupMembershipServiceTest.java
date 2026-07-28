@@ -84,7 +84,7 @@ class GroupMembershipServiceTest {
 
     @Test
     void addMember_createsMemberWithDefaultRole() {
-        when(groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
@@ -141,7 +141,7 @@ class GroupMembershipServiceTest {
         GroupParticipant targetParticipant = new GroupParticipant(group, targetUser);
         targetParticipant.setRole(GroupRole.MEMBER);
 
-        when(groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.BAN_MEMBERS)).thenReturn(group);
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.BAN_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(targetParticipant));
         when(groupBanRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());

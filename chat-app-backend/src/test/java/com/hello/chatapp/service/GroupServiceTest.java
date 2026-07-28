@@ -119,7 +119,8 @@ class GroupServiceTest {
         GroupParticipant participant = new GroupParticipant(group, member);
         participant.setRole(GroupRole.CO_LEADER);
 
-        when(groupAuthorizationService.requirePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS)).thenReturn(group);
+        when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
+                .thenReturn(group);
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(participant));
         when(groupAuthorizationService.getRole(participant)).thenReturn(GroupRole.CO_LEADER);
         when(groupAuthorizationService.getPermissions(participant))

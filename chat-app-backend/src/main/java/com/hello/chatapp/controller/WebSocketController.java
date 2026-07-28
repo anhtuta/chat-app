@@ -158,6 +158,6 @@ public class WebSocketController {
         if (groupId == null) {
             throw new IllegalArgumentException("Group ID is required for group messages");
         }
-        return groupAuthorizationService.requirePermission(user, groupId, GroupPermission.SEND_MESSAGES);
+        return groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.SEND_MESSAGES);
     }
 }

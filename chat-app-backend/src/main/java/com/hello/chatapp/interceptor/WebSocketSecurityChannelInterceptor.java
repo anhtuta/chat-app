@@ -5,6 +5,7 @@ import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.service.GroupAuthorizationService;
@@ -138,10 +139,10 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
                 String groupIdStr = destination.substring("/topic/group.".length());
                 Long groupId = Long.parseLong(groupIdStr);
 
-                groupAuthorizationService.requirePermission(user, groupId, GroupPermission.READ_MESSAGES);
+                groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.READ_MESSAGES);
             } catch (NumberFormatException e) {
                 throw new SecurityException("Invalid group topic format");
-            } catch (NotFoundException | ForbiddenException e) {
+            } catch (NotFoundException | ForbiddenException | BadRequestException e) {
                 throw new SecurityException(e.getMessage());
             }
         }
