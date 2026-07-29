@@ -95,14 +95,11 @@ class GroupServiceIntegrationTest {
         groupParticipantRepository.saveAndFlush(participantC);
 
         Map<Long, Long> unreadByGroupId = groupService.getUnreadCountByGroupId(targetUser);
-        long totalUnreadCount = groupService.getTotalUnreadCount(targetUser);
 
         assertThat(unreadByGroupId)
                 .containsEntry(groupA.getId(), 2L)
                 .containsEntry(groupB.getId(), 0L)
                 .containsEntry(groupC.getId(), 0L);
-
-        assertThat(totalUnreadCount).isEqualTo(2L);
-        assertThat(totalUnreadCount).isEqualTo(unreadByGroupId.values().stream().mapToLong(count -> count).sum());
+        assertThat(unreadByGroupId.values().stream().mapToLong(count -> count).sum()).isEqualTo(2L);
     }
 }

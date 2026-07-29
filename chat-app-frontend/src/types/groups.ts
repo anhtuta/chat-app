@@ -17,10 +17,6 @@ export interface SelectableUser {
   createdAt?: string | null;
 }
 
-export interface UnreadSummaryResponse {
-  totalUnreadCount: number;
-}
-
 // Similar to chat-app-backend/src/main/java/com/hello/chatapp/dto/GroupSummaryUpdate.java
 export interface GroupSummaryUpdate {
   groupId: number | string;

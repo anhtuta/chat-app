@@ -149,12 +149,6 @@ public class GroupService {
                 .collect(Collectors.toMap(row -> row.getGroupId(), row -> row.getUnreadCount()));
     }
 
-    public long getTotalUnreadCount(User user) {
-        return getUnreadCountByGroupId(user).values().stream()
-                .mapToLong(unreadCount -> unreadCount)
-                .sum();
-    }
-
     @Transactional
     public void markGroupAsRead(User user, Long groupId, Long lastReadMessageId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");

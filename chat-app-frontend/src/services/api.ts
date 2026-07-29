@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, SelectableUser, UnreadSummaryResponse } from "../types/groups";
+import type { ChatGroup, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -222,19 +222,6 @@ export async function markGroupAsRead(groupId: number | string, lastReadMessageI
 
   if (response.ok) {
     return;
-  }
-  return handleErrorResponse(response);
-}
-
-/**
- * Get aggregated unread count across all groups for current user.
- */
-export async function getTotalUnreadCount(): Promise<UnreadSummaryResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/groups/unread/total`, {
-    credentials: "include",
-  });
-  if (response.ok) {
-    return response.json();
   }
   return handleErrorResponse(response);
 }

@@ -3,7 +3,6 @@ package com.hello.chatapp.controller;
 import com.hello.chatapp.dto.CreateGroupRequest;
 import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.dto.MarkGroupReadRequest;
-import com.hello.chatapp.dto.UnreadSummaryResponse;
 import com.hello.chatapp.dto.UpdateGroupRequest;
 import com.hello.chatapp.dto.UserResponse;
 import com.hello.chatapp.entity.User;
@@ -81,12 +80,6 @@ public class GroupController {
         Long lastReadMessageId = request == null ? null : request.getLastReadMessageId();
         groupService.markGroupAsRead(getAuthenticatedUser(session), groupId, lastReadMessageId);
         return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("/unread/total")
-    public ResponseEntity<UnreadSummaryResponse> getTotalUnread(HttpSession session) {
-        long totalUnreadCount = groupService.getTotalUnreadCount(getAuthenticatedUser(session));
-        return ResponseEntity.ok(UnreadSummaryResponse.builder().totalUnreadCount(totalUnreadCount).build());
     }
 
     private User getAuthenticatedUser(HttpSession session) {
