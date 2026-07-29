@@ -104,8 +104,10 @@ public class GroupService {
     public GroupResponse getGroupDetails(User user, Long groupId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
         GroupParticipant participant = groupAuthorizationService.requireMember(user, safeGroupId);
-        long unreadCount = getUnreadCountByGroupId(user).getOrDefault(safeGroupId, 0L);
-        return toGroupResponse(participant, unreadCount);
+        // Detail view is opened from an already-selected chat; unread stays on the sidebar list API.
+        return GroupResponse.fromParticipant(
+                participant,
+                groupAuthorizationService.getPermissions(participant));
     }
 
     @Transactional
@@ -164,13 +166,6 @@ public class GroupService {
 
         participant.setLastReadMessageId(lastReadMessageId);
         groupParticipantRepository.save(participant);
-    }
-
-    private GroupResponse toGroupResponse(GroupParticipant participant, long unreadCount) {
-        return GroupResponse.fromParticipant(
-                participant,
-                groupAuthorizationService.getPermissions(participant),
-                unreadCount);
     }
 
     private String normalizeRequiredName(String name) {

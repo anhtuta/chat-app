@@ -654,6 +654,7 @@ What changed:
 - Kept member list responses returning role, joined time, and user summary fields introduced in Phase 3.
 - Slimmed `PATCH /api/groups/{groupId}` so it returns group metadata only (no `unreadCount`, `currentUserRole`, or `currentUserPermissions` refresh); those values are unchanged by name/description edits and the client keeps its existing copies.
 - Slimmed `GET /api/groups` so list items include `currentUserRole` and unread counts but omit `currentUserPermissions` (permissions are role-derived and returned by `GET /api/groups/{groupId}` when needed).
+- Slimmed `GET /api/groups/{groupId}` so it returns role/permissions for the details UI but does not load or return authoritative `unreadCount` (unread stays on the sidebar list / realtime path).
 
 Why it changed:
 
@@ -662,6 +663,7 @@ Why it changed:
 - Archived groups should not appear in the normal active group list.
 - Recomputing unread/role/permission fields on every group-profile edit is redundant work for fields this mutation does not change.
 - Expanding the full permission list on every sidebar group is redundant with `currentUserRole` and wastes work for a surface that does not need permission chips.
+- Detail view is opened from an already-selected chat, so recomputing unread there is unnecessary.
 
 API/contract/config impacts:
 
@@ -671,6 +673,7 @@ API/contract/config impacts:
 - `GroupResponse` now includes `description`, `currentUserRole`, and `currentUserPermissions`.
 - `GET /api/groups` now returns only active (non-archived) groups.
 - `GET /api/groups` returns `currentUserRole` but leaves `currentUserPermissions` empty; use `GET /api/groups/{groupId}` for the permission list.
+- `GET /api/groups/{groupId}` returns role/permissions; treat `unreadCount` on that response as unset (defaults to `0`) and keep the list/sidebar value.
 - `PATCH /api/groups/{groupId}` still uses `GroupResponse`, but callers should treat role/permission/unread fields on that response as unset and preserve prior client state.
 
 Rollout, migration, and backward-compatibility notes:

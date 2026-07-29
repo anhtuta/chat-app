@@ -68,6 +68,12 @@ public class GroupResponse {
 
     public static GroupResponse fromParticipant(
             GroupParticipant participant,
+            List<GroupPermission> currentUserPermissions) {
+        return fromParticipant(participant, currentUserPermissions, 0L);
+    }
+
+    public static GroupResponse fromParticipant(
+            GroupParticipant participant,
             List<GroupPermission> currentUserPermissions,
             long unreadCount) {
         if (participant == null) {

@@ -62,7 +62,11 @@ function GroupDetailsDialog({
         if (isCancelled) {
           return;
         }
-        setGroupDetails(nextGroup);
+        // Detail API omits authoritative unread; keep the list/sidebar value already in local state.
+        setGroupDetails((previous) => ({
+          ...nextGroup,
+          unreadCount: previous?.unreadCount,
+        }));
         setGroupName(nextGroup.name || "");
         setDescription(nextGroup.description || "");
       })

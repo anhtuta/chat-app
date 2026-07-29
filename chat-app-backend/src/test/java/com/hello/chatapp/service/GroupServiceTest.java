@@ -136,12 +136,11 @@ class GroupServiceTest {
     }
 
     @Test
-    void getGroupDetails_returnsUnreadCountRoleAndPermissions() {
+    void getGroupDetails_returnsRoleAndPermissionsWithoutUnreadLookup() {
         GroupParticipant participant = new GroupParticipant(group, member);
         participant.setRole(GroupRole.CO_LEADER);
 
         when(groupAuthorizationService.requireMember(member, 100L)).thenReturn(participant);
-        when(messageRepository.findUnreadCountRowsByUserId(2L)).thenReturn(List.of());
         when(groupAuthorizationService.getPermissions(participant))
                 .thenReturn(List.of(GroupPermission.READ_MESSAGES, GroupPermission.MANAGE_GROUP_DETAILS));
 
@@ -153,6 +152,7 @@ class GroupServiceTest {
         assertThat(response.getCurrentUserPermissions())
                 .containsExactly(GroupPermission.READ_MESSAGES, GroupPermission.MANAGE_GROUP_DETAILS);
         assertThat(response.getUnreadCount()).isZero();
+        verify(messageRepository, never()).findUnreadCountRowsByUserId(any());
     }
 
     @Test
