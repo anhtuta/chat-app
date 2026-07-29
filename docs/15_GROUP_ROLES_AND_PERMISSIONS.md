@@ -652,12 +652,14 @@ What changed:
 - Updated group creation, group list, and group detail responses to include role-aware frontend gating data.
 - Filtered archived groups out of the normal `GET /api/groups` list query.
 - Kept member list responses returning role, joined time, and user summary fields introduced in Phase 3.
+- Slimmed `PATCH /api/groups/{groupId}` so it returns group metadata only (no `unreadCount`, `currentUserRole`, or `currentUserPermissions` refresh); those values are unchanged by name/description edits and the client keeps its existing copies.
 
 Why it changed:
 
 - The frontend needs the current user’s role and permissions on each group payload so it can show or hide moderation and settings controls without extra round trips.
 - Group metadata now needs a dedicated read/update path beyond the basic list response.
 - Archived groups should not appear in the normal active group list.
+- Recomputing unread/role/permission fields on every group-profile edit is redundant work for fields this mutation does not change.
 
 API/contract/config impacts:
 
@@ -666,11 +668,13 @@ API/contract/config impacts:
 - Added `PATCH /api/groups/{groupId}`.
 - `GroupResponse` now includes `description`, `currentUserRole`, and `currentUserPermissions`.
 - `GET /api/groups` now returns only active (non-archived) groups.
+- `PATCH /api/groups/{groupId}` still uses `GroupResponse`, but callers should treat role/permission/unread fields on that response as unset and preserve prior client state.
 
 Rollout, migration, and backward-compatibility notes:
 
 - No new schema migration was needed because `groups.description` and archive fields were already added in Phase 1.
 - Existing clients that ignore new JSON fields remain compatible.
+- Clients that blindly replace local group state from the PATCH body should stop overwriting unread/role/permission fields from that response.
 
 ### Phase 5: Structured System Messages
 

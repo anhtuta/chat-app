@@ -377,7 +377,10 @@ function ChatPage({
         ? {
             ...group,
             ...updatedGroup,
-            unreadCount: Number(updatedGroup.unreadCount ?? group.unreadCount ?? 0),
+            // PATCH /api/groups/{id} does not refresh these caller-specific fields.
+            unreadCount: group.unreadCount,
+            currentUserRole: group.currentUserRole,
+            currentUserPermissions: group.currentUserPermissions,
           }
         : group
     )));

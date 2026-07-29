@@ -114,8 +114,16 @@ function GroupDetailsDialog({
         name: normalizedName,
         description: normalizedDescriptionOrNull,
       });
-      setGroupDetails(updatedGroup);
-      onGroupUpdated?.(updatedGroup);
+      // PATCH returns group metadata only; keep role/permissions/unread from prior state.
+      const mergedGroup: ChatGroup = {
+        ...groupDetails,
+        ...updatedGroup,
+        unreadCount: groupDetails.unreadCount,
+        currentUserRole: groupDetails.currentUserRole,
+        currentUserPermissions: groupDetails.currentUserPermissions,
+      };
+      setGroupDetails(mergedGroup);
+      onGroupUpdated?.(mergedGroup);
       onClose();
     } catch (saveError: unknown) {
       console.error("Error updating group details:", saveError);

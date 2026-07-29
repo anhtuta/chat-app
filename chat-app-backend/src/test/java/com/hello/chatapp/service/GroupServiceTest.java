@@ -116,16 +116,8 @@ class GroupServiceTest {
 
     @Test
     void updateGroupDetails_updatesNameAndClearsBlankDescription() {
-        GroupParticipant participant = new GroupParticipant(group, member);
-        participant.setRole(GroupRole.CO_LEADER);
-
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenReturn(group);
-        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(participant));
-        when(groupAuthorizationService.getRole(participant)).thenReturn(GroupRole.CO_LEADER);
-        when(groupAuthorizationService.getPermissions(participant))
-                .thenReturn(List.of(GroupPermission.READ_MESSAGES, GroupPermission.MANAGE_GROUP_DETAILS));
-        when(messageRepository.findUnreadCountRowsByUserId(2L)).thenReturn(List.of());
         when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         GroupResponse response = groupService.updateGroupDetails(member, 100L, "  API Team  ", "   ");
@@ -134,7 +126,9 @@ class GroupServiceTest {
         assertThat(group.getDescription()).isNull();
         assertThat(response.getName()).isEqualTo("API Team");
         assertThat(response.getDescription()).isNull();
-        assertThat(response.getCurrentUserRole()).isEqualTo(GroupRole.CO_LEADER);
+        assertThat(response.getCurrentUserRole()).isNull();
+        assertThat(response.getCurrentUserPermissions()).isEmpty();
+        assertThat(response.getUnreadCount()).isZero();
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED);
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_DESCRIPTION_UPDATED);
     }

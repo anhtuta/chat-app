@@ -88,17 +88,11 @@ public class GroupService {
         return userRepository.findAll();
     }
 
-    public List<Group> getGroupsByUser(User user) {
-        List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
-        return participants.stream()
-                .map(participant -> participant.getGroup())
-                .collect(Collectors.toList());
-    }
-
     @Transactional(readOnly = true)
     public List<GroupResponse> getUserGroups(User user) {
         List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
         Map<Long, Long> unreadCountByGroupId = getUnreadCountByGroupId(user);
+        // TODO this one returns all permissions for each group, which is not efficient and redundant.
         return participants.stream()
                 .map(participant -> toGroupResponse(
                         participant,
@@ -136,20 +130,14 @@ public class GroupService {
         }
 
         Group savedGroup = groupRepository.save(group);
-        GroupParticipant participant = groupParticipantRepository.findByGroupIdAndUserId(safeGroupId, requireUserId(user))
-                .orElseThrow(() -> new NotFoundException("Current user is not a member of this group"));
         if (!Objects.equals(group.getName(), originalName)) {
             systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_NAME_UPDATED);
         }
         if (!Objects.equals(group.getDescription(), originalDescription)) {
             systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_DESCRIPTION_UPDATED);
         }
-        long unreadCount = getUnreadCountByGroupId(user).getOrDefault(safeGroupId, 0L);
-        return GroupResponse.fromGroup(
-                savedGroup,
-                groupAuthorizationService.getRole(participant),
-                groupAuthorizationService.getPermissions(participant),
-                unreadCount);
+        // Unread/role/permissions are unchanged; clients keep existing values (realtime fan-out: Phase 12).
+        return GroupResponse.fromGroup(savedGroup);
     }
 
     public Map<Long, Long> getUnreadCountByGroupId(User user) {
@@ -199,11 +187,6 @@ public class GroupService {
         }
         String normalizedDescription = description.trim();
         return normalizedDescription.isEmpty() ? null : normalizedDescription;
-    }
-
-    private Long requireUserId(User user) {
-        User safeUser = Objects.requireNonNull(user, "user must not be null");
-        return Objects.requireNonNull(safeUser.getId(), "user id must not be null");
     }
 
 }
