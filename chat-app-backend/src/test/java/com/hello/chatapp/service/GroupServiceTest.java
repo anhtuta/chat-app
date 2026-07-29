@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -92,6 +93,25 @@ class GroupServiceTest {
         assertThat(response.getCurrentUserRole()).isEqualTo(GroupRole.LEADER);
         assertThat(response.getCurrentUserPermissions())
                 .containsExactly(GroupPermission.READ_MESSAGES, GroupPermission.MANAGE_GROUP_DETAILS);
+    }
+
+    @Test
+    void getUserGroups_returnsRoleAndUnreadWithoutPermissions() {
+        GroupParticipant participant = new GroupParticipant(group, member);
+        participant.setRole(GroupRole.CO_LEADER);
+
+        when(groupParticipantRepository.findByUser(member)).thenReturn(List.of(participant));
+        when(messageRepository.findUnreadCountRowsByUserId(2L)).thenReturn(List.of());
+
+        List<GroupResponse> responses = groupService.getUserGroups(member);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.getFirst().getId()).isEqualTo(100L);
+        assertThat(responses.getFirst().getCurrentUserRole()).isEqualTo(GroupRole.CO_LEADER);
+        assertThat(responses.getFirst().getCurrentUserPermissions()).isEmpty();
+        assertThat(responses.getFirst().getUnreadCount()).isZero();
+        verify(groupAuthorizationService, never()).getPermissions(any(GroupParticipant.class));
+        verify(groupAuthorizationService, never()).getPermissions(any(GroupRole.class));
     }
 
     @Test

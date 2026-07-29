@@ -62,6 +62,10 @@ public class GroupResponse {
                 .build();
     }
 
+    public static GroupResponse fromParticipant(GroupParticipant participant, long unreadCount) {
+        return fromParticipant(participant, List.of(), unreadCount);
+    }
+
     public static GroupResponse fromParticipant(
             GroupParticipant participant,
             List<GroupPermission> currentUserPermissions,

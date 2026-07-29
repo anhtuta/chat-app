@@ -92,9 +92,9 @@ public class GroupService {
     public List<GroupResponse> getUserGroups(User user) {
         List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
         Map<Long, Long> unreadCountByGroupId = getUnreadCountByGroupId(user);
-        // TODO this one returns all permissions for each group, which is not efficient and redundant.
+        // Sidebar list: role + unread only. Permissions stay on getGroupDetails.
         return participants.stream()
-                .map(participant -> toGroupResponse(
+                .map(participant -> GroupResponse.fromParticipant(
                         participant,
                         unreadCountByGroupId.getOrDefault(participant.getGroup().getId(), 0L)))
                 .toList();
