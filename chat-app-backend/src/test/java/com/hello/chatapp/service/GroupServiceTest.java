@@ -14,6 +14,7 @@ import com.hello.chatapp.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -93,6 +94,26 @@ class GroupServiceTest {
         assertThat(response.getCurrentUserRole()).isEqualTo(GroupRole.LEADER);
         assertThat(response.getCurrentUserPermissions())
                 .containsExactly(GroupPermission.READ_MESSAGES, GroupPermission.MANAGE_GROUP_DETAILS);
+    }
+
+    @Test
+    void createGroup_savesCreatorAsLeader() {
+        when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> {
+            Group savedGroup = invocation.getArgument(0);
+            savedGroup.setId(100L);
+            return savedGroup;
+        });
+        when(groupRepository.findByIdWithCreator(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.getPermissions(GroupRole.LEADER)).thenReturn(List.of());
+
+        groupService.createGroup("Backend Team", null, creator, List.of());
+
+        ArgumentCaptor<GroupParticipant> participantCaptor = ArgumentCaptor.forClass(GroupParticipant.class);
+        verify(groupParticipantRepository).save(participantCaptor.capture());
+        GroupParticipant savedCreator = participantCaptor.getValue();
+
+        assertThat(savedCreator.getUser()).isSameAs(creator);
+        assertThat(savedCreator.getRole()).isEqualTo(GroupRole.LEADER);
     }
 
     @Test
