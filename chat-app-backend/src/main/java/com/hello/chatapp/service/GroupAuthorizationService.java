@@ -209,6 +209,8 @@ public class GroupAuthorizationService {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
         Long safeUserId = Objects.requireNonNull(safeUser.getId(), "user id must not be null");
         if (groupBanRepository.existsByGroup_IdAndUser_Id(safeGroupId, safeUserId)) {
+            // Todo: we have 2 cases to call this method: 1. when user is adding a member to a group,
+            // 2. when user is joining a group. We need different messages for each case.
             throw new ForbiddenException("You are banned from this group");
         }
     }
