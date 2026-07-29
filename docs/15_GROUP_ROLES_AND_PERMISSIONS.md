@@ -483,7 +483,7 @@ Recommendation path:
 
 ## Implementation details
 
-Phases 1, 2, 3, 4, 5, and 6 have been implemented. Later phases are still draft-only.
+Phases 1, 2, 3, 4, 5, 6, and 7 have been implemented. Later phases are still draft-only.
 
 Planned implementation is Solution 1: add role to `group_participants`, add `group_bans`, add join links, archive groups instead of hard deleting them, store structured system events as `SYSTEM` messages, and centralize permissions in a backend authorization service.
 
@@ -750,26 +750,39 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 7: Group Details And Settings UI
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Build a small group details/settings surface for the currently selected group.
-- Show:
+- Added a small group details/settings dialog for the currently selected group chat.
+- The dialog now shows:
   - group name
   - group description
   - current user role
-  - role-aware settings affordances from `currentUserRole` / `currentUserPermissions`
-- Add edit name/description UI backed by:
+  - current user permissions
+- Added frontend API helpers for:
   - `GET /api/groups`
   - `GET /api/groups/{groupId}`
   - `PATCH /api/groups/{groupId}`
-- Keep this phase small: focus first on viewing and editing group metadata, not member actions.
+- Wired role-aware edit affordances from `currentUserRole` / `currentUserPermissions`.
+- Added name/description edit UI for users who have `MANAGE_GROUP_DETAILS`.
+- Kept this phase intentionally small: it does not include member actions, join links, or moderation controls yet.
 
-Why this phase exists:
+Why it changed:
 
 - Phase 4 already exposed the data and API contracts needed for a basic settings UI.
-- This gives us the first real UI for the role-aware DTOs before touching more complex moderation flows.
+- The product needed a real UI entry point to manually exercise role-aware group metadata before moving on to member-management, moderation, or realtime work.
+
+API/contract/config impacts:
+
+- The frontend now consumes `GET /api/groups/{groupId}` directly for the selected group's details dialog.
+- The frontend now consumes `PATCH /api/groups/{groupId}` for group name/description edits.
+- No backend schema or contract changes were required beyond the Phase 4 DTO/API work that was already implemented.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No schema migration was needed.
+- Older clients remain compatible; they just will not show the new group-details/settings surface until updated.
 
 ### Phase 8: Member List And Role Visibility UI
 

@@ -4,6 +4,7 @@ import { Box } from "@mui/material";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
+import GroupDetailsDialog from "../components/GroupDetailsDialog";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
 import type { ChatMessage } from "../types/chat";
@@ -54,6 +55,7 @@ function ChatPage({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasMoreGroupMessages, setHasMoreGroupMessages] = useState(true);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [showGroupDetailsDialog, setShowGroupDetailsDialog] = useState(false);
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef<Unsubscribe | null>(null);
@@ -210,6 +212,17 @@ function ChatPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL param changes
   }, [groupId]);
 
+  useEffect(() => {
+    if (currentChatId === "public") {
+      return;
+    }
+
+    const selectedGroup = groups.find((group) => Number(group.id) === Number(currentChatId));
+    if (selectedGroup?.name && selectedGroup.name !== currentChatName) {
+      setCurrentChatName(selectedGroup.name);
+    }
+  }, [currentChatId, currentChatName, groups]);
+
   const loadGroups = async () => {
     try {
       const groupsData = await getGroups();
@@ -223,6 +236,9 @@ function ChatPage({
   };
 
   const totalUnreadCount = groups.reduce((total, group) => total + Number(group.unreadCount || 0), 0);
+  const currentGroup = currentChatId === "public"
+    ? null
+    : (groups.find((group) => Number(group.id) === Number(currentChatId)) || null);
 
   const switchToChat = async (chatId: ChatRouteId, chatName: string) => {
     // Update ref immediately so subscriptions can use the latest value
@@ -355,6 +371,22 @@ function ChatPage({
     navigate(`/group/${chatId}`);
   };
 
+  const handleGroupUpdated = (updatedGroup: ChatGroup) => {
+    setGroups((previousGroups) => previousGroups.map((group) => (
+      Number(group.id) === Number(updatedGroup.id)
+        ? {
+            ...group,
+            ...updatedGroup,
+            unreadCount: Number(updatedGroup.unreadCount ?? group.unreadCount ?? 0),
+          }
+        : group
+    )));
+
+    if (currentChatIdRef.current === Number(updatedGroup.id)) {
+      setCurrentChatName(updatedGroup.name);
+    }
+  };
+
   return (
     <div className="chat-page-wrapper">
       <Box sx={{ display: "flex", height: "100vh" }}>
@@ -371,6 +403,7 @@ function ChatPage({
         <ChatArea
           chatId={currentChatId}
           chatName={currentChatName}
+          currentGroup={currentGroup}
           messages={messages}
           isLoading={isLoading}
           isLoadingOlder={isLoadingOlder}
@@ -380,8 +413,18 @@ function ChatPage({
           onSendMessage={sendMessage}
           onMediaMessageDelivered={handleMediaMessageDelivered}
           onLoadOlderMessages={loadOlderGroupMessages}
+          onOpenGroupDetails={() => setShowGroupDetailsDialog(true)}
           onLogout={onLogout}
         />
+        {showGroupDetailsDialog && currentGroup ? (
+          <GroupDetailsDialog
+            open={showGroupDetailsDialog}
+            groupId={currentGroup.id}
+            initialGroup={currentGroup}
+            onClose={() => setShowGroupDetailsDialog(false)}
+            onGroupUpdated={handleGroupUpdated}
+          />
+        ) : null}
         {showCreateGroupModal && (
           <CreateGroupModal
             onClose={() => setShowCreateGroupModal(false)}

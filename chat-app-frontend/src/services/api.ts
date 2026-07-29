@@ -89,6 +89,43 @@ export async function getGroups(): Promise<ChatGroup[]> {
 }
 
 /**
+ * Get details for a single group visible to the current member.
+ */
+export async function getGroupDetails(groupId: number | string): Promise<ChatGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}`, {
+    credentials: "include",
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to load group details");
+}
+
+/**
+ * Update editable group metadata for the current member's group.
+ */
+export async function updateGroupDetails(
+  groupId: number | string,
+  { name, description }: { name?: string; description?: string | null },
+): Promise<ChatGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      ...(name !== undefined ? { name } : {}),
+      ...(description !== undefined ? { description } : {}),
+    }),
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to update group details");
+}
+
+/**
  * Get public chat messages
  */
 export async function getPublicMessages(): Promise<ChatMessage[]> {

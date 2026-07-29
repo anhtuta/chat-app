@@ -15,6 +15,7 @@ import "./ChatArea.css";
 function ChatArea({
   chatId,
   chatName,
+  currentGroup,
   messages,
   isLoading,
   isLoadingOlder,
@@ -24,6 +25,7 @@ function ChatArea({
   onSendMessage,
   onMediaMessageDelivered,
   onLoadOlderMessages,
+  onOpenGroupDetails,
   onLogout,
 }) {
   const [selectedMedia, setSelectedMedia] = useState([]);
@@ -400,7 +402,13 @@ function ChatArea({
   return (
     <div className="chat-area-wrapper">
       <Box className="chat-area-flex-container">
-        <ChatAreaHeader chatName={chatName} isConnected={isConnected} onLogout={onLogout} />
+        <ChatAreaHeader
+          chatName={chatName}
+          isConnected={isConnected}
+          onLogout={onLogout}
+          onOpenGroupDetails={onOpenGroupDetails}
+          showGroupDetailsAction={chatId !== "public"}
+        />
         <ChatMessageList
           chatMessagesRef={chatMessagesRef}
           messagesEndRef={messagesEndRef}
