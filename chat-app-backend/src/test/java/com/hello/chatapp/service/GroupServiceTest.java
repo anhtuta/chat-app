@@ -12,11 +12,9 @@ import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import com.hello.chatapp.repository.UserRepository;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.function.Executable;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -27,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -182,13 +181,11 @@ class GroupServiceTest {
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenThrow(new ForbiddenException("You do not have permission to manage group details"));
 
-        ForbiddenException exception = Assertions.assertThrows(ForbiddenException.class, new Executable() {
-            @Override
-            public void execute() throws Throwable {
-                groupService.updateGroupDetails(member, 100L, "new name", "new description");
-            }
-        });
-        assertThat(exception).isNotNull();
-        assertThat(exception.getMessage()).isEqualTo("You do not have permission to manage group details");
+        assertThatThrownBy(() -> groupService.updateGroupDetails(member, 100L, "new name", "new description"))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You do not have permission to manage group details");
+
+        verify(groupRepository, never()).save(any());
+        verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
     }
 }
