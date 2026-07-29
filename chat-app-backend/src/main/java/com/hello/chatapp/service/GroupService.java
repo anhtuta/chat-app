@@ -89,9 +89,9 @@ public class GroupService {
     }
 
     @Transactional(readOnly = true)
-    public List<GroupResponse> getUserGroups(User user) {
-        List<GroupParticipant> participants = groupParticipantRepository.findByUser(user);
-        Map<Long, Long> unreadCountByGroupId = getUnreadCountByGroupId(user);
+    public List<GroupResponse> getUserGroups(User currentUser) {
+        List<GroupParticipant> participants = groupParticipantRepository.findByUser(currentUser);
+        Map<Long, Long> unreadCountByGroupId = getUnreadCountByGroupId(currentUser);
         // Sidebar list: role + unread only. Permissions stay on getGroupDetails.
         return participants.stream()
                 .map(participant -> GroupResponse.fromParticipant(
@@ -101,9 +101,9 @@ public class GroupService {
     }
 
     @Transactional(readOnly = true)
-    public GroupResponse getGroupDetails(User user, Long groupId) {
+    public GroupResponse getGroupDetails(User currentUser, Long groupId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-        GroupParticipant participant = groupAuthorizationService.requireMember(user, safeGroupId);
+        GroupParticipant participant = groupAuthorizationService.requireMember(currentUser, safeGroupId);
         // Detail view is opened from an already-selected chat; unread stays on the sidebar list API.
         return GroupResponse.fromParticipant(
                 participant,
@@ -111,14 +111,14 @@ public class GroupService {
     }
 
     @Transactional
-    public GroupResponse updateGroupDetails(User user, Long groupId, String name, String description) {
+    public GroupResponse updateGroupDetails(User actor, Long groupId, String name, String description) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
         if (name == null && description == null) {
             throw new BadRequestException("At least one of name or description must be provided");
         }
 
         Group group = groupAuthorizationService.requireActivePermission(
-                user,
+                actor,
                 safeGroupId,
                 GroupPermission.MANAGE_GROUP_DETAILS);
         String originalName = group.getName();
@@ -133,26 +133,26 @@ public class GroupService {
 
         Group savedGroup = groupRepository.save(group);
         if (!Objects.equals(group.getName(), originalName)) {
-            systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_NAME_UPDATED);
+            systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_NAME_UPDATED);
         }
         if (!Objects.equals(group.getDescription(), originalDescription)) {
-            systemMessageService.recordGroupEvent(savedGroup, user, user, SystemEventType.GROUP_DESCRIPTION_UPDATED);
+            systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_DESCRIPTION_UPDATED);
         }
         // Unread/role/permissions are unchanged; clients keep existing values (realtime fan-out: Phase 12).
         return GroupResponse.fromGroup(savedGroup);
     }
 
-    public Map<Long, Long> getUnreadCountByGroupId(User user) {
-        Long userId = Objects.requireNonNull(user.getId(), "user id must not be null");
+    public Map<Long, Long> getUnreadCountByGroupId(User currentUser) {
+        Long userId = Objects.requireNonNull(currentUser.getId(), "user id must not be null");
         List<GroupUnreadCountDto> unreadRows = messageRepository.findUnreadCountRowsByUserId(userId);
         return unreadRows.stream()
                 .collect(Collectors.toMap(row -> row.getGroupId(), row -> row.getUnreadCount()));
     }
 
     @Transactional
-    public void markGroupAsRead(User user, Long groupId, Long lastReadMessageId) {
+    public void markGroupAsRead(User actor, Long groupId, Long lastReadMessageId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-        GroupParticipant participant = groupAuthorizationService.requireMember(user, safeGroupId);
+        GroupParticipant participant = groupAuthorizationService.requireMember(actor, safeGroupId);
 
         if (lastReadMessageId != null && !messageRepository.existsByIdAndGroup_Id(lastReadMessageId, safeGroupId)) {
             throw new BadRequestException("lastReadMessageId does not belong to this group");
