@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UpdateGroupRequest {
+
+    @Size(max = 200, message = "name must be at most 200 characters")
     private String name;
 
     @Size(max = 1000, message = "description must be at most 1000 characters")
