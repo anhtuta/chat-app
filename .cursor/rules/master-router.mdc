@@ -12,5 +12,6 @@ You must strictly adhere to the project architecture. Before modifying any files
 - IF modifying files in `chat-app-frontend/**/*` -> Read following rule files:
   - `.cursor/rules/react-component-wrapper.instructions.mdc`
   - `.cursor/rules/react-colocate-state.instructions.mdc`
+  - `.cursor/rules/react-interactive-titles.instructions.mdc`
 
 CRITICAL: If a matching rule file exists for your target directory, you MUST explicitly look up its contents before writing any code.
