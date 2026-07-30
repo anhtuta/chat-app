@@ -1,0 +1,183 @@
+/* Dialog content is portaled to document.body, so do NOT scope under
+   .group-details-dialog-wrapper — that wrapper does not contain the fields. */
+
+.group-details-dialog-paper {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text-primary) !important;
+  border: 1px solid var(--color-border);
+  box-shadow: 0 12px 40px var(--color-shadow-medium);
+}
+
+.group-details-dialog-title {
+  color: var(--color-text-heading) !important;
+  font-weight: 700 !important;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-surface-soft);
+}
+
+.group-details-dialog-content {
+  background-color: var(--color-surface-muted) !important;
+  padding-top: 16px !important;
+}
+
+.group-details-dialog-actions {
+  background-color: var(--color-surface-soft) !important;
+  border-top: 1px solid var(--color-border);
+  padding: 12px 16px !important;
+}
+
+.group-details-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.group-details-section {
+  background-color: var(--color-surface-soft);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 0 var(--color-shadow-soft);
+}
+
+.group-profile-section-wrapper,
+.group-role-permissions-section-wrapper,
+.group-member-list-wrapper.group-details-section {
+  background-color: var(--color-surface-soft);
+  color: var(--color-text-primary);
+}
+
+.group-details-section-title {
+  color: var(--color-text-heading) !important;
+  font-weight: 700 !important;
+  margin-bottom: 12px !important;
+}
+
+.group-details-section-subtitle {
+  color: var(--color-text-secondary) !important;
+  margin-bottom: 8px !important;
+}
+
+.group-details-muted-text {
+  color: var(--color-text-secondary) !important;
+}
+
+.group-details-caption {
+  display: block !important;
+  margin-top: 8px !important;
+}
+
+.group-details-chip {
+  color: var(--color-text-primary) !important;
+  border-color: var(--color-border) !important;
+}
+
+.group-details-chip.MuiChip-filled {
+  background-color: var(--color-primary) !important;
+  color: var(--color-surface) !important;
+}
+
+.group-details-chip.MuiChip-colorSecondary {
+  background-color: var(--color-primary-soft) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.group-details-chip.MuiChip-colorWarning {
+  border-color: var(--color-status-live-error) !important;
+  color: var(--color-status-live-error) !important;
+}
+
+.group-details-chip.MuiChip-colorSuccess {
+  border-color: var(--color-status-success-text) !important;
+  color: var(--color-status-success-text) !important;
+}
+
+/* Text fields: CSS backup; primary override is via sx in groupDetailsFieldSx.ts */
+.group-details-text-field .MuiInputLabel-root {
+  color: var(--color-text-secondary) !important;
+}
+
+.group-details-text-field .MuiOutlinedInput-root {
+  background-color: var(--color-surface-soft) !important;
+  color: var(--color-text-heading) !important;
+}
+
+.group-details-text-field .MuiInputBase-input,
+.group-details-text-field .MuiOutlinedInput-input,
+.group-details-text-field textarea {
+  color: var(--color-text-heading) !important;
+  -webkit-text-fill-color: var(--color-text-heading) !important;
+  caret-color: var(--color-text-heading) !important;
+}
+
+.group-details-text-field .MuiInputBase-input::placeholder,
+.group-details-text-field .MuiOutlinedInput-input::placeholder {
+  color: var(--color-text-secondary) !important;
+  -webkit-text-fill-color: var(--color-text-secondary) !important;
+  opacity: 0.75;
+}
+
+.group-details-text-field .MuiOutlinedInput-notchedOutline {
+  border-color: var(--color-border) !important;
+}
+
+.group-details-text-field .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: var(--color-border-strong) !important;
+}
+
+.group-details-text-field .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--color-primary) !important;
+}
+
+.group-details-text-field .MuiFormHelperText-root {
+  color: var(--color-text-secondary) !important;
+}
+
+.group-details-text-field .MuiInputBase-input.Mui-disabled,
+.group-details-text-field .MuiOutlinedInput-input.Mui-disabled,
+.group-details-text-field textarea.Mui-disabled {
+  -webkit-text-fill-color: var(--color-text-secondary) !important;
+  color: var(--color-text-secondary) !important;
+  opacity: 1;
+}
+
+.group-details-member-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 8px;
+  background-color: var(--color-surface-soft);
+  color: var(--color-text-primary);
+}
+
+.group-details-member-item {
+  border-bottom: 1px solid var(--color-border-soft) !important;
+  color: var(--color-text-primary);
+}
+
+.group-details-dialog-paper .group-details-member-item .MuiTypography-root {
+  color: var(--color-text-primary) !important;
+}
+
+.group-details-dialog-paper .group-details-member-item .group-details-muted-text {
+  color: var(--color-text-secondary) !important;
+}
+
+.group-details-dialog-paper .MuiButton-text {
+  color: var(--color-text-secondary) !important;
+}
+
+.group-details-dialog-paper .MuiButton-contained {
+  background: var(--gradient-brand) !important;
+  color: #fff !important;
+}
+
+.group-details-dialog-paper .MuiCircularProgress-root {
+  color: var(--color-primary) !important;
+}
+
+.group-details-dialog-paper .MuiDivider-root {
+  border-color: var(--color-border-soft) !important;
+}

@@ -372,6 +372,9 @@ Groups:
 - `GET /api/groups/{groupId}/members`
   - List members with roles.
   - Requires membership.
+  - Supports pagination via `page` (default `0`) and `size` (default `100`, max `100`).
+  - Supports optional search via `q` against member `username` and `fullname` (case-insensitive substring).
+  - Returns a page payload: `content`, `page`, `size`, `totalElements`, `totalPages`, `hasNext`.
 
 Join links:
 
@@ -796,26 +799,40 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 8: Member List And Role Visibility UI
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Build the member roster UI backed by `GET /api/groups/{groupId}/members`.
-- Show each member's:
-  - display name
-  - username
-  - joined time
-  - current role
-- Make role-based action visibility explicit in the UI:
-  - who can see moderation controls
-  - who can see settings controls
-  - who is protected from management because they are leader
-- Keep this phase read-heavy first; it should help us verify the role matrix visually before wiring all mutation actions.
+- Added frontend API helper for `GET /api/groups/{groupId}/members`.
+- Extended the members API with pagination (`page`, `size`; default/max size `100`) and optional search (`q` on username/fullname).
+- Added `GroupMemberPageResponse` so the API returns a stable page payload instead of a bare list.
+- Added `GroupMember` / `GroupRole` / `GroupMemberPage` types and small role-rank helpers for UI gating previews.
+- Extended the group details dialog with three distinct sections (top to bottom):
+  - group name/description profile
+  - current-user role, permissions, and visible-control previews
+  - searchable/paginated member roster
+- Added member-list search and infinite scroll so the UI loads members page by page as the user scrolls.
+- Styled the dialog and sections with app theme CSS variables so light and dark themes both apply.
+- Kept this phase read-only: no kick/ban/promote/leave/join-link mutation controls yet.
 
-Why this phase exists:
+Why it changed:
 
-- The user should be able to inspect roles and membership state before trying add/kick/ban/promote flows.
-- This phase provides a low-risk UI slice to validate the Phase 3 member DTOs and Phase 4 permission data.
+- The product needed a low-risk UI slice to inspect roles and membership state before wiring Phase 9 mutations.
+- This also validates the Phase 3 member DTOs and Phase 4 permission data in the real group-details surface.
+- Pagination and search keep the roster usable as groups grow without loading every member up front.
+
+API/contract/config impacts:
+
+- The frontend now consumes `GET /api/groups/{groupId}/members` from the group details dialog.
+- `GET /api/groups/{groupId}/members` now returns a page object instead of a raw array.
+- Query params: `q` (optional), `page` (default `0`), `size` (default `100`, capped at `100`).
+- No new DB indexes were added for username/fullname search. Username already has a unique index; this endpoint always filters by `group_id` first (covered by `uk_group_participants_group_user`). Substring `LIKE '%term%'` would not use a plain B-tree on `fullname` anyway.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No schema migration was needed.
+- Clients that expected a bare JSON array from `/members` must switch to the page payload's `content` field.
+- Older clients remain compatible for the settings surface; they just will not show the member roster until updated.
 
 ### Phase 9: Membership Management UI
 

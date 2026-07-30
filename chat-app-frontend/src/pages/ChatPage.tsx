@@ -4,7 +4,7 @@ import { Box } from "@mui/material";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
-import GroupDetailsDialog from "../components/GroupDetailsDialog";
+import GroupDetailsDialog from "../components/group-details/GroupDetailsDialog";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
 import type { ChatMessage } from "../types/chat";
@@ -424,6 +424,7 @@ function ChatPage({
             open={showGroupDetailsDialog}
             groupId={currentGroup.id}
             initialGroup={currentGroup}
+            currentUsername={username}
             onClose={() => setShowGroupDetailsDialog(false)}
             onGroupUpdated={handleGroupUpdated}
           />

@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, SelectableUser } from "../types/groups";
+import type { ChatGroup, GroupMemberPage, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -123,6 +123,42 @@ export async function updateGroupDetails(
     return response.json();
   }
   throw new Error(await response.text() || "Failed to update group details");
+}
+
+/**
+ * List members for a group visible to the current member.
+ * Supports optional search (`q`) and pagination (`page`, `size`; default size 100).
+ */
+export async function getGroupMembers(
+  groupId: number | string,
+  {
+    q,
+    page = 0,
+    size = 100,
+  }: {
+    q?: string;
+    page?: number;
+    size?: number;
+  } = {},
+): Promise<GroupMemberPage> {
+  const queryParams = new URLSearchParams({
+    page: String(page),
+    size: String(size),
+  });
+  if (q?.trim()) {
+    queryParams.set("q", q.trim());
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/groups/${groupId}/members?${queryParams.toString()}`,
+    {
+      credentials: "include",
+    },
+  );
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to load group members");
 }
 
 /**

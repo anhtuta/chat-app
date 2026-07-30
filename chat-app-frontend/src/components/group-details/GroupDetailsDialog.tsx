@@ -3,23 +3,24 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Stack,
-  TextField,
-  Typography,
 } from "@mui/material";
-import { getGroupDetails, updateGroupDetails } from "../services/api";
-import type { ChatGroup } from "../types/groups";
+import { getGroupDetails, updateGroupDetails } from "../../services/api";
+import type { ChatGroup } from "../../types/groups";
+import GroupMemberList from "./GroupMemberList";
+import GroupProfileSection from "./GroupProfileSection";
+import GroupRolePermissionsSection from "./GroupRolePermissionsSection";
+import "./GroupDetailsDialog.css";
 
 interface GroupDetailsDialogProps {
   open: boolean;
   groupId: number | string | null | undefined;
   initialGroup: ChatGroup | null;
+  currentUsername?: string | null;
   onClose: () => void;
   onGroupUpdated?: (group: ChatGroup) => void;
 }
@@ -28,6 +29,7 @@ function GroupDetailsDialog({
   open,
   groupId,
   initialGroup,
+  currentUsername,
   onClose,
   onGroupUpdated,
 }: GroupDetailsDialogProps) {
@@ -139,9 +141,18 @@ function GroupDetailsDialog({
 
   return (
     <div className="group-details-dialog-wrapper">
-      <Dialog open={open} onClose={isSaving ? undefined : onClose} maxWidth="sm" fullWidth>
-        <DialogTitle>Group Details</DialogTitle>
-        <DialogContent dividers>
+      <Dialog
+        open={open}
+        onClose={isSaving ? undefined : onClose}
+        maxWidth="md"
+        fullWidth
+        className="group-details-dialog"
+        slotProps={{
+          paper: { className: "group-details-dialog-paper" },
+        }}
+      >
+        <DialogTitle className="group-details-dialog-title">Group Details</DialogTitle>
+        <DialogContent dividers className="group-details-dialog-content">
           {error ? (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
@@ -153,54 +164,32 @@ function GroupDetailsDialog({
               <CircularProgress size={28} />
             </Box>
           ) : (
-            <Stack spacing={2}>
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Your role
-                </Typography>
-                <Chip label={groupDetails?.currentUserRole || "MEMBER"} size="small" />
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Granted permissions
-                </Typography>
-                {permissions.length ? (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                    {permissions.map((permission) => (
-                      <Chip key={permission} label={permission} size="small" variant="outlined" />
-                    ))}
-                  </Box>
-                ) : (
-                  <Typography variant="body2" color="text.secondary">
-                    No explicit permissions available.
-                  </Typography>
-                )}
-              </Box>
-
-              <TextField
-                label="Group name"
-                value={groupName}
-                onChange={(event) => setGroupName(event.target.value)}
-                fullWidth
-                required
-                disabled={!canManageGroupDetails || isSaving}
+            <div className="group-details-sections">
+              <GroupProfileSection
+                groupName={groupName}
+                description={description}
+                canManageGroupDetails={canManageGroupDetails}
+                isSaving={isSaving}
+                onGroupNameChange={setGroupName}
+                onDescriptionChange={setDescription}
               />
 
-              <TextField
-                label="Description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                fullWidth
-                multiline
-                minRows={3}
-                disabled={!canManageGroupDetails || isSaving}
-                helperText={canManageGroupDetails ? "Leave blank to clear the description." : "Read-only"}
+              <GroupRolePermissionsSection
+                currentUserRole={groupDetails?.currentUserRole}
+                permissions={permissions}
               />
-            </Stack>
+
+              <GroupMemberList
+                open={open}
+                groupId={groupId}
+                currentUsername={currentUsername}
+                currentUserRole={groupDetails?.currentUserRole}
+                currentUserPermissions={permissions}
+              />
+            </div>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions className="group-details-dialog-actions">
           <Button onClick={onClose} disabled={isSaving}>
             Close
           </Button>
