@@ -391,6 +391,12 @@ Join links:
 
 Membership:
 
+- `GET /api/groups/{groupId}/addable-users`
+  - List users who can be added to the group (not already members, not banned).
+  - Requires `ADD_MEMBERS`.
+  - Optional search via `q` against `username` and `fullname` (case-insensitive substring).
+  - Returns at most 500 users (no pagination); refine `q` to narrow further.
+  - Used by the add-member dialog; prefer this over `GET /api/groups/users` for that flow.
 - `POST /api/groups/{groupId}/members`
   - Add a user directly as `MEMBER`.
   - Requires `ADD_MEMBERS`.
@@ -836,31 +842,68 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 9: Membership Management UI
 
-TODO review this phase first, do not let AI implement it now!
-
-Status: Planned.
+Status: In progress.
 
 What should change:
 
-- Add role-aware controls for the Phase 3 membership APIs:
-  - `POST /api/groups/{groupId}/members`
-  - `DELETE /api/groups/{groupId}/members/{userId}`
-  - `POST /api/groups/{groupId}/bans`
-  - `DELETE /api/groups/{groupId}/bans/{userId}`
-  - `PATCH /api/groups/{groupId}/members/{userId}/role`
-  - `POST /api/groups/{groupId}/leadership-transfer`
-  - `DELETE /api/groups/{groupId}/members/me`
-- Add confirmation/error UX for destructive actions:
-  - kick
-  - ban
-  - leadership transfer
-  - leave group
+- Add role-aware controls for the Phase 3 membership APIs, split into four smaller tasks.
 - Make sure UI gating follows the backend permission matrix instead of duplicating custom frontend-only rules.
+- Add confirmation/error UX for destructive actions where needed.
+
+Tasks:
+
+#### Task 9.1: Add And Remove Member
+
+Status: Implemented.
+
+What changed:
+
+- Added frontend API helpers for `POST /api/groups/{groupId}/members` and `DELETE /api/groups/{groupId}/members/{userId}`.
+- Added `GET /api/groups/{groupId}/addable-users` so the add-member picker only shows users who are not already members and not banned (requires `ADD_MEMBERS`).
+- `addable-users` supports optional `q` search (username/fullname) and caps results at 500 with no pagination.
+- Added an Add Members dialog in the group details member section for users with `ADD_MEMBERS`; it uses `addable-users` instead of `GET /api/groups/users`.
+- Added a remove/kick action on manageable roster rows with confirmation.
+- Refreshes or updates the local roster after a successful add/kick.
+- Removed Phase 8 "Manageable" / "Out of reach" preview chips in favor of real actions.
+
+#### Task 9.2: Ban And Unban
+
+Status: Planned.
+
+- `POST /api/groups/{groupId}/bans`
+- `DELETE /api/groups/{groupId}/bans/{userId}`
+- Confirm before ban
+- Gate ban/unban with `BAN_MEMBERS` / `UNBAN_MEMBERS` and target-role rules
+- TODO: decide whether this task also needs a banned-users list surface, or only ban from the active roster + a minimal unban entry point
+
+#### Task 9.3: Leave Group
+
+Status: Planned.
+
+- `DELETE /api/groups/{groupId}/members/me`
+- Confirm before leave
+- Handle leader constraints (transfer first unless last member)
+- After leave, close group details and update the sidebar/selection
+
+#### Task 9.4: Update Role And Leadership Transfer
+
+Status: Planned.
+
+- `PATCH /api/groups/{groupId}/members/{userId}/role`
+- `POST /api/groups/{groupId}/leadership-transfer`
+- Confirm before leadership transfer
+- Gate promote/demote with `MANAGE_ROLES` + target-role rules
+- Gate transfer with `TRANSFER_LEADERSHIP`
+
+Out of scope for Phase 9:
+
+- Join-link create/revoke/self-join stays in Phase 10
 
 Why this phase exists:
 
 - Phase 3 already built the core group-management APIs, but they are not product-usable until the UI can call them.
 - Splitting these actions from the member-list phase keeps the rollout small and easier to debug.
+- Four smaller tasks keep add/kick, ban/unban, leave, and role/leadership changes independently reviewable.
 
 ### Phase 10: Join Link Management And Self-Join UI
 

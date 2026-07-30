@@ -25,15 +25,15 @@ function formatStructuredSystemMessage(message) {
 
   switch (message.systemEventType) {
     case "USER_JOINED":
-      return actorName === subjectName ? `${subjectName} joined the group` : `${actorName} added ${subjectName}`;
+      return actorName === subjectName ? `${subjectName} has joined the group` : `${actorName} has added ${subjectName}`;
     case "USER_LEFT":
-      return `${subjectName} left the group`;
+      return `${subjectName} has left the group`;
     case "USER_KICKED":
-      return `${actorName} removed ${subjectName}`;
+      return `${subjectName} has been kicked out of the group by ${actorName}`;
     case "USER_BANNED":
-      return `${actorName} banned ${subjectName}`;
+      return `${subjectName} has been banned by ${actorName}`;
     case "USER_UNBANNED":
-      return `${actorName} unbanned ${subjectName}`;
+      return `${subjectName} has been unbanned by ${actorName}`;
     case "USER_PROMOTED":
       return `${actorName} promoted ${subjectName}`;
     case "USER_DEMOTED":

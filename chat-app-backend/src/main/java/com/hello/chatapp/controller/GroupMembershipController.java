@@ -8,6 +8,7 @@ import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.dto.TransferLeadershipRequest;
 import com.hello.chatapp.dto.UpdateGroupMemberRoleRequest;
+import com.hello.chatapp.dto.UserResponse;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.UnauthorizedException;
 import com.hello.chatapp.service.GroupMembershipService;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/groups")
@@ -47,6 +50,19 @@ public class GroupMembershipController {
                 q,
                 page,
                 size));
+    }
+
+    @GetMapping("/{groupId}/addable-users")
+    public ResponseEntity<List<UserResponse>> listAddableUsers(
+            @PathVariable Long groupId,
+            @RequestParam(required = false) String q,
+            HttpSession session) {
+        List<UserResponse> users = groupMembershipService
+                .listAddableUsers(getAuthenticatedUser(session), groupId, q)
+                .stream()
+                .map(UserResponse::fromUser)
+                .toList();
+        return ResponseEntity.ok(users);
     }
 
     @PostMapping("/{groupId}/members")

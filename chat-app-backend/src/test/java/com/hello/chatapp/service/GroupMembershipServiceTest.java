@@ -132,6 +132,34 @@ class GroupMembershipServiceTest {
     }
 
     @Test
+    void listAddableUsers_requiresAddMembersNormalizesSearchAndCapsResults() {
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findAddableUsersForGroup(eq(100L), eq("%bob%"), any(Pageable.class)))
+                .thenReturn(List.of(targetUser));
+
+        List<User> addableUsers = groupMembershipService.listAddableUsers(actor, 100L, "  bob  ");
+
+        assertThat(addableUsers).containsExactly(targetUser);
+        verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS);
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(userRepository).findAddableUsersForGroup(eq(100L), eq("%bob%"), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageNumber()).isZero();
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(500);
+    }
+
+    @Test
+    void listAddableUsers_treatsBlankSearchAsNull() {
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findAddableUsersForGroup(eq(100L), isNull(), any(Pageable.class)))
+                .thenReturn(List.of());
+
+        List<User> addableUsers = groupMembershipService.listAddableUsers(actor, 100L, "   ");
+
+        assertThat(addableUsers).isEmpty();
+        verify(userRepository).findAddableUsersForGroup(eq(100L), isNull(), any(Pageable.class));
+    }
+
+    @Test
     void addMember_createsMemberWithDefaultRole() {
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));

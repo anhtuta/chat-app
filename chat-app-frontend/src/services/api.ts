@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, GroupMemberPage, SelectableUser } from "../types/groups";
+import type { ChatGroup, GroupMember, GroupMemberPage, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -162,6 +162,44 @@ export async function getGroupMembers(
 }
 
 /**
+ * Add a user directly to a group as MEMBER.
+ */
+export async function addGroupMember(
+  groupId: number | string,
+  userId: number,
+): Promise<GroupMember> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ userId }),
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to add group member");
+}
+
+/**
+ * Kick/remove a member from a group.
+ */
+export async function kickGroupMember(
+  groupId: number | string,
+  userId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (response.ok) {
+    return;
+  }
+  throw new Error(await response.text() || "Failed to remove group member");
+}
+
+/**
  * Get public chat messages
  */
 export async function getPublicMessages(): Promise<ChatMessage[]> {
@@ -210,6 +248,31 @@ export async function getUsers(): Promise<SelectableUser[]> {
   const response = await fetch(`${API_BASE_URL}/api/groups/users`, {
     credentials: "include",
   });
+  if (response.ok) {
+    return response.json();
+  }
+  return handleErrorResponse(response);
+}
+
+/**
+ * Users who can be added to a group (not already members, not banned).
+ * Requires ADD_MEMBERS. Optional `q` searches username/fullname. Capped at 500 (no pagination).
+ */
+export async function getAddableGroupUsers(
+  groupId: number | string,
+  { q }: { q?: string } = {},
+): Promise<SelectableUser[]> {
+  const queryParams = new URLSearchParams();
+  if (q?.trim()) {
+    queryParams.set("q", q.trim());
+  }
+  const query = queryParams.toString();
+  const response = await fetch(
+    `${API_BASE_URL}/api/groups/${groupId}/addable-users${query ? `?${query}` : ""}`,
+    {
+      credentials: "include",
+    },
+  );
   if (response.ok) {
     return response.json();
   }

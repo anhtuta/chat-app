@@ -181,3 +181,36 @@
 .group-details-dialog-paper .MuiDivider-root {
   border-color: var(--color-border-soft) !important;
 }
+
+.add-group-member-dialog-wrapper .create-group-users-container,
+.group-details-add-users-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.add-group-member-dialog-wrapper .create-group-user-item {
+  padding: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.add-group-member-dialog-wrapper .create-group-user-item:hover {
+  background-color: var(--color-surface-soft);
+}
+
+.add-group-member-dialog-wrapper .create-group-user-item.selected {
+  background-color: var(--color-selection-bg);
+}
+
+.add-group-member-dialog-wrapper .create-group-user-fullname {
+  font-weight: 500;
+}
+
+.add-group-member-dialog-wrapper .create-group-user-username {
+  color: var(--color-text-secondary);
+}
+

@@ -33,6 +33,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -42,6 +43,7 @@ public class GroupMembershipService {
     private static final int MAX_BAN_REASON_LENGTH = 500;
     private static final int DEFAULT_MEMBER_PAGE_SIZE = 100;
     private static final int MAX_MEMBER_PAGE_SIZE = 100;
+    private static final int MAX_ADDABLE_USERS = 500;
     private static final String ARCHIVE_REASON_LAST_MEMBER_LEFT = "LAST_MEMBER_LEFT";
 
     private final GroupAuthorizationService groupAuthorizationService;
@@ -73,7 +75,9 @@ public class GroupMembershipService {
     @Transactional(readOnly = true)
     public GroupMemberPageResponse listMembers(User actor, Long groupId, String search, int page, int size) {
         groupAuthorizationService.requireMember(actor, groupId);
-        Pageable pageable = PageableUtil.of(page, size, DEFAULT_MEMBER_PAGE_SIZE, MAX_MEMBER_PAGE_SIZE);
+        int resolvedPage = Math.max(page, 0);
+        int resolvedSize = size <= 0 ? DEFAULT_MEMBER_PAGE_SIZE : Math.min(size, MAX_MEMBER_PAGE_SIZE);
+        Pageable pageable = PageableUtil.of(resolvedPage, resolvedSize);
         String normalizedSearch = StringUtil.normalizeSqlLikeSearch(search);
         Page<GroupParticipant> memberPage = groupParticipantRepository.findByGroupIdWithUser(
                 groupId,
@@ -89,6 +93,18 @@ public class GroupMembershipService {
                 .totalPages(memberPage.getTotalPages())
                 .hasNext(memberPage.hasNext())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<User> listAddableUsers(User actor, Long groupId, String search) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        groupAuthorizationService.requireActivePermission(actor, safeGroupId, GroupPermission.ADD_MEMBERS);
+        String normalizedSearch = StringUtil.normalizeSqlLikeSearch(search);
+        // Cap at MAX_ADDABLE_USERS; no pagination response by design.
+        return userRepository.findAddableUsersForGroup(
+                safeGroupId,
+                normalizedSearch,
+                PageableUtil.of(0, MAX_ADDABLE_USERS));
     }
 
     @Transactional

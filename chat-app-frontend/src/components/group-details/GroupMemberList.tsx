@@ -2,16 +2,19 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Box,
+  Button,
   CircularProgress,
   List,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import PersonAddAlt1OutlinedIcon from "@mui/icons-material/PersonAddAlt1Outlined";
 import { getGroupMembers } from "../../services/api";
 import type { GroupMember } from "../../types/groups";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 import GroupMemberListItem from "./GroupMemberListItem";
+import AddGroupMemberDialog from "./AddGroupMemberDialog";
 
 const MEMBER_PAGE_SIZE = 100;
 const SEARCH_DEBOUNCE_MS = 400;
@@ -41,7 +44,11 @@ function GroupMemberList({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
   const requestIdRef = useRef(0);
+
+  const canAddMembers = currentUserPermissions.includes("ADD_MEMBERS");
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -91,18 +98,15 @@ function GroupMemberList({
     return () => {
       isCancelled = true;
     };
-  }, [debouncedSearch, groupId, open]);
+  }, [debouncedSearch, groupId, open, reloadToken]);
 
   useEffect(() => {
     if (!open) {
       setSearchInput("");
       setDebouncedSearch("");
+      setAddDialogOpen(false);
     }
   }, [open]);
-
-  const canSeeModerationControls = currentUserPermissions.some((permission) =>
-    ["KICK_MEMBERS", "BAN_MEMBERS", "MANAGE_ROLES", "UNBAN_MEMBERS"].includes(permission),
-  );
 
   const loadNextPage = async () => {
     if (!open || groupId === null || groupId === undefined || !hasNext || isLoading || isLoadingMore) {
@@ -148,11 +152,28 @@ function GroupMemberList({
     }
   };
 
+  const refreshMembers = () => {
+    setReloadToken((previous) => previous + 1);
+  };
+
   return (
     <div className="group-member-list-wrapper group-details-section">
-      <Typography variant="subtitle1" className="group-details-section-title">
-        Members
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.5 }}>
+        <Typography variant="subtitle1" className="group-details-section-title" sx={{ mb: "0 !important" }}>
+          Members
+        </Typography>
+        {canAddMembers && groupId !== null && groupId !== undefined ? (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<PersonAddAlt1OutlinedIcon />}
+            onClick={() => setAddDialogOpen(true)}
+            title="Add members"
+          >
+            Add
+          </Button>
+        ) : null}
+      </Box>
       <Stack spacing={1.5}>
         <TextField
           label="Search members"
@@ -183,11 +204,16 @@ function GroupMemberList({
               {members.map((member) => (
                 <GroupMemberListItem
                   key={member.userId}
+                  groupId={groupId as number | string}
                   member={member}
                   currentUsername={currentUsername}
                   currentUserRole={currentUserRole}
                   currentUserPermissions={currentUserPermissions}
-                  canSeeModerationControls={canSeeModerationControls}
+                  onMemberKickedOut={(userId) => {
+                    setMembers((previous) => previous.filter((item) => item.userId !== userId));
+                    setTotalElements((previous) => Math.max(0, previous - 1));
+                  }}
+                  onError={setError}
                 />
               ))}
               {!members.length ? (
@@ -209,6 +235,15 @@ function GroupMemberList({
           </Box>
         )}
       </Stack>
+
+      {groupId !== null && groupId !== undefined ? (
+        <AddGroupMemberDialog
+          open={addDialogOpen}
+          groupId={groupId}
+          onClose={() => setAddDialogOpen(false)}
+          onMembersAdded={refreshMembers}
+        />
+      ) : null}
     </div>
   );
 }
