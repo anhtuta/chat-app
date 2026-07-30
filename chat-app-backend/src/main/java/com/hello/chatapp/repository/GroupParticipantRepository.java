@@ -3,6 +3,8 @@ package com.hello.chatapp.repository;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -40,13 +42,49 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             """)
     Optional<GroupParticipant> findByGroupIdAndUser(@Param("groupId") Long groupId, @Param("user") User user);
 
-    @Query("""
-            SELECT gp FROM GroupParticipant gp
-            JOIN FETCH gp.user
-            WHERE gp.group.id = :groupId
-            ORDER BY gp.joinedAt ASC, gp.id ASC
-            """)
-    List<GroupParticipant> findByGroupIdWithUser(@Param("groupId") Long groupId);
+    /**
+     * <p>
+     * Find group participants by group ID and search text.
+     * Note:
+     * 1. PostgreSQL was inferring the CONCAT('%', :search, '%') / || expression as bytea, so LOWER(...) failed.
+     * We need to cast the search as string.
+     * 2. We don't need to add index on username and fullname because:
+     * This query always filters by group_id first (covered by uk_group_participants_group_user),
+     * then filters that small set by name. That’s cheap for normal group sizes.
+     * If the group is large, we can use pg_trgm GIN indexes.
+     * </p>
+     * 
+     * @param groupId the group ID
+     * @param search the search text, we search by user's username or fullname
+     * @param pageable the pageable
+     * @return the page of group participants
+     */
+    @Query(
+            value = """
+                    SELECT gp FROM GroupParticipant gp
+                    JOIN FETCH gp.user u
+                    WHERE gp.group.id = :groupId
+                      AND (
+                        :search IS NULL
+                        OR LOWER(u.username) LIKE LOWER(CAST(:search AS string)) ESCAPE '\\'
+                        OR LOWER(u.fullname) LIKE LOWER(CAST(:search AS string)) ESCAPE '\\'
+                      )
+                    ORDER BY gp.joinedAt ASC, gp.id ASC
+                    """,
+            countQuery = """
+                    SELECT COUNT(gp) FROM GroupParticipant gp
+                    JOIN gp.user u
+                    WHERE gp.group.id = :groupId
+                      AND (
+                        :search IS NULL
+                        OR LOWER(u.username) LIKE LOWER(CAST(:search AS string)) ESCAPE '\\'
+                        OR LOWER(u.fullname) LIKE LOWER(CAST(:search AS string)) ESCAPE '\\'
+                      )
+                    """)
+    Page<GroupParticipant> findByGroupIdWithUser(
+            @Param("groupId") Long groupId,
+            @Param("search") String search,
+            Pageable pageable);
 
     @Query("""
             SELECT gp FROM GroupParticipant gp

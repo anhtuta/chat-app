@@ -4,6 +4,7 @@ import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
+import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
@@ -18,6 +19,10 @@ import com.hello.chatapp.repository.GroupJoinLinkRepository;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.UserRepository;
+import com.hello.chatapp.util.PageableUtil;
+import com.hello.chatapp.util.StringUtil;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +33,6 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
-import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -36,6 +40,8 @@ public class GroupMembershipService {
 
     private static final int JOIN_TOKEN_BYTES = 32;
     private static final int MAX_BAN_REASON_LENGTH = 500;
+    private static final int DEFAULT_MEMBER_PAGE_SIZE = 100;
+    private static final int MAX_MEMBER_PAGE_SIZE = 100;
     private static final String ARCHIVE_REASON_LAST_MEMBER_LEFT = "LAST_MEMBER_LEFT";
 
     private final GroupAuthorizationService groupAuthorizationService;
@@ -65,11 +71,24 @@ public class GroupMembershipService {
     }
 
     @Transactional(readOnly = true)
-    public List<GroupMemberResponse> listMembers(User actor, Long groupId) {
+    public GroupMemberPageResponse listMembers(User actor, Long groupId, String search, int page, int size) {
         groupAuthorizationService.requireMember(actor, groupId);
-        return groupParticipantRepository.findByGroupIdWithUser(groupId).stream()
-                .map(GroupMemberResponse::fromParticipant)
-                .toList();
+        Pageable pageable = PageableUtil.of(page, size, DEFAULT_MEMBER_PAGE_SIZE, MAX_MEMBER_PAGE_SIZE);
+        String normalizedSearch = StringUtil.normalizeSqlLikeSearch(search);
+        Page<GroupParticipant> memberPage = groupParticipantRepository.findByGroupIdWithUser(
+                groupId,
+                normalizedSearch,
+                pageable);
+        return GroupMemberPageResponse.builder()
+                .content(memberPage.getContent().stream()
+                        .map(GroupMemberResponse::fromParticipant)
+                        .toList())
+                .page(memberPage.getNumber())
+                .size(memberPage.getSize())
+                .totalElements(memberPage.getTotalElements())
+                .totalPages(memberPage.getTotalPages())
+                .hasNext(memberPage.hasNext())
+                .build();
     }
 
     @Transactional
@@ -147,7 +166,8 @@ public class GroupMembershipService {
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         ensureActive(targetParticipant.getGroup());
         groupParticipantRepository.delete(targetParticipant);
-        systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor, SystemEventType.USER_KICKED);
+        systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor,
+                SystemEventType.USER_KICKED);
     }
 
     @Transactional
@@ -228,7 +248,8 @@ public class GroupMembershipService {
 
         newLeader.setRole(GroupRole.LEADER);
         groupParticipantRepository.save(newLeader);
-        systemMessageService.recordGroupEvent(currentLeader.getGroup(), newLeader.getUser(), actor, SystemEventType.LEADERSHIP_TRANSFERRED);
+        systemMessageService.recordGroupEvent(currentLeader.getGroup(), newLeader.getUser(), actor,
+                SystemEventType.LEADERSHIP_TRANSFERRED);
     }
 
     @Transactional

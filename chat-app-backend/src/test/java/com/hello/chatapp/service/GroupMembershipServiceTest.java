@@ -3,6 +3,7 @@ package com.hello.chatapp.service;
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.SystemEventType;
+import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
@@ -22,13 +23,20 @@ import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,6 +88,47 @@ class GroupMembershipServiceTest {
         targetUser.setId(2L);
         targetUser.setUsername("bob");
         targetUser.setFullname("Bob Builder");
+    }
+
+    @Test
+    void listMembers_returnsPagedResultsAndNormalizesSearch() {
+        GroupParticipant participant = new GroupParticipant(group, targetUser);
+        participant.setRole(GroupRole.MEMBER);
+        participant.setJoinedAt(LocalDateTime.now().minusDays(1));
+        Page<GroupParticipant> page = new PageImpl<>(
+                List.of(participant),
+                PageRequest.of(0, 100),
+                1);
+
+        when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(participant);
+        when(groupParticipantRepository.findByGroupIdWithUser(eq(100L), eq("%bob%"), any(Pageable.class)))
+                .thenReturn(page);
+
+        GroupMemberPageResponse response = groupMembershipService.listMembers(actor, 100L, "  bob  ", 0, 100);
+
+        assertThat(response.getContent()).hasSize(1);
+        assertThat(response.getContent().get(0).getUsername()).isEqualTo("bob");
+        assertThat(response.getPage()).isZero();
+        assertThat(response.getSize()).isEqualTo(100);
+        assertThat(response.getTotalElements()).isEqualTo(1);
+        assertThat(response.isHasNext()).isFalse();
+        verify(groupParticipantRepository).findByGroupIdWithUser(eq(100L), eq("%bob%"), any(Pageable.class));
+    }
+
+    @Test
+    void listMembers_clampsPageSizeAndTreatsBlankSearchAsNull() {
+        Page<GroupParticipant> emptyPage = Page.empty(PageRequest.of(0, 100));
+        when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(new GroupParticipant(group, actor));
+        when(groupParticipantRepository.findByGroupIdWithUser(eq(100L), isNull(), any(Pageable.class)))
+                .thenReturn(emptyPage);
+
+        GroupMemberPageResponse response = groupMembershipService.listMembers(actor, 100L, "   ", -1, 500);
+
+        assertThat(response.getContent()).isEmpty();
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(groupParticipantRepository).findByGroupIdWithUser(eq(100L), isNull(), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageNumber()).isZero();
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(100);
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.hello.chatapp.dto.AddGroupMemberRequest;
 import com.hello.chatapp.dto.BanGroupMemberRequest;
 import com.hello.chatapp.dto.CreateGroupJoinLinkRequest;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
+import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.dto.TransferLeadershipRequest;
 import com.hello.chatapp.dto.UpdateGroupMemberRoleRequest;
@@ -20,9 +21,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/groups")
@@ -35,10 +35,18 @@ public class GroupMembershipController {
     }
 
     @GetMapping("/{groupId}/members")
-    public ResponseEntity<List<GroupMemberResponse>> listMembers(
+    public ResponseEntity<GroupMemberPageResponse> listMembers(
             @PathVariable Long groupId,
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size,
             HttpSession session) {
-        return ResponseEntity.ok(groupMembershipService.listMembers(getAuthenticatedUser(session), groupId));
+        return ResponseEntity.ok(groupMembershipService.listMembers(
+                getAuthenticatedUser(session),
+                groupId,
+                q,
+                page,
+                size));
     }
 
     @PostMapping("/{groupId}/members")
