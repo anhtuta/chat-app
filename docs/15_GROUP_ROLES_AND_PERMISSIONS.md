@@ -847,7 +847,7 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 9: Membership Management UI
 
-Status: In progress.
+Status: Implemented.
 
 What should change:
 
@@ -896,13 +896,15 @@ What changed:
 
 #### Task 9.4: Update Role And Leadership Transfer
 
-Status: Planned.
+Status: Implemented.
 
-- `PATCH /api/groups/{groupId}/members/{userId}/role`
-- `POST /api/groups/{groupId}/leadership-transfer`
-- Confirm before leadership transfer
-- Gate promote/demote with `MANAGE_ROLES` + target-role rules
-- Gate transfer with `TRANSFER_LEADERSHIP`
+What changed:
+
+- Added frontend API helpers for `PATCH /api/groups/{groupId}/members/{userId}/role` and `POST /api/groups/{groupId}/leadership-transfer`.
+- Added Change role on manageable roster rows (`MANAGE_ROLES` + target-role rules); assignable roles exclude `LEADER` and stay at/below the actor's privilege.
+- Added Transfer leadership on other members for the current leader (`TRANSFER_LEADERSHIP`), with confirmation.
+- After transfer, refreshes group details so the former leader's role/permissions update in the UI.
+- Icon-only role/transfer controls expose `title` and `aria-label`.
 
 Out of scope for Phase 9:
 

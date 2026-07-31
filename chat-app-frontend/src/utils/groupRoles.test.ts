@@ -2,6 +2,7 @@ import { GROUP_ROLES } from "../constant/groupRoles";
 import {
   canPreviewManageTarget,
   formatGroupRoleLabel,
+  getAssignableGroupRoles,
   getRoleRank,
   isSameOrHigherRole,
   normalizeGroupRole,
@@ -51,6 +52,26 @@ describe("groupRoles", () => {
       expect(formatGroupRoleLabel(GROUP_ROLES.CO_LEADER)).toBe("CO LEADER");
       expect(formatGroupRoleLabel(GROUP_ROLES.LEADER)).toBe("LEADER");
       expect(formatGroupRoleLabel(undefined)).toBe("MEMBER");
+    });
+  });
+
+  describe("getAssignableGroupRoles", () => {
+    it("excludes LEADER and only allows same-or-lower privilege roles", () => {
+      expect(getAssignableGroupRoles(GROUP_ROLES.LEADER)).toEqual([
+        GROUP_ROLES.CO_LEADER,
+        GROUP_ROLES.ELDER,
+        GROUP_ROLES.MEMBER,
+      ]);
+      expect(getAssignableGroupRoles(GROUP_ROLES.CO_LEADER)).toEqual([
+        GROUP_ROLES.CO_LEADER,
+        GROUP_ROLES.ELDER,
+        GROUP_ROLES.MEMBER,
+      ]);
+      expect(getAssignableGroupRoles(GROUP_ROLES.ELDER)).toEqual([
+        GROUP_ROLES.ELDER,
+        GROUP_ROLES.MEMBER,
+      ]);
+      expect(getAssignableGroupRoles(GROUP_ROLES.MEMBER)).toEqual([GROUP_ROLES.MEMBER]);
     });
   });
 

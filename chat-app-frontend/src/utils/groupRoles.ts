@@ -1,6 +1,7 @@
 import {
   GROUP_ROLES,
   GROUP_ROLE_RANK,
+  GROUP_ROLE_VALUES,
   isGroupRole,
   type GroupRole,
 } from "../constant/groupRoles";
@@ -29,6 +30,17 @@ export function normalizeGroupRole(role: string | null | undefined): GroupRole {
 
 export function formatGroupRoleLabel(role: string | null | undefined): string {
   return normalizeGroupRole(role).replace(/_/g, " ");
+}
+
+/**
+ * Roles that can be assigned via PATCH (never LEADER — use leadership transfer).
+ * Only same-or-lower privilege than the actor (higher rank number).
+ */
+export function getAssignableGroupRoles(actorRole: string | null | undefined): GroupRole[] {
+  const actorRank = getRoleRank(actorRole);
+  return GROUP_ROLE_VALUES.filter(
+    (role) => role !== GROUP_ROLES.LEADER && GROUP_ROLE_RANK[role] >= actorRank,
+  );
 }
 
 /**

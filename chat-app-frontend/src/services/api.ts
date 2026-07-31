@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, GroupBan, GroupMember, GroupMemberPage, SelectableUser } from "../types/groups";
+import type { ChatGroup, GroupBan, GroupMember, GroupMemberPage, GroupRole, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -197,6 +197,51 @@ export async function kickGroupMember(
     return;
   }
   throw new Error(await response.text() || "Failed to remove group member");
+}
+
+/**
+ * Promote/demote a member role. Cannot assign LEADER — use transferLeadership.
+ * Requires MANAGE_ROLES.
+ */
+export async function updateGroupMemberRole(
+  groupId: number | string,
+  userId: number,
+  role: GroupRole,
+): Promise<GroupMember> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members/${userId}/role`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ role }),
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to update member role");
+}
+
+/**
+ * Transfer leadership to another member. Requires current user to be LEADER.
+ * Previous leader becomes MEMBER.
+ */
+export async function transferGroupLeadership(
+  groupId: number | string,
+  newLeaderUserId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/leadership-transfer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ newLeaderUserId }),
+  });
+  if (response.ok) {
+    return;
+  }
+  throw new Error(await response.text() || "Failed to transfer leadership");
 }
 
 /**

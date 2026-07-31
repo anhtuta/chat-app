@@ -145,6 +145,25 @@ function GroupDetailsDialog({
     }
   };
 
+  const refreshAccessAfterLeadershipTransfer = async () => {
+    if (groupId === null || groupId === undefined) {
+      return;
+    }
+
+    try {
+      const nextGroup = await getGroupDetails(groupId);
+      const mergedGroup: ChatGroup = {
+        ...nextGroup,
+        unreadCount: groupDetails?.unreadCount,
+      };
+      setGroupDetails(mergedGroup);
+      onGroupUpdated?.(mergedGroup);
+    } catch (refreshError: unknown) {
+      console.error("Error refreshing group details after leadership transfer:", refreshError);
+      setError(toErrorMessage(refreshError, "Failed to refresh group access after transfer"));
+    }
+  };
+
   return (
     <div className="group-details-dialog-wrapper">
       <Dialog
@@ -192,6 +211,9 @@ function GroupDetailsDialog({
                 currentUserRole={groupDetails?.currentUserRole}
                 currentUserPermissions={permissions}
                 onMemberBanned={() => setBannedReloadToken((previous) => previous + 1)}
+                onLeadershipTransferred={() => {
+                  void refreshAccessAfterLeadershipTransfer();
+                }}
               />
 
               <GroupBannedMemberList

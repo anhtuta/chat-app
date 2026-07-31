@@ -377,15 +377,16 @@ function ChatPage({
         ? {
             ...group,
             ...updatedGroup,
-            // PATCH /api/groups/{id} does not refresh these caller-specific fields.
-            unreadCount: group.unreadCount,
-            currentUserRole: group.currentUserRole,
-            currentUserPermissions: group.currentUserPermissions,
+            // Prefer caller-specific fields from details refresh when present (e.g. after leadership transfer).
+            unreadCount: updatedGroup.unreadCount ?? group.unreadCount,
+            currentUserRole: updatedGroup.currentUserRole ?? group.currentUserRole,
+            currentUserPermissions:
+              updatedGroup.currentUserPermissions ?? group.currentUserPermissions,
           }
         : group
     )));
 
-    if (currentChatIdRef.current === Number(updatedGroup.id)) {
+    if (currentChatIdRef.current === Number(updatedGroup.id) && updatedGroup.name) {
       setCurrentChatName(updatedGroup.name);
     }
   };

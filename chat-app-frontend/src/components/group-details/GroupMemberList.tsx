@@ -12,6 +12,7 @@ import {
 import PersonAddAlt1OutlinedIcon from "@mui/icons-material/PersonAddAlt1Outlined";
 import { getGroupMembers } from "../../services/api";
 import type { GroupMember } from "../../types/groups";
+import { GROUP_ROLES } from "../../constant/groupRoles";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 import GroupMemberListItem from "./GroupMemberListItem";
 import AddGroupMemberDialog from "./AddGroupMemberDialog";
@@ -27,6 +28,7 @@ interface GroupMemberListProps {
   currentUserRole?: string | null;
   currentUserPermissions?: string[];
   onMemberBanned?: () => void;
+  onLeadershipTransferred?: () => void;
 }
 
 function GroupMemberList({
@@ -36,6 +38,7 @@ function GroupMemberList({
   currentUserRole,
   currentUserPermissions = [],
   onMemberBanned,
+  onLeadershipTransferred,
 }: GroupMemberListProps) {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -219,6 +222,29 @@ function GroupMemberList({
                     setMembers((previous) => previous.filter((item) => item.userId !== userId));
                     setTotalElements((previous) => Math.max(0, previous - 1));
                     onMemberBanned?.();
+                  }}
+                  onMemberRoleUpdated={(updatedMember) => {
+                    setMembers((previous) =>
+                      previous.map((item) =>
+                        item.userId === updatedMember.userId
+                          ? { ...item, ...updatedMember }
+                          : item,
+                      ),
+                    );
+                  }}
+                  onLeadershipTransferred={(newLeaderUserId) => {
+                    setMembers((previous) =>
+                      previous.map((item) => {
+                        if (item.userId === newLeaderUserId) {
+                          return { ...item, role: GROUP_ROLES.LEADER };
+                        }
+                        if (currentUsername && item.username === currentUsername) {
+                          return { ...item, role: GROUP_ROLES.MEMBER };
+                        }
+                        return item;
+                      }),
+                    );
+                    onLeadershipTransferred?.();
                   }}
                   onError={setError}
                 />

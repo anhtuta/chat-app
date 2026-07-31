@@ -85,7 +85,7 @@ function GroupRolePermissionsSection({
             />
           </Box>
           <Typography variant="caption" className="group-details-muted-text group-details-caption">
-            Action buttons land in later phases. This section only shows who would see what.
+            Moderation and leadership actions appear on member rows when your role allows them.
           </Typography>
         </Box>
       </Stack>
