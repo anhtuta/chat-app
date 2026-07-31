@@ -4,6 +4,7 @@ import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupBanResponse;
+import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
@@ -212,6 +213,28 @@ class GroupMembershipServiceTest {
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, targetUser, SystemEventType.USER_JOINED);
+    }
+
+    @Test
+    void listJoinLinks_requiresCreateJoinLinkAndOmitsToken() {
+        GroupJoinLink joinLink = new GroupJoinLink();
+        joinLink.setId(77L);
+        joinLink.setGroup(group);
+        joinLink.setCreatedBy(actor);
+        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setExpiresAt(LocalDateTime.now().plusDays(1));
+
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.CREATE_JOIN_LINK))
+                .thenReturn(group);
+        when(groupJoinLinkRepository.findByGroupIdWithCreator(100L)).thenReturn(List.of(joinLink));
+
+        List<GroupJoinLinkResponse> links = groupMembershipService.listJoinLinks(actor, 100L);
+
+        assertThat(links).hasSize(1);
+        assertThat(links.get(0).getId()).isEqualTo(77L);
+        assertThat(links.get(0).getToken()).isNull();
+        assertThat(links.get(0).getCreatedByUsername()).isEqualTo("alice");
+        verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.CREATE_JOIN_LINK);
     }
 
     @Test

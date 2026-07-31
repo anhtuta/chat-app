@@ -41,6 +41,18 @@ export interface GroupBan {
   bannedByUsername?: string | null;
 }
 
+export interface GroupJoinLink {
+  id: number;
+  groupId: number;
+  /** Raw token is only present on create responses; list responses omit it. */
+  token?: string | null;
+  createdById?: number | null;
+  createdByUsername?: string | null;
+  createdAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+}
+
 export interface SelectableUser {
   id: number;
   username: string;

@@ -12,6 +12,7 @@ import {
 import { getGroupDetails, updateGroupDetails } from "../../services/api";
 import type { ChatGroup } from "../../types/groups";
 import GroupBannedMemberList from "./GroupBannedMemberList";
+import GroupJoinLinksSection from "./GroupJoinLinksSection";
 import GroupMemberList from "./GroupMemberList";
 import GroupProfileSection from "./GroupProfileSection";
 import GroupRolePermissionsSection from "./GroupRolePermissionsSection";
@@ -98,6 +99,7 @@ function GroupDetailsDialog({
   const permissions = groupDetails?.currentUserPermissions || [];
   const canManageGroupDetails = permissions.includes("MANAGE_GROUP_DETAILS");
   const canUnbanMembers = permissions.includes("UNBAN_MEMBERS");
+  const canManageJoinLinks = permissions.includes("CREATE_JOIN_LINK");
   const normalizedName = groupName.trim();
   const normalizedDescription = description.trim();
   const normalizedDescriptionOrNull = normalizedDescription ? normalizedDescription : null;
@@ -221,6 +223,12 @@ function GroupDetailsDialog({
                 groupId={groupId}
                 canUnban={canUnbanMembers}
                 reloadToken={bannedReloadToken}
+              />
+
+              <GroupJoinLinksSection
+                open={open}
+                groupId={groupId}
+                canManageJoinLinks={canManageJoinLinks}
               />
 
               {groupId !== null && groupId !== undefined ? (

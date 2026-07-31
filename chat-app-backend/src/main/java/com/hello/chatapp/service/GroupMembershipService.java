@@ -125,6 +125,16 @@ public class GroupMembershipService {
         return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
+    @Transactional(readOnly = true)
+    public List<GroupJoinLinkResponse> listJoinLinks(User actor, Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        groupAuthorizationService.requireActivePermission(actor, safeGroupId, GroupPermission.CREATE_JOIN_LINK);
+        // Token hashes are stored; list responses omit the raw token (only create returns it once).
+        return groupJoinLinkRepository.findByGroupIdWithCreator(safeGroupId).stream()
+                .map(joinLink -> GroupJoinLinkResponse.fromJoinLink(joinLink, null))
+                .toList();
+    }
+
     @Transactional
     public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, LocalDateTime expiresAt) {
         Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);

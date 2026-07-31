@@ -17,6 +17,7 @@ public class GroupJoinLinkResponse {
     private Long groupId;
     private String token;
     private Long createdById;
+    private String createdByUsername;
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
     private LocalDateTime revokedAt;
@@ -30,6 +31,7 @@ public class GroupJoinLinkResponse {
                 .groupId(joinLink.getGroup() == null ? null : joinLink.getGroup().getId())
                 .token(token)
                 .createdById(joinLink.getCreatedBy() == null ? null : joinLink.getCreatedBy().getId())
+                .createdByUsername(joinLink.getCreatedBy() == null ? null : joinLink.getCreatedBy().getUsername())
                 .createdAt(joinLink.getCreatedAt())
                 .expiresAt(joinLink.getExpiresAt())
                 .revokedAt(joinLink.getRevokedAt())

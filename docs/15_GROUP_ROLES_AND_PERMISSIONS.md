@@ -378,16 +378,20 @@ Groups:
 
 Join links:
 
+- `GET /api/groups/{groupId}/join-links`
+  - List join links for the group (metadata only; `token` is null because only the hash is stored).
+  - Requires `CREATE_JOIN_LINK`.
 - `POST /api/groups/{groupId}/join-links`
   - Create a join link.
   - Requires `CREATE_JOIN_LINK`.
+  - Returns the raw `token` once at creation time.
 - `POST /api/groups/join-links/{token}/join`
   - Self-join from a valid link.
   - Adds user as `MEMBER`.
   - Rejects banned users and archived groups.
 - `DELETE /api/groups/{groupId}/join-links/{joinLinkId}`
   - Revoke a join link.
-  - Requires `CREATE_JOIN_LINK` or stronger group-management permission.
+  - Requires `CREATE_JOIN_LINK`.
 
 Membership:
 
@@ -640,6 +644,7 @@ API/contract/config impacts:
 - Added `DELETE /api/groups/{groupId}/bans/{userId}`.
 - Added `POST /api/groups/{groupId}/leadership-transfer`.
 - Added `POST /api/groups/{groupId}/join-links`.
+- Added `GET /api/groups/{groupId}/join-links`.
 - Added `DELETE /api/groups/{groupId}/join-links/{joinLinkId}`.
 - Added `POST /api/groups/join-links/{token}/join`.
 - Join links return the raw token only when created; only `token_hash` is stored.
@@ -918,26 +923,40 @@ Why this phase exists:
 
 ### Phase 10: Join Link Management And Self-Join UI
 
-TODO review this phase first, do not let AI implement it now!
-
-Status: Planned.
+Status: In progress.
 
 What should change:
 
-- Add UI for:
-  - `POST /api/groups/{groupId}/join-links`
-  - `DELETE /api/groups/{groupId}/join-links/{joinLinkId}`
-  - `POST /api/groups/join-links/{token}/join`
-- Support common product actions:
-  - create link
-  - copy/share token
-  - revoke link
-  - join from a token or join screen, if the product keeps that entry point
-- Show expiry/revocation state clearly if the UI exposes join-link history.
+- Add role-aware join-link UI on top of the Phase 3 join-link APIs, split into two smaller tasks.
+- Show expiry/revocation state clearly when the UI exposes join-link history.
+- Keep self-join as a separate journey from link creation/management.
+
+Tasks:
+
+#### Task 10.1: Create And Manage Join Links
+
+Status: Implemented.
+
+What changed:
+
+- Added `GET /api/groups/{groupId}/join-links` (requires `CREATE_JOIN_LINK`) for join-link history metadata; raw `token` remains create-only because only the hash is stored.
+- Added frontend helpers for list/create/revoke join links.
+- Added a Join links section in group details for users with `CREATE_JOIN_LINK`: optional expiry, create, copy token, revoke active links, and active/expired/revoked status.
+- Icon-only copy/revoke controls expose `title` and `aria-label`.
+
+#### Task 10.2: Join Group Via Link
+
+Status: Planned.
+
+- `POST /api/groups/join-links/{token}/join`
+- Join from a token entry point (paste token / join screen / URL, whichever the product keeps)
+- Handle already-a-member, banned, expired, revoked, and archived-group rejection UX
+- After a successful join, open or select the group in the sidebar
 
 Why this phase exists:
 
 - Join links are a distinct user journey from direct member management and deserve their own small UI phase.
+- Splitting create/manage from self-join keeps each task independently reviewable.
 - It also gives us a focused place to verify banned/archive join rejection behavior before realtime is added.
 
 ### Phase 11: Message Moderation UI

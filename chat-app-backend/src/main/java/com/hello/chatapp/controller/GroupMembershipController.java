@@ -148,6 +148,13 @@ public class GroupMembershipController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("/{groupId}/join-links")
+    public ResponseEntity<List<GroupJoinLinkResponse>> listJoinLinks(
+            @PathVariable Long groupId,
+            HttpSession session) {
+        return ResponseEntity.ok(groupMembershipService.listJoinLinks(getAuthenticatedUser(session), groupId));
+    }
+
     @PostMapping("/{groupId}/join-links")
     public ResponseEntity<GroupJoinLinkResponse> createJoinLink(
             @PathVariable Long groupId,

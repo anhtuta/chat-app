@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, GroupBan, GroupMember, GroupMemberPage, GroupRole, SelectableUser } from "../types/groups";
+import type { ChatGroup, GroupBan, GroupJoinLink, GroupMember, GroupMemberPage, GroupRole, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -315,6 +315,60 @@ export async function leaveGroup(groupId: number | string): Promise<void> {
   // Prefer body text so business-rule 403s (e.g. transfer leadership first) surface in the UI
   // instead of the generic auth redirect in handleErrorResponse.
   throw new Error(await response.text() || "Failed to leave group");
+}
+
+/**
+ * List join links for a group (metadata only). Requires CREATE_JOIN_LINK.
+ */
+export async function getGroupJoinLinks(groupId: number | string): Promise<GroupJoinLink[]> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/join-links`, {
+    credentials: "include",
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to load join links");
+}
+
+/**
+ * Create a join link. Requires CREATE_JOIN_LINK.
+ * Returns the raw token once; subsequent list calls omit it.
+ */
+export async function createGroupJoinLink(
+  groupId: number | string,
+  expiresAt?: string | null,
+): Promise<GroupJoinLink> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/join-links`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      expiresAt: expiresAt || undefined,
+    }),
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to create join link");
+}
+
+/**
+ * Revoke a join link. Requires CREATE_JOIN_LINK.
+ */
+export async function revokeGroupJoinLink(
+  groupId: number | string,
+  joinLinkId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/join-links/${joinLinkId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (response.ok) {
+    return;
+  }
+  throw new Error(await response.text() || "Failed to revoke join link");
 }
 
 /**
