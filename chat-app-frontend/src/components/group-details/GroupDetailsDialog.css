@@ -44,7 +44,8 @@
 .group-profile-section-wrapper,
 .group-role-permissions-section-wrapper,
 .group-member-list-wrapper.group-details-section,
-.group-banned-member-list-wrapper.group-details-section {
+.group-banned-member-list-wrapper.group-details-section,
+.leave-group-section-wrapper.group-details-section {
   background-color: var(--color-surface-soft);
   color: var(--color-text-primary);
 }

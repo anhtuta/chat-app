@@ -885,12 +885,14 @@ What changed:
 
 #### Task 9.3: Leave Group
 
-Status: Planned.
+Status: Implemented.
 
-- `DELETE /api/groups/{groupId}/members/me`
-- Confirm before leave
-- Handle leader constraints (transfer first unless last member)
-- After leave, close group details and update the sidebar/selection
+What changed:
+
+- Added frontend API helper for `DELETE /api/groups/{groupId}/members/me`.
+- Added a Leave group section in group details with confirmation.
+- Leaders with other members remaining are blocked in the confirm dialog (must transfer first); last-member leave warns that the group will be archived.
+- After a successful leave, closes group details, removes the group from the sidebar, and navigates to public chat.
 
 #### Task 9.4: Update Role And Leadership Transfer
 

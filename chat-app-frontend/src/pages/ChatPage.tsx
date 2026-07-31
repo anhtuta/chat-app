@@ -390,6 +390,16 @@ function ChatPage({
     }
   };
 
+  const handleGroupLeft = (leftGroupId: number | string) => {
+    setShowGroupDetailsDialog(false);
+    setGroups((previousGroups) =>
+      previousGroups.filter((group) => Number(group.id) !== Number(leftGroupId)),
+    );
+    if (currentChatIdRef.current === Number(leftGroupId)) {
+      navigate("/group/public");
+    }
+  };
+
   return (
     <div className="chat-page-wrapper">
       <Box sx={{ display: "flex", height: "100vh" }}>
@@ -427,6 +437,7 @@ function ChatPage({
             currentUsername={username}
             onClose={() => setShowGroupDetailsDialog(false)}
             onGroupUpdated={handleGroupUpdated}
+            onGroupLeft={handleGroupLeft}
           />
         ) : null}
         {showCreateGroupModal && (

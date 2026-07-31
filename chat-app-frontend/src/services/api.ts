@@ -255,6 +255,24 @@ export async function unbanGroupMember(
 }
 
 /**
+ * Leave the current group as the authenticated user.
+ * Leaders with other members remaining must transfer leadership first.
+ * Last-member leave archives the group.
+ */
+export async function leaveGroup(groupId: number | string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members/me`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (response.ok) {
+    return;
+  }
+  // Prefer body text so business-rule 403s (e.g. transfer leadership first) surface in the UI
+  // instead of the generic auth redirect in handleErrorResponse.
+  throw new Error(await response.text() || "Failed to leave group");
+}
+
+/**
  * Get public chat messages
  */
 export async function getPublicMessages(): Promise<ChatMessage[]> {

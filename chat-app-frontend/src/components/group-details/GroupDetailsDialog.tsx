@@ -15,6 +15,7 @@ import GroupBannedMemberList from "./GroupBannedMemberList";
 import GroupMemberList from "./GroupMemberList";
 import GroupProfileSection from "./GroupProfileSection";
 import GroupRolePermissionsSection from "./GroupRolePermissionsSection";
+import LeaveGroupSection from "./LeaveGroupSection";
 import "./GroupDetailsDialog.css";
 
 interface GroupDetailsDialogProps {
@@ -24,6 +25,7 @@ interface GroupDetailsDialogProps {
   currentUsername?: string | null;
   onClose: () => void;
   onGroupUpdated?: (group: ChatGroup) => void;
+  onGroupLeft?: (groupId: number | string) => void;
 }
 
 function GroupDetailsDialog({
@@ -33,6 +35,7 @@ function GroupDetailsDialog({
   currentUsername,
   onClose,
   onGroupUpdated,
+  onGroupLeft,
 }: GroupDetailsDialogProps) {
   const [groupDetails, setGroupDetails] = useState<ChatGroup | null>(initialGroup);
   const [groupName, setGroupName] = useState(initialGroup?.name || "");
@@ -197,6 +200,16 @@ function GroupDetailsDialog({
                 canUnban={canUnbanMembers}
                 reloadToken={bannedReloadToken}
               />
+
+              {groupId !== null && groupId !== undefined ? (
+                <LeaveGroupSection
+                  groupId={groupId}
+                  groupName={groupDetails?.name || groupName}
+                  currentUserRole={groupDetails?.currentUserRole}
+                  disabled={isSaving}
+                  onLeft={() => onGroupLeft?.(groupId)}
+                />
+              ) : null}
             </div>
           )}
         </DialogContent>
