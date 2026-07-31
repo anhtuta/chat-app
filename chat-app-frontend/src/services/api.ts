@@ -11,7 +11,7 @@ import type {
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
 } from "../types/chat";
-import type { ChatGroup, GroupMember, GroupMemberPage, SelectableUser } from "../types/groups";
+import type { ChatGroup, GroupBan, GroupMember, GroupMemberPage, SelectableUser } from "../types/groups";
 
 const API_BASE_URL = "";
 
@@ -197,6 +197,61 @@ export async function kickGroupMember(
     return;
   }
   throw new Error(await response.text() || "Failed to remove group member");
+}
+
+/**
+ * Ban a user from a group (removes membership if present).
+ */
+export async function banGroupMember(
+  groupId: number | string,
+  userId: number,
+  reason?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/bans`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      userId,
+      reason: reason?.trim() || undefined,
+    }),
+  });
+  if (response.ok) {
+    return;
+  }
+  throw new Error(await response.text() || "Failed to ban group member");
+}
+
+/**
+ * List banned users for a group. Requires UNBAN_MEMBERS.
+ */
+export async function getGroupBans(groupId: number | string): Promise<GroupBan[]> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/bans`, {
+    credentials: "include",
+  });
+  if (response.ok) {
+    return response.json();
+  }
+  throw new Error(await response.text() || "Failed to load banned users");
+}
+
+/**
+ * Unban a user from a group. Requires UNBAN_MEMBERS.
+ */
+export async function unbanGroupMember(
+  groupId: number | string,
+  userId: number,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/bans/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (response.ok) {
+    return;
+  }
+  throw new Error(await response.text() || "Failed to unban group member");
 }
 
 /**

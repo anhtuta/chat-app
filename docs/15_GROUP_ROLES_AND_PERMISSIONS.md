@@ -411,9 +411,13 @@ Membership:
   - Requires `BAN_MEMBERS`.
   - Requires actor to be allowed to manage the target role.
   - Creates a structured `SYSTEM` message.
+- `GET /api/groups/{groupId}/bans`
+  - List banned users for the group.
+  - Requires `UNBAN_MEMBERS`.
 - `DELETE /api/groups/{groupId}/bans/{userId}`
   - Manually unban a user.
-  - Requires `BAN_MEMBERS`.
+  - Requires `UNBAN_MEMBERS`.
+  - Creates a structured `SYSTEM` message.
 - `PATCH /api/groups/{groupId}/members/{userId}/role`
   - Promote or demote a participant.
   - Requires `MANAGE_ROLES`.
@@ -632,6 +636,7 @@ API/contract/config impacts:
 - Added `DELETE /api/groups/{groupId}/members/me`.
 - Added `PATCH /api/groups/{groupId}/members/{userId}/role`.
 - Added `POST /api/groups/{groupId}/bans`.
+- Added `GET /api/groups/{groupId}/bans`.
 - Added `DELETE /api/groups/{groupId}/bans/{userId}`.
 - Added `POST /api/groups/{groupId}/leadership-transfer`.
 - Added `POST /api/groups/{groupId}/join-links`.
@@ -868,13 +873,15 @@ What changed:
 
 #### Task 9.2: Ban And Unban
 
-Status: Planned.
+Status: Implemented.
 
-- `POST /api/groups/{groupId}/bans`
-- `DELETE /api/groups/{groupId}/bans/{userId}`
-- Confirm before ban
-- Gate ban/unban with `BAN_MEMBERS` / `UNBAN_MEMBERS` and target-role rules
-- TODO: decide whether this task also needs a banned-users list surface, or only ban from the active roster + a minimal unban entry point
+What changed:
+
+- Added `GET /api/groups/{groupId}/bans` (requires `UNBAN_MEMBERS`) so the UI can show who is banned.
+- Added frontend API helpers for ban, list bans, and unban.
+- Added a Ban action on manageable roster rows with confirmation and optional reason (`BAN_MEMBERS` + target-role rules).
+- Added a Banned users section in group details with Unban + confirmation (`UNBAN_MEMBERS`).
+- Icon-only ban/kick/unban controls expose `title` and `aria-label` for hover/accessibility.
 
 #### Task 9.3: Leave Group
 

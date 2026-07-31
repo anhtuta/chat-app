@@ -26,6 +26,7 @@ interface GroupMemberListProps {
   currentUsername?: string | null;
   currentUserRole?: string | null;
   currentUserPermissions?: string[];
+  onMemberBanned?: () => void;
 }
 
 function GroupMemberList({
@@ -34,6 +35,7 @@ function GroupMemberList({
   currentUsername,
   currentUserRole,
   currentUserPermissions = [],
+  onMemberBanned,
 }: GroupMemberListProps) {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -212,6 +214,11 @@ function GroupMemberList({
                   onMemberKickedOut={(userId) => {
                     setMembers((previous) => previous.filter((item) => item.userId !== userId));
                     setTotalElements((previous) => Math.max(0, previous - 1));
+                  }}
+                  onMemberBanned={(userId) => {
+                    setMembers((previous) => previous.filter((item) => item.userId !== userId));
+                    setTotalElements((previous) => Math.max(0, previous - 1));
+                    onMemberBanned?.();
                   }}
                   onError={setError}
                 />

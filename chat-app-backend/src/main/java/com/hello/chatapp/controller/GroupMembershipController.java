@@ -3,6 +3,7 @@ package com.hello.chatapp.controller;
 import com.hello.chatapp.dto.AddGroupMemberRequest;
 import com.hello.chatapp.dto.BanGroupMemberRequest;
 import com.hello.chatapp.dto.CreateGroupJoinLinkRequest;
+import com.hello.chatapp.dto.GroupBanResponse;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
@@ -104,6 +105,13 @@ public class GroupMembershipController {
                 groupId,
                 userId,
                 request.getRole()));
+    }
+
+    @GetMapping("/{groupId}/bans")
+    public ResponseEntity<List<GroupBanResponse>> listBans(
+            @PathVariable Long groupId,
+            HttpSession session) {
+        return ResponseEntity.ok(groupMembershipService.listBans(getAuthenticatedUser(session), groupId));
     }
 
     @PostMapping("/{groupId}/bans")

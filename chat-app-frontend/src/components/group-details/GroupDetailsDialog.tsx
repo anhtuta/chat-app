@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import { getGroupDetails, updateGroupDetails } from "../../services/api";
 import type { ChatGroup } from "../../types/groups";
+import GroupBannedMemberList from "./GroupBannedMemberList";
 import GroupMemberList from "./GroupMemberList";
 import GroupProfileSection from "./GroupProfileSection";
 import GroupRolePermissionsSection from "./GroupRolePermissionsSection";
@@ -39,6 +40,7 @@ function GroupDetailsDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const [bannedReloadToken, setBannedReloadToken] = useState(0);
 
   useEffect(() => {
     if (!open) {
@@ -92,6 +94,7 @@ function GroupDetailsDialog({
 
   const permissions = groupDetails?.currentUserPermissions || [];
   const canManageGroupDetails = permissions.includes("MANAGE_GROUP_DETAILS");
+  const canUnbanMembers = permissions.includes("UNBAN_MEMBERS");
   const normalizedName = groupName.trim();
   const normalizedDescription = description.trim();
   const normalizedDescriptionOrNull = normalizedDescription ? normalizedDescription : null;
@@ -185,6 +188,14 @@ function GroupDetailsDialog({
                 currentUsername={currentUsername}
                 currentUserRole={groupDetails?.currentUserRole}
                 currentUserPermissions={permissions}
+                onMemberBanned={() => setBannedReloadToken((previous) => previous + 1)}
+              />
+
+              <GroupBannedMemberList
+                open={open}
+                groupId={groupId}
+                canUnban={canUnbanMembers}
+                reloadToken={bannedReloadToken}
               />
             </div>
           )}

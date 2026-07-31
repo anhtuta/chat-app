@@ -11,8 +11,10 @@ import {
   IconButton,
   ListItem,
   ListItemText,
+  TextField,
   Typography,
 } from "@mui/material";
+import BlockOutlinedIcon from "@mui/icons-material/BlockOutlined";
 import KickOutOutlinedIcon from "@mui/icons-material/PersonRemoveOutlined";
 import type { GroupMember } from "../../types/groups";
 import {
@@ -21,7 +23,8 @@ import {
   normalizeGroupRole,
 } from "../../utils/groupRoles";
 import { formatAbsoluteTimeVi } from "../../utils/dateUtils";
-import { kickGroupMember } from "../../services/api";
+import { banGroupMember, kickGroupMember } from "../../services/api";
+import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 
 interface GroupMemberListItemProps {
   groupId: number | string;
@@ -30,6 +33,7 @@ interface GroupMemberListItemProps {
   currentUserRole?: string | null;
   currentUserPermissions?: string[];
   onMemberKickedOut?: (userId: number) => void;
+  onMemberBanned?: (userId: number) => void;
   onError?: (message: string) => void;
 }
 
@@ -40,10 +44,14 @@ function GroupMemberListItem({
   currentUserRole,
   currentUserPermissions = [],
   onMemberKickedOut,
+  onMemberBanned,
   onError,
 }: GroupMemberListItemProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [kickConfirmOpen, setKickConfirmOpen] = useState(false);
+  const [banConfirmOpen, setBanConfirmOpen] = useState(false);
+  const [banReason, setBanReason] = useState("");
   const [isKickingOut, setIsKickingOut] = useState(false);
+  const [isBanning, setIsBanning] = useState(false);
 
   const isSelf = Boolean(currentUsername && member.username === currentUsername);
   const isLeader = normalizeGroupRole(member.role) === "LEADER";
@@ -55,19 +63,43 @@ function GroupMemberListItem({
     targetRole: member.role,
     requiredPermission: "KICK_MEMBERS",
   });
+  const canBan = canPreviewManageTarget({
+    actorUsername: currentUsername,
+    actorRole: currentUserRole,
+    actorPermissions: currentUserPermissions,
+    targetUsername: member.username,
+    targetRole: member.role,
+    requiredPermission: "BAN_MEMBERS",
+  });
   const displayName = member.fullname?.trim() || member.username;
+  const actionCount = (canKick ? 1 : 0) + (canBan ? 1 : 0);
 
   const handleConfirmKickOut = async () => {
     setIsKickingOut(true);
     try {
       await kickGroupMember(groupId, member.userId);
-      setConfirmOpen(false);
+      setKickConfirmOpen(false);
       onMemberKickedOut?.(member.userId);
     } catch (kickOutError: unknown) {
       console.error("Error kicking out group member:", kickOutError);
       onError?.(kickOutError instanceof Error ? kickOutError.message : "Failed to kick out group member");
     } finally {
       setIsKickingOut(false);
+    }
+  };
+
+  const handleConfirmBan = async () => {
+    setIsBanning(true);
+    try {
+      await banGroupMember(groupId, member.userId, banReason);
+      setBanConfirmOpen(false);
+      setBanReason("");
+      onMemberBanned?.(member.userId);
+    } catch (banError: unknown) {
+      console.error("Error banning group member:", banError);
+      onError?.(banError instanceof Error ? banError.message : "Failed to ban group member");
+    } finally {
+      setIsBanning(false);
     }
   };
 
@@ -79,7 +111,7 @@ function GroupMemberListItem({
         sx={{
           px: 1.5,
           py: 1.25,
-          pr: canKick ? 14 : 12,
+          pr: actionCount > 0 ? 10 + actionCount * 4 : 12,
         }}
         secondaryAction={
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -89,13 +121,26 @@ function GroupMemberListItem({
               color={isLeader ? "secondary" : "default"}
               className="group-details-chip"
             />
+            {canBan ? (
+              <IconButton
+                edge="end"
+                title={`Ban ${displayName}`}
+                aria-label={`Ban ${displayName}`}
+                onClick={() => setBanConfirmOpen(true)}
+                size="small"
+                disabled={isBanning || isKickingOut}
+              >
+                <BlockOutlinedIcon fontSize="small" />
+              </IconButton>
+            ) : null}
             {canKick ? (
               <IconButton
                 edge="end"
+                title={`Kick out ${displayName}`}
                 aria-label={`Kick out ${displayName}`}
-                onClick={() => setConfirmOpen(true)}
+                onClick={() => setKickConfirmOpen(true)}
                 size="small"
-                disabled={isKickingOut}
+                disabled={isKickingOut || isBanning}
               >
                 <KickOutOutlinedIcon fontSize="small" />
               </IconButton>
@@ -136,7 +181,7 @@ function GroupMemberListItem({
         />
       </ListItem>
 
-      <Dialog open={confirmOpen} onClose={isKickingOut ? undefined : () => setConfirmOpen(false)}>
+      <Dialog open={kickConfirmOpen} onClose={isKickingOut ? undefined : () => setKickConfirmOpen(false)}>
         <DialogTitle>Kick out member?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -145,11 +190,44 @@ function GroupMemberListItem({
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)} disabled={isKickingOut}>
+          <Button onClick={() => setKickConfirmOpen(false)} disabled={isKickingOut}>
             Cancel
           </Button>
           <Button onClick={handleConfirmKickOut} color="error" variant="contained" disabled={isKickingOut}>
             {isKickingOut ? "Kicking out..." : "Kick out"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={banConfirmOpen}
+        onClose={isBanning ? undefined : () => setBanConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ban member?</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Ban {displayName} (@{member.username}) from this group? They will be removed and cannot rejoin
+            until unbanned.
+          </DialogContentText>
+          <TextField
+            fullWidth
+            size="small"
+            label="Reason (optional)"
+            value={banReason}
+            onChange={(event) => setBanReason(event.target.value)}
+            disabled={isBanning}
+            slotProps={{ htmlInput: { maxLength: 500 } }}
+            sx={groupDetailsTextFieldSx}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBanConfirmOpen(false)} disabled={isBanning}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmBan} color="error" variant="contained" disabled={isBanning}>
+            {isBanning ? "Banning..." : "Ban"}
           </Button>
         </DialogActions>
       </Dialog>

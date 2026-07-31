@@ -3,6 +3,7 @@ package com.hello.chatapp.service;
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.SystemEventType;
+import com.hello.chatapp.dto.GroupBanResponse;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
@@ -184,6 +185,16 @@ public class GroupMembershipService {
         groupParticipantRepository.delete(targetParticipant);
         systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor,
                 SystemEventType.USER_KICKED);
+    }
+
+    @Transactional(readOnly = true)
+    public List<GroupBanResponse> listBans(User actor, Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        // Banned roster is for unban/moderation; BAN_MEMBERS and UNBAN_MEMBERS travel together in the matrix.
+        groupAuthorizationService.requireActivePermission(actor, safeGroupId, GroupPermission.UNBAN_MEMBERS);
+        return groupBanRepository.findByGroupIdWithUsers(safeGroupId).stream()
+                .map(GroupBanResponse::fromBan)
+                .toList();
     }
 
     @Transactional

@@ -3,6 +3,7 @@ package com.hello.chatapp.service;
 import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.SystemEventType;
+import com.hello.chatapp.dto.GroupBanResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
 import com.hello.chatapp.entity.Group;
@@ -237,6 +238,29 @@ class GroupMembershipServiceTest {
         assertThat(savedBan.getBannedBy()).isSameAs(actor);
         assertThat(savedBan.getReason()).isEqualTo("spam");
         verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_BANNED);
+    }
+
+    @Test
+    void listBans_requiresUnbanPermissionAndMapsResponses() {
+        GroupBan ban = new GroupBan();
+        ban.setGroup(group);
+        ban.setUser(targetUser);
+        ban.setBannedBy(actor);
+        ban.setReason("spam");
+        ban.setBannedAt(LocalDateTime.now().minusHours(1));
+
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.UNBAN_MEMBERS))
+                .thenReturn(group);
+        when(groupBanRepository.findByGroupIdWithUsers(100L)).thenReturn(List.of(ban));
+
+        List<GroupBanResponse> bans = groupMembershipService.listBans(actor, 100L);
+
+        assertThat(bans).hasSize(1);
+        assertThat(bans.get(0).getUserId()).isEqualTo(2L);
+        assertThat(bans.get(0).getUsername()).isEqualTo("bob");
+        assertThat(bans.get(0).getBannedByUsername()).isEqualTo("alice");
+        assertThat(bans.get(0).getReason()).isEqualTo("spam");
+        verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.UNBAN_MEMBERS);
     }
 
     @Test

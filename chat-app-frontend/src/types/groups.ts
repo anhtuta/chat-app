@@ -29,6 +29,16 @@ export interface GroupMemberPage {
   hasNext: boolean;
 }
 
+export interface GroupBan {
+  userId: number;
+  username: string;
+  fullname?: string | null;
+  reason?: string | null;
+  bannedAt?: string | null;
+  bannedByUserId?: number | null;
+  bannedByUsername?: string | null;
+}
+
 export interface SelectableUser {
   id: number;
   username: string;

@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 @Repository
 public interface GroupBanRepository extends JpaRepository<GroupBan, Long> {
     boolean existsByGroupAndUser(Group group, User user);
@@ -19,4 +21,13 @@ public interface GroupBanRepository extends JpaRepository<GroupBan, Long> {
             WHERE gb.group.id = :groupId AND gb.user.id = :userId
             """)
     java.util.Optional<GroupBan> findByGroupIdAndUserId(@Param("groupId") Long groupId, @Param("userId") Long userId);
+
+    @Query("""
+            SELECT gb FROM GroupBan gb
+            JOIN FETCH gb.user
+            JOIN FETCH gb.bannedBy
+            WHERE gb.group.id = :groupId
+            ORDER BY gb.bannedAt DESC, gb.id DESC
+            """)
+    List<GroupBan> findByGroupIdWithUsers(@Param("groupId") Long groupId);
 }
