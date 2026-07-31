@@ -1,17 +1,15 @@
-import type { GroupRole } from "../types/groups";
-
-const ROLE_RANK: Record<string, number> = {
-  LEADER: 1,
-  CO_LEADER: 2,
-  ELDER: 3,
-  MEMBER: 4,
-};
+import {
+  GROUP_ROLES,
+  GROUP_ROLE_RANK,
+  isGroupRole,
+  type GroupRole,
+} from "../constant/groupRoles";
 
 export function getRoleRank(role: string | null | undefined): number {
-  if (!role) {
-    return ROLE_RANK.MEMBER;
+  if (!role || !isGroupRole(role)) {
+    return GROUP_ROLE_RANK[GROUP_ROLES.MEMBER];
   }
-  return ROLE_RANK[role] ?? ROLE_RANK.MEMBER;
+  return GROUP_ROLE_RANK[role];
 }
 
 /** Lower rank number means higher privilege (matches backend GroupRole). */
@@ -23,10 +21,10 @@ export function isSameOrHigherRole(
 }
 
 export function normalizeGroupRole(role: string | null | undefined): GroupRole {
-  if (role === "LEADER" || role === "CO_LEADER" || role === "ELDER" || role === "MEMBER") {
+  if (isGroupRole(role)) {
     return role;
   }
-  return "MEMBER";
+  return GROUP_ROLES.MEMBER;
 }
 
 export function formatGroupRoleLabel(role: string | null | undefined): string {
@@ -80,7 +78,7 @@ export function canPreviewManageTarget({
   if (actorUsername && targetUsername && actorUsername === targetUsername) {
     return false;
   }
-  if (normalizeGroupRole(targetRole) === "LEADER") {
+  if (normalizeGroupRole(targetRole) === GROUP_ROLES.LEADER) {
     return false;
   }
   return isSameOrHigherRole(actorRole, targetRole);

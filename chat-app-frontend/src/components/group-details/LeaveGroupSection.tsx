@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import ExitToAppOutlinedIcon from "@mui/icons-material/ExitToAppOutlined";
 import { getGroupMembers, leaveGroup } from "../../services/api";
+import { GROUP_ROLES } from "../../constant/groupRoles";
 import { normalizeGroupRole } from "../../utils/groupRoles";
 
 interface LeaveGroupSectionProps {
@@ -36,7 +37,7 @@ function LeaveGroupSection({
   const [memberCount, setMemberCount] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  const isLeader = normalizeGroupRole(currentUserRole) === "LEADER";
+  const isLeader = normalizeGroupRole(currentUserRole) === GROUP_ROLES.LEADER;
   const mustTransferFirst = isLeader && memberCount !== null && memberCount > 1;
   const isLastMember = memberCount !== null && memberCount <= 1;
   const canConfirmLeave = !isCheckingConstraints && !mustTransferFirst && (!isLeader || memberCount !== null);

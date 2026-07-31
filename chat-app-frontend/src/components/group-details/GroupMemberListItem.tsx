@@ -22,6 +22,7 @@ import {
   formatGroupRoleLabel,
   normalizeGroupRole,
 } from "../../utils/groupRoles";
+import { GROUP_ROLES } from "../../constant/groupRoles";
 import { formatAbsoluteTimeVi } from "../../utils/dateUtils";
 import { banGroupMember, kickGroupMember } from "../../services/api";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
@@ -54,7 +55,7 @@ function GroupMemberListItem({
   const [isBanning, setIsBanning] = useState(false);
 
   const isSelf = Boolean(currentUsername && member.username === currentUsername);
-  const isLeader = normalizeGroupRole(member.role) === "LEADER";
+  const isLeader = normalizeGroupRole(member.role) === GROUP_ROLES.LEADER;
   const canKick = canPreviewManageTarget({
     actorUsername: currentUsername,
     actorRole: currentUserRole,

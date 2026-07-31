@@ -11,6 +11,7 @@ import {
   MESSAGE_TYPES,
 } from "./mediaUtils";
 import { formatAbsoluteTimeVi, formatRelativeTime } from "../../utils/dateUtils";
+import { SYSTEM_EVENT_TYPES } from "../../constant/systemEventTypes";
 
 function getDisplayUserName(user) {
   if (!user) {
@@ -24,27 +25,27 @@ function formatStructuredSystemMessage(message) {
   const subjectName = getDisplayUserName(message.user);
 
   switch (message.systemEventType) {
-    case "USER_JOINED":
+    case SYSTEM_EVENT_TYPES.USER_JOINED:
       return actorName === subjectName ? `${subjectName} has joined the group` : `${actorName} has added ${subjectName}`;
-    case "USER_LEFT":
+    case SYSTEM_EVENT_TYPES.USER_LEFT:
       return `${subjectName} has left the group`;
-    case "USER_KICKED":
+    case SYSTEM_EVENT_TYPES.USER_KICKED:
       return `${subjectName} has been kicked out of the group by ${actorName}`;
-    case "USER_BANNED":
+    case SYSTEM_EVENT_TYPES.USER_BANNED:
       return `${subjectName} has been banned by ${actorName}`;
-    case "USER_UNBANNED":
+    case SYSTEM_EVENT_TYPES.USER_UNBANNED:
       return `${subjectName} has been unbanned by ${actorName}`;
-    case "USER_PROMOTED":
+    case SYSTEM_EVENT_TYPES.USER_PROMOTED:
       return `${actorName} promoted ${subjectName}`;
-    case "USER_DEMOTED":
+    case SYSTEM_EVENT_TYPES.USER_DEMOTED:
       return `${actorName} demoted ${subjectName}`;
-    case "LEADERSHIP_TRANSFERRED":
+    case SYSTEM_EVENT_TYPES.LEADERSHIP_TRANSFERRED:
       return `${actorName} transferred leadership to ${subjectName}`;
-    case "GROUP_NAME_UPDATED":
+    case SYSTEM_EVENT_TYPES.GROUP_NAME_UPDATED:
       return `${actorName} updated the group name`;
-    case "GROUP_DESCRIPTION_UPDATED":
+    case SYSTEM_EVENT_TYPES.GROUP_DESCRIPTION_UPDATED:
       return `${actorName} updated the group description`;
-    case "GROUP_ARCHIVED":
+    case SYSTEM_EVENT_TYPES.GROUP_ARCHIVED:
       return `${actorName} archived the group`;
     default:
       return message.content || "System event";

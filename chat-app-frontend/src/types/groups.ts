@@ -1,4 +1,6 @@
-export type GroupRole = "LEADER" | "CO_LEADER" | "ELDER" | "MEMBER";
+import type { GroupRole } from "../constant/groupRoles";
+
+export type { GroupRole };
 
 export interface ChatGroup {
   id: number;

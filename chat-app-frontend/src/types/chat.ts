@@ -1,18 +1,9 @@
+import type { SystemEventType } from "../constant/systemEventTypes";
+
 export type ChatScope = "PUBLIC" | "GROUP";
 
 export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "FILE" | "SYSTEM";
-export type SystemEventType =
-  | "USER_JOINED"
-  | "USER_LEFT"
-  | "USER_KICKED"
-  | "USER_BANNED"
-  | "USER_UNBANNED"
-  | "USER_PROMOTED"
-  | "USER_DEMOTED"
-  | "LEADERSHIP_TRANSFERRED"
-  | "GROUP_NAME_UPDATED"
-  | "GROUP_DESCRIPTION_UPDATED"
-  | "GROUP_ARCHIVED";
+export type { SystemEventType };
 
 export type MediaMessageType = Extract<MessageType, "IMAGE" | "VIDEO" | "AUDIO" | "FILE">;
 

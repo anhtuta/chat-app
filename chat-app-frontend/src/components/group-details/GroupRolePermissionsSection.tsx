@@ -1,5 +1,6 @@
 import React from "react";
 import { Box, Chip, Stack, Typography } from "@mui/material";
+import { GROUP_ROLES } from "../../constant/groupRoles";
 
 interface GroupRolePermissionsSectionProps {
   currentUserRole?: string | null;
@@ -27,7 +28,7 @@ function GroupRolePermissionsSection({
             Your role
           </Typography>
           <Chip
-            label={currentUserRole || "MEMBER"}
+            label={currentUserRole || GROUP_ROLES.MEMBER}
             size="small"
             className="group-details-chip"
           />
