@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Box } from "@mui/material";
 import Sidebar from "../components/Sidebar";
 import ChatArea from "../components/ChatArea";
@@ -19,6 +19,11 @@ interface GroupMessageCursor {
   id: number;
 }
 
+interface ChatPageLocationState {
+  joinedViaLink?: boolean;
+  groupName?: string;
+}
+
 interface ChatPageProps {
   username: string | null;
   onLogout: () => void | Promise<void>;
@@ -35,6 +40,7 @@ function ChatPage({
   themeOptions,
 }: ChatPageProps) {
   const GROUP_PAGE_SIZE = 10;
+  const MAX_TITLE_LENGTH = 50;
 
   const toEpochMillis = (value: string | null | undefined): number => {
     if (!value) {
@@ -45,7 +51,9 @@ function ChatPage({
   };
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { groupId } = useParams<{ groupId?: string }>();
+  const locationState = (location.state || {}) as ChatPageLocationState;
 
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [currentChatId, setCurrentChatId] = useState<ChatRouteId>("public");
@@ -89,6 +97,11 @@ function ChatPage({
     nextMessages[existingIndex] = incomingMessage;
     return nextMessages;
   };
+
+  useEffect(() => {
+    const title = currentChatName.length > MAX_TITLE_LENGTH ? currentChatName.substring(0, MAX_TITLE_LENGTH) + "..." : currentChatName;
+    document.title = `${title} | Chat App`;
+  }, [currentChatName])
 
   // Load groups once on mount; cleanup any active subscription on unmount
   useEffect(() => {
@@ -207,7 +220,10 @@ function ChatPage({
     }
 
     const group = groupsRef.current.find((g) => Number(g.id) === numericId);
-    switchToChat(numericId, group?.name || `Group ${numericId}`);
+    switchToChat(
+      numericId,
+      group?.name || locationState.groupName || `Group ${numericId}`,
+    );
     // groupsRef is stable; switchToChat is intentionally omitted to avoid re-syncing on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to URL param changes
   }, [groupId]);
@@ -375,14 +391,14 @@ function ChatPage({
     setGroups((previousGroups) => previousGroups.map((group) => (
       Number(group.id) === Number(updatedGroup.id)
         ? {
-            ...group,
-            ...updatedGroup,
-            // Prefer caller-specific fields from details refresh when present (e.g. after leadership transfer).
-            unreadCount: updatedGroup.unreadCount ?? group.unreadCount,
-            currentUserRole: updatedGroup.currentUserRole ?? group.currentUserRole,
-            currentUserPermissions:
-              updatedGroup.currentUserPermissions ?? group.currentUserPermissions,
-          }
+          ...group,
+          ...updatedGroup,
+          // Prefer caller-specific fields from details refresh when present (e.g. after leadership transfer).
+          unreadCount: updatedGroup.unreadCount ?? group.unreadCount,
+          currentUserRole: updatedGroup.currentUserRole ?? group.currentUserRole,
+          currentUserPermissions:
+            updatedGroup.currentUserPermissions ?? group.currentUserPermissions,
+        }
         : group
     )));
 
@@ -410,6 +426,7 @@ function ChatPage({
           currentChatId={currentChatId}
           onChatSelect={handleChatNavigate}
           onCreateGroupClick={() => setShowCreateGroupModal(true)}
+          onJoinGroupClick={() => navigate("/join")}
           selectedThemeId={selectedThemeId}
           onThemeChange={onThemeChange}
           themeOptions={themeOptions}

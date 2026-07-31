@@ -22,7 +22,7 @@ function RegisterPage() {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        document.title = "Register - Chat App";
+        document.title = "Register | Chat App";
     }, []);
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

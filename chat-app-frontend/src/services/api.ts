@@ -372,6 +372,31 @@ export async function revokeGroupJoinLink(
 }
 
 /**
+ * Join a group using a join-link token.
+ * Returns membership details including groupId/groupName for navigation.
+ */
+export async function joinGroupByToken(token: string): Promise<GroupMember> {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) {
+    throw new Error("Join token is required");
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/groups/join-links/${encodeURIComponent(normalizedToken)}/join`,
+    {
+      method: "POST",
+      credentials: "include",
+    },
+  );
+  if (response.ok) {
+    return response.json();
+  }
+  // Prefer body text so business-rule 403s (e.g. banned) surface in the UI
+  // instead of the generic auth redirect in handleErrorResponse.
+  throw new Error(await response.text() || "Failed to join group");
+}
+
+/**
  * Get public chat messages
  */
 export async function getPublicMessages(): Promise<ChatMessage[]> {

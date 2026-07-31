@@ -20,6 +20,8 @@ export interface GroupMember {
   fullname?: string | null;
   role: GroupRole | string;
   joinedAt?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
 }
 
 export interface GroupMemberPage {

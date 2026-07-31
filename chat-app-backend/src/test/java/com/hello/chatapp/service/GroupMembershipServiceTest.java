@@ -211,6 +211,8 @@ class GroupMembershipServiceTest {
 
         assertThat(response.getUserId()).isEqualTo(2L);
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
+        assertThat(response.getGroupId()).isEqualTo(100L);
+        assertThat(response.getGroupName()).isEqualTo("Backend Team");
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, targetUser, SystemEventType.USER_JOINED);
     }

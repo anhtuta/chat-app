@@ -31,6 +31,7 @@ import {
 } from "../../services/api";
 import type { GroupJoinLink } from "../../types/groups";
 import { formatAbsoluteTimeVi } from "../../utils/dateUtils";
+import { buildJoinLinkUrl } from "../../utils/joinLinks";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 
 type ExpiryOption = "none" | "1d" | "7d" | "30d";
@@ -139,11 +140,11 @@ function GroupJoinLinksSection({
 
   const handleCopyToken = async (token: string) => {
     try {
-      await navigator.clipboard.writeText(token);
-      setCopyFeedback("Token copied");
+      await navigator.clipboard.writeText(buildJoinLinkUrl(token));
+      setCopyFeedback("Join link copied");
     } catch (copyError: unknown) {
-      console.error("Error copying join token:", copyError);
-      setError("Failed to copy token");
+      console.error("Error copying join link:", copyError);
+      setError("Failed to copy join link");
     }
   };
 
@@ -180,8 +181,8 @@ function GroupJoinLinksSection({
         Join links
       </Typography>
       <Typography variant="body2" className="group-details-muted-text" sx={{ mb: 1.5 }}>
-        Create a shareable token others can use to join. The raw token is shown only when you create
-        a link; copy it before closing this dialog.
+        Create a shareable join link others can open. The raw token is shown only when you create a
+        link; copy the full URL before closing this dialog.
       </Typography>
 
       {error ? (
@@ -227,19 +228,19 @@ function GroupJoinLinksSection({
       {newlyCreatedLink?.token ? (
         <Alert severity="info" sx={{ mb: 2 }}>
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
-            New join token (copy now)
+            New join link (copy now)
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
             <Typography
               variant="body2"
               sx={{ fontFamily: "monospace", wordBreak: "break-all", flex: 1 }}
             >
-              {newlyCreatedLink.token}
+              {buildJoinLinkUrl(newlyCreatedLink.token)}
             </Typography>
             <IconButton
               size="small"
-              title="Copy join token"
-              aria-label="Copy join token"
+              title="Copy join link"
+              aria-label="Copy join link"
               onClick={() => {
                 void handleCopyToken(newlyCreatedLink.token as string);
               }}
@@ -273,8 +274,8 @@ function GroupJoinLinksSection({
                         <IconButton
                           edge="end"
                           size="small"
-                          title="Copy join token"
-                          aria-label="Copy join token"
+                          title="Copy join link"
+                          aria-label="Copy join link"
                           onClick={() => {
                             void handleCopyToken(link.token as string);
                           }}

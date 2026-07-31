@@ -15,9 +15,10 @@ import { login } from "../services/api";
 
 interface LoginPageProps {
     onLoginSuccess: (username: string) => void;
+    redirectTo?: string | null;
 }
 
-function LoginPage({ onLoginSuccess }: LoginPageProps) {
+function LoginPage({ onLoginSuccess, redirectTo = null }: LoginPageProps) {
     const navigate = useNavigate();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -25,7 +26,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        document.title = "Login - Chat App";
+        document.title = "Login | Chat App";
     }, []);
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -42,7 +43,7 @@ function LoginPage({ onLoginSuccess }: LoginPageProps) {
             const result = await login(username.trim(), password);
             if (result.success) {
                 onLoginSuccess(result.username ?? username.trim());
-                navigate("/group/public", { replace: true });
+                navigate(redirectTo || "/group/public", { replace: true });
             } else {
                 setError(result.message || "Login failed");
             }

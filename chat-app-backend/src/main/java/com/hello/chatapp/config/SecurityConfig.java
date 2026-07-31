@@ -35,7 +35,7 @@ public class SecurityConfig {
                                 "/", "/index.html", "/manifest.json", "/asset-manifest.json", "/favicon.ico",
                                 "/*.js", "/*.css", "/*.json", "/*.ico", "/*.png", "/*.svg", "/*.jpg",
                                 "/*.jpeg", "/*.gif", "/*.woff", "/*.woff2", "/*.ttf", "/*.eot",
-                                "/static/**", "/login", "/register", "/group/**")
+                                "/static/**", "/login", "/register", "/join", "/join/**", "/group/**")
                         .permitAll()
                         // Protected APIs and WebSocket endpoints
                         .requestMatchers("/api/**").authenticated()

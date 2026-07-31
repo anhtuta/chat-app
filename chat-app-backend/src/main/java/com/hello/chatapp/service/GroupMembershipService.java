@@ -165,6 +165,7 @@ public class GroupMembershipService {
         Long groupId = Objects.requireNonNull(group.getId());
         groupAuthorizationService.requireNotBanned(user, groupId);
 
+        // If they're already a participant, no new row is saved and no USER_JOINED system message is recorded
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
                 .map(GroupMemberResponse::fromParticipant)
                 .orElseGet(() -> {

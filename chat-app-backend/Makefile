@@ -2,7 +2,7 @@
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
 .PHONY: stop restart restart.be2 logs clean status check.env check.env.local
 .PHONY: db.migrate db.info db.clean db.repair
-.PHONY: test.be test.be.ut test.be.it test.e2e
+.PHONY: test.be test.be.ut test.be.it test.fe test.e2e
 
 .DEFAULT_GOAL := help
 
@@ -119,6 +119,10 @@ test.be.ut:
 test.be.it:
 	@echo "🚀 Running backend integration tests..."
 	./mvnw failsafe:integration-test
+
+test.fe:
+	@echo "🚀 Running frontend tests..."
+	@cd ../chat-app-frontend && npm test
 
 # Used by Cursor "Debug Backend (make run.be)" launch config.
 # Ensures .env.local exists and compiles with the same env vars as make run.be.

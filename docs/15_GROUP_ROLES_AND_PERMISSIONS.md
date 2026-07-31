@@ -923,7 +923,7 @@ Why this phase exists:
 
 ### Phase 10: Join Link Management And Self-Join UI
 
-Status: In progress.
+Status: Implemented.
 
 What should change:
 
@@ -946,12 +946,16 @@ What changed:
 
 #### Task 10.2: Join Group Via Link
 
-Status: Planned.
+Status: Implemented.
 
-- `POST /api/groups/join-links/{token}/join`
-- Join from a token entry point (paste token / join screen / URL, whichever the product keeps)
-- Handle already-a-member, banned, expired, revoked, and archived-group rejection UX
-- After a successful join, open or select the group in the sidebar
+What changed:
+
+- Join response now includes `groupId` / `groupName` so the UI can open the joined group.
+- Added `joinGroupByToken` FE helper for `POST /api/groups/join-links/{token}/join`.
+- Added `/join` and `/join/:token` entry points with paste-token UX; unauthenticated users are sent to login with a safe redirect back to the join URL.
+- Sidebar “Join with link” opens the join screen; successful joins navigate to `/group/{groupId}`.
+- Create/manage join links now copy a full `/join/{token}` share URL.
+- Error bodies for banned/expired/revoked/archived cases are shown in the join UI.
 
 Why this phase exists:
 
