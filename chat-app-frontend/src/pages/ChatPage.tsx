@@ -7,6 +7,7 @@ import CreateGroupModal from "../components/CreateGroupModal";
 import GroupDetailsDialog from "../components/group-details/GroupDetailsDialog";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
 import { useWebSocket } from "../context/WebSocketProvider";
+import { buildLatestMessagePreviewFromMessage } from "../utils/messageModeration";
 import type { ChatMessage } from "../types/chat";
 import type { ChatGroup } from "../types/groups";
 import type { ThemeId, ThemeOption } from "../types/theme";
@@ -383,6 +384,45 @@ function ChatPage({
     setMessages((prev) => upsertMessage(prev, message));
   };
 
+  const handleMessageModerated = (updatedMessage: ChatMessage | null | undefined) => {
+    if (!updatedMessage) {
+      return;
+    }
+
+    const targetChatId = updatedMessage.groupId === undefined || updatedMessage.groupId === null
+      ? "public"
+      : Number(updatedMessage.groupId);
+    if (currentChatIdRef.current !== targetChatId) {
+      return;
+    }
+
+    setMessages((prev) => upsertMessage(prev, updatedMessage));
+
+    if (updatedMessage.groupId === undefined || updatedMessage.groupId === null) {
+      return;
+    }
+
+    const moderatedGroupId = Number(updatedMessage.groupId);
+    const moderatedTimestamp = toEpochMillis(updatedMessage.timestamp);
+    setGroups((prev) => prev.map((group) => {
+      if (Number(group.id) !== moderatedGroupId) {
+        return group;
+      }
+
+      const currentLatestTimestamp = toEpochMillis(group.latestMessageAt);
+      if (moderatedTimestamp < currentLatestTimestamp) {
+        return group;
+      }
+
+      return {
+        ...group,
+        latestMessage: buildLatestMessagePreviewFromMessage(updatedMessage),
+        latestMessageSender: updatedMessage.user?.username || group.latestMessageSender,
+        latestMessageAt: updatedMessage.timestamp ?? group.latestMessageAt,
+      };
+    }));
+  };
+
   const handleChatNavigate = (chatId: ChatRouteId) => {
     navigate(`/group/${chatId}`);
   };
@@ -443,6 +483,7 @@ function ChatPage({
           username={username}
           onSendMessage={sendMessage}
           onMediaMessageDelivered={handleMediaMessageDelivered}
+          onMessageModerated={handleMessageModerated}
           onLoadOlderMessages={loadOlderGroupMessages}
           onOpenGroupDetails={() => setShowGroupDetailsDialog(true)}
           onLogout={onLogout}

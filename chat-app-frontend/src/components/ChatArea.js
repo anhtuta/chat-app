@@ -24,6 +24,7 @@ function ChatArea({
   username,
   onSendMessage,
   onMediaMessageDelivered,
+  onMessageModerated,
   onLoadOlderMessages,
   onOpenGroupDetails,
   onLogout,
@@ -414,12 +415,14 @@ function ChatArea({
           messagesEndRef={messagesEndRef}
           messages={displayMessages}
           username={username}
+          currentUserPermissions={currentGroup?.currentUserPermissions}
           isLoading={isLoading}
           isLoadingOlder={isLoadingOlder}
           onScroll={handleMessagesScroll}
           onRetryPendingMessage={handleRetryPendingMedia}
           onCancelPendingMessage={handleCancelPendingMedia}
           onDismissPendingMessage={removePendingMessage}
+          onMessageModerated={onMessageModerated}
         />
         <ChatMessageComposer
           onSendMessage={handleSendText}

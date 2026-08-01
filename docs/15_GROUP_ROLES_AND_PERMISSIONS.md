@@ -965,29 +965,32 @@ Why this phase exists:
 
 ### Phase 11: Message Moderation UI
 
-TODO review this phase first, do not let AI implement it now!
+Status: Implemented.
 
-Status: Planned.
+What changed:
 
-What should change:
+- Added message action UI on chat bubbles for:
+  - edit own text messages
+  - delete own text or media messages
+  - leader/co-leader moderation via `EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`
+- Added inline edit UX with save/cancel and error feedback.
+- Added delete confirmation before soft-deleting a message.
+- After successful edit/delete, locally updates the open message list and refreshes the group latest-message sidebar preview when the moderated message is current/latest.
+- Shows `(edited)` / `(edited by …)` markers using existing Phase 6 response metadata.
 
-- Add message action UI backed by:
-  - `PATCH /api/messages/{messageId}`
-  - `DELETE /api/messages/{messageId}`
-- Support:
-  - edit own text message
-  - delete own text or media message
-  - leader/co-leader moderation actions for allowed target messages
-- Add inline edit UX with save/cancel/error feedback.
-- After successful moderation, refresh or locally update the current message list so the user can immediately see:
-  - edited state
-  - deleted placeholder
-  - latest-message summary changes
+Why it changed:
 
-Why this phase exists:
+- Phase 6 already exposed the moderation APIs; the product needed a normal UI path to exercise edit/delete before realtime work.
 
-- Phase 6 already built the backend moderation behavior, but there is no UI to trigger it yet.
-- This should be implemented before realtime so we can manually test moderation flows in the normal product UI first.
+API/contract/config impacts:
+
+- Frontend now calls `PATCH /api/messages/{messageId}` and `DELETE /api/messages/{messageId}` from the chat message menu.
+- No backend contract changes were required beyond Phase 6.
+
+Rollout, migration, and backward-compatibility notes:
+
+- No schema migration was needed.
+- Older clients remain compatible; they simply will not show message action menus until updated.
 
 ### Phase 12: Real-Time Notifications
 
