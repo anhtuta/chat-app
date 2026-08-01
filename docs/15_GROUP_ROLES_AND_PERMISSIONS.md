@@ -495,7 +495,7 @@ Recommendation path:
 9. Phase 9: Build membership-management UI for add, kick, ban, unban, promote, demote, transfer-leadership, and leave-group flows from the Phase 3 APIs.
 10. Phase 10: Build join-link management and self-join UI on top of the Phase 3 join-link APIs.
 11. Phase 11: Build message moderation UI for edit/delete on top of `PATCH /api/messages/{messageId}` and `DELETE /api/messages/{messageId}`.
-12. Phase 12: Re-introduce real-time notifications only after the above UI exists and can be manually exercised.
+12. Phase 12: Re-introduce real-time notifications only after the above UI exists and can be manually exercised, split into membership, role, profile, moderation, access-revocation, and archived-group tasks.
 13. Phase 13: Add integration/E2E tests for the role matrix, edge cases, UI flows, and realtime behavior.
 
 ## Implementation details
@@ -994,26 +994,109 @@ Rollout, migration, and backward-compatibility notes:
 
 ### Phase 12: Real-Time Notifications
 
-TODO review this phase first, do not let AI implement it now!
+Status: Planned.
+
+What should change:
+
+- Re-introduce WebSocket updates for the finished UI flows from Phases 7-11, split into smaller tasks by event domain.
+- Keep the implementation intentionally smaller than the reverted attempt: only add the realtime paths needed by those finished UI flows.
+- Prefer publishing after the existing REST/service mutations succeed, so each task can be manually exercised from the current UI.
+- Personal topic subscription validation (`/topic/user.{username}.group-updates` must match the authenticated username) was already added in Phase 2; Phase 12 should rely on that rather than rebuild it.
+
+Tasks:
+
+#### Task 12.1: Membership Change Notifications
 
 Status: Planned.
 
 What should change:
 
-- Re-introduce WebSocket updates for:
-  - membership changes
-  - role changes
-  - group-profile changes
-  - visible system-message changes
-- Ensure kicked or banned users stop receiving group summary updates.
-- Validate personal WebSocket topic subscription by authenticated username.
-- Ensure archived groups no longer accept sends, joins, or subscriptions.
-- Keep the implementation intentionally smaller than the reverted attempt: only add the realtime paths needed by the finished UI flows from Phases 7-11.
+- Publish realtime updates when membership changes from the Phase 9/10 flows:
+  - add member
+  - kick
+  - ban / unban
+  - leave
+  - join via link
+- Online clients should update without refresh:
+  - sidebar group list / membership presence where relevant
+  - open group chat when the corresponding structured `SYSTEM` message is created
+- Removed or newly banned users must stop receiving that group's personal summary updates as part of this path (shared with Task 12.5 if the revocation helper is extracted there first).
+
+#### Task 12.2: Role Change Notifications
+
+Status: Planned.
+
+What should change:
+
+- Publish realtime updates when roles change:
+  - promote / demote (`PATCH .../role`)
+  - leadership transfer
+- Online clients should update without refresh:
+  - member-role visibility where the roster is open
+  - current-user role/permissions when the actor or target is affected
+  - open group chat when the corresponding structured `SYSTEM` message is created
+
+#### Task 12.3: Group Profile Change Notifications
+
+Status: Planned.
+
+What should change:
+
+- Publish realtime updates when group profile metadata changes:
+  - group name
+  - group description
+  - archive (when triggered by last-member leave or explicit archive paths already in the product)
+- Online clients should update without refresh:
+  - sidebar group name / ordering cues where relevant
+  - open group details / header
+  - open group chat when the corresponding structured `SYSTEM` message is created
+
+#### Task 12.4: Message Moderation Notifications
+
+Status: Planned.
+
+What should change:
+
+- Publish realtime updates for Phase 11 moderation actions:
+  - text message edit (`PATCH /api/messages/{messageId}`)
+  - soft delete (`DELETE /api/messages/{messageId}`)
+- Online clients in the open chat should upsert the moderated message (edited state or deleted placeholder) without refresh.
+- When the moderated message is the group's latest message, fan out an updated group-summary preview on the personal topic path.
+
+#### Task 12.5: Access Revocation For Removed Or Banned Users
+
+Status: Planned.
+
+What should change:
+
+- Ensure kicked or banned users stop receiving:
+  - personal group-summary updates for that group
+  - further useful realtime delivery on `/topic/group.{groupId}` for that group
+- Validate subscribe/send authorization continues to reject removed/banned users via `GroupAuthorizationService`.
+- Keep this task focused on revocation semantics so Tasks 12.1-12.4 can reuse one clear rule instead of ad hoc per-event cleanup.
+
+#### Task 12.6: Archived Group Realtime Guards
+
+Status: Planned.
+
+What should change:
+
+- Ensure archived groups no longer accept:
+  - WebSocket sends
+  - WebSocket subscriptions to the group topic
+  - joins that would re-open active realtime participation
+- Align archived-group rejection behavior with the existing REST/join guards so REST and realtime stay consistent.
+
+Out of scope for Phase 12:
+
+- Broad redesign of group-summary fan-out scaling (see `11_GROUP_SUMMARY_UPDATE_FANOUT_SCALING.md`)
+- Full E2E/realtime matrix coverage (Phase 13)
+- Rebuilding personal-topic username validation already delivered in Phase 2
 
 Why this phase exists:
 
 - Realtime is much easier to validate once each underlying action already has a working UI path.
-- This reduces the risk of building a long/complex realtime layer before we even know how the product wants each action to feel.
+- Splitting by membership, roles, profile, moderation, revocation, and archive guards keeps each task independently reviewable and reduces the risk of rebuilding the previously reverted large realtime layer all at once.
 
 ### Phase 13: Tests
 
