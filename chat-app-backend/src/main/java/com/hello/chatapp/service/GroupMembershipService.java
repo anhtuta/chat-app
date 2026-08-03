@@ -11,6 +11,7 @@ import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
 import com.hello.chatapp.entity.GroupJoinLink;
 import com.hello.chatapp.entity.GroupParticipant;
+import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
@@ -53,6 +54,7 @@ public class GroupMembershipService {
     private final GroupJoinLinkRepository groupJoinLinkRepository;
     private final GroupRepository groupRepository;
     private final SystemMessageService systemMessageService;
+    private final GroupMembershipRealtimePublisher membershipRealtimePublisher;
     private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -63,6 +65,7 @@ public class GroupMembershipService {
             GroupJoinLinkRepository groupJoinLinkRepository,
             GroupRepository groupRepository,
             SystemMessageService systemMessageService,
+            GroupMembershipRealtimePublisher membershipRealtimePublisher,
             UserRepository userRepository) {
         this.groupAuthorizationService = groupAuthorizationService;
         this.groupParticipantRepository = groupParticipantRepository;
@@ -70,6 +73,7 @@ public class GroupMembershipService {
         this.groupJoinLinkRepository = groupJoinLinkRepository;
         this.groupRepository = groupRepository;
         this.systemMessageService = systemMessageService;
+        this.membershipRealtimePublisher = membershipRealtimePublisher;
         this.userRepository = userRepository;
     }
 
@@ -121,7 +125,7 @@ public class GroupMembershipService {
         GroupParticipant participant = new GroupParticipant(group, target);
         participant.setRole(GroupRole.MEMBER);
         GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_JOINED);
+        publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
         return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
@@ -172,7 +176,7 @@ public class GroupMembershipService {
                     GroupParticipant participant = new GroupParticipant(group, user);
                     participant.setRole(GroupRole.MEMBER);
                     GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-                    systemMessageService.recordGroupEvent(group, user, user, SystemEventType.USER_JOINED);
+                    publishMembershipEvent(group, user, user, SystemEventType.USER_JOINED, null);
                     return GroupMemberResponse.fromParticipant(savedParticipant);
                 });
     }
@@ -193,9 +197,11 @@ public class GroupMembershipService {
         groupAuthorizationService.requireCanManageTarget(actor, groupId, loadUser(userId), GroupPermission.KICK_MEMBERS);
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         ensureActive(targetParticipant.getGroup());
+        User targetUser = targetParticipant.getUser();
+        Group group = targetParticipant.getGroup();
+        String removedUsername = targetUser.getUsername();
         groupParticipantRepository.delete(targetParticipant);
-        systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor,
-                SystemEventType.USER_KICKED);
+        publishMembershipEvent(group, targetUser, actor, SystemEventType.USER_KICKED, removedUsername);
     }
 
     @Transactional(readOnly = true)
@@ -217,10 +223,13 @@ public class GroupMembershipService {
         }
         validateBanReason(reason);
 
-        groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).ifPresent(participant -> {
-            groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.BAN_MEMBERS);
-            groupParticipantRepository.delete(Objects.requireNonNull(participant));
-        });
+        String removedUsername = groupParticipantRepository.findByGroupIdAndUserId(groupId, userId)
+                .map(participant -> {
+                    groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.BAN_MEMBERS);
+                    groupParticipantRepository.delete(Objects.requireNonNull(participant));
+                    return target.getUsername();
+                })
+                .orElse(null);
 
         if (groupBanRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already banned from this group");
@@ -232,7 +241,7 @@ public class GroupMembershipService {
         ban.setBannedBy(actor);
         ban.setReason(reason);
         groupBanRepository.save(ban);
-        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_BANNED);
+        publishMembershipEvent(group, target, actor, SystemEventType.USER_BANNED, removedUsername);
     }
 
     @Transactional
@@ -241,7 +250,7 @@ public class GroupMembershipService {
         GroupBan ban = groupBanRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new NotFoundException("Ban not found"));
         groupBanRepository.delete(Objects.requireNonNull(ban));
-        systemMessageService.recordGroupEvent(group, ban.getUser(), actor, SystemEventType.USER_UNBANNED);
+        publishMembershipEvent(group, ban.getUser(), actor, SystemEventType.USER_UNBANNED, null);
     }
 
     @Transactional
@@ -309,10 +318,45 @@ public class GroupMembershipService {
         }
 
         groupParticipantRepository.delete(participant);
-        systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT);
+        publishMembershipEvent(group, actor, actor, SystemEventType.USER_LEFT, actor.getUsername());
         if (memberCount <= 1) {
-            systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED);
+            // Archive system line is part of last-member leave; profile-wide archive paths stay in Task 12.3.
+            publishMembershipEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED, null);
         }
+    }
+
+    /**
+     * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
+     * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
+     *
+     * <p>Realtime effects:
+     * <ul>
+     *   <li>push the system message to {@code /topic/group.{groupId}}</li>
+     *   <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
+     *   <li>when {@code removedUsername} is set, immediately notify that user with
+     *       {@code removed=true} so their sidebar drops the group</li>
+     * </ul>
+     *
+     * @param group the group where the membership event occurred
+     * @param subjectUser the user the event is about (e.g. joined, kicked, banned)
+     * @param actor the user who performed the action (may be the same as {@code subjectUser})
+     * @param eventType stable system event stored on the message and used for the sidebar preview
+     * @param removedUsername username to receive a personal {@code removed} update
+     *        (kick / ban of a participant / leave); {@code null} when nobody should be removed
+     *        from their own sidebar (e.g. add, join, unban)
+     */
+    private void publishMembershipEvent(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String removedUsername) {
+        Message systemMessage = systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType);
+        membershipRealtimePublisher.publishMembershipChange(
+                group,
+                systemMessage,
+                eventType.latestPreview(),
+                removedUsername);
     }
 
     private User loadUser(Long userId) {

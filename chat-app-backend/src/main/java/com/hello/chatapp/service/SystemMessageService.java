@@ -44,23 +44,6 @@ public class SystemMessageService {
                 group,
                 subjectUser,
                 actor,
-                eventType,
-                buildLatestPreview(eventType));
-    }
-
-    private String buildLatestPreview(SystemEventType eventType) {
-        return switch (eventType) {
-            case USER_JOINED -> "Member joined";
-            case USER_LEFT -> "Member left";
-            case USER_KICKED -> "Member removed";
-            case USER_BANNED -> "Member banned";
-            case USER_UNBANNED -> "Member unbanned";
-            case USER_PROMOTED -> "Member promoted";
-            case USER_DEMOTED -> "Member demoted";
-            case LEADERSHIP_TRANSFERRED -> "Leadership transferred";
-            case GROUP_NAME_UPDATED -> "Group name updated";
-            case GROUP_DESCRIPTION_UPDATED -> "Group description updated";
-            case GROUP_ARCHIVED -> "Group archived";
-        };
+                eventType);
     }
 }

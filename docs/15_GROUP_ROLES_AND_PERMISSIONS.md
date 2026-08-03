@@ -56,6 +56,7 @@ Target-role rules:
 - A user cannot kick, ban, promote, or demote themselves. A leader stepping down must use the leadership-transfer flow.
 - A banned user cannot rejoin the group until manually unbanned.
 - A kicked user can rejoin if they receive or still have a valid join path and are not banned.
+- Ban = block, unban = unblock, kick = remove.
 
 ### Group Creation And Membership
 
@@ -1007,20 +1008,39 @@ Tasks:
 
 #### Task 12.1: Membership Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when membership changes from the Phase 9/10 flows:
+- Added `GroupMembershipRealtimePublisher` to publish membership events **after commit**:
+  - structured `SYSTEM` `MessageResponse` to `/topic/group.{groupId}` (local + RabbitMQ)
+  - sidebar `GroupSummaryUpdate` fan-out to remaining members (includes group `name` + System latest preview)
+  - immediate personal `removed` update to kicked/banned/leaving users via new `GroupSummaryUpdatePublisher.publishToUser`
+- Wired membership mutations in `GroupMembershipService`:
   - add member
+  - join via link (new join only)
   - kick
   - ban / unban
-  - leave
-  - join via link
-- Online clients should update without refresh:
-  - sidebar group list / membership presence where relevant
-  - open group chat when the corresponding structured `SYSTEM` message is created
-- Removed or newly banned users must stop receiving that group's personal summary updates as part of this path (shared with Task 12.5 if the revocation helper is extracted there first).
+  - leave (including last-member `GROUP_ARCHIVED` system line)
+- Frontend `GroupSummaryUpdate` now accepts `removed`, `name`, and related fields.
+- `ChatPage` sidebar handler:
+  - drops groups on `removed` and navigates to public when that chat is open
+  - inserts unknown groups on add/join summary updates so the joiner sidebar updates without refresh
+- Open group chats already upsert incoming topic messages, so membership `SYSTEM` lines appear live once published.
+
+Why it changed:
+
+- Phase 9/10 membership UI already mutated state over REST; online peers still needed WebSocket delivery for chat lines and sidebar membership presence.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal topic payload may now include `removed=true` and `name` for membership-driven summary updates.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore unknown `GroupSummaryUpdate` fields remain compatible; they simply will not drop/insert sidebar rows until updated.
+- Force-closing an already-open `/topic/group.{id}` subscription for removed users remains Task 12.5.
 
 #### Task 12.2: Role Change Notifications
 

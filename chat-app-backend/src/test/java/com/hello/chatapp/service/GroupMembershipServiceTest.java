@@ -11,6 +11,7 @@ import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
 import com.hello.chatapp.entity.GroupJoinLink;
 import com.hello.chatapp.entity.GroupParticipant;
+import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.repository.GroupBanRepository;
 import com.hello.chatapp.repository.GroupJoinLinkRepository;
@@ -66,6 +67,9 @@ class GroupMembershipServiceTest {
     private SystemMessageService systemMessageService;
 
     @Mock
+    private GroupMembershipRealtimePublisher membershipRealtimePublisher;
+
+    @Mock
     private UserRepository userRepository;
 
     @InjectMocks
@@ -74,6 +78,7 @@ class GroupMembershipServiceTest {
     private Group group;
     private User actor;
     private User targetUser;
+    private Message systemMessage;
 
     @BeforeEach
     void setUp() {
@@ -90,6 +95,16 @@ class GroupMembershipServiceTest {
         targetUser.setId(2L);
         targetUser.setUsername("bob");
         targetUser.setFullname("Bob Builder");
+
+        systemMessage = new Message();
+        systemMessage.setId(900L);
+        systemMessage.setGroup(group);
+        systemMessage.setUser(targetUser);
+        systemMessage.setTimestamp(LocalDateTime.now());
+    }
+
+    private void stubMembershipRealtime(SystemEventType eventType, User subject, User eventActor) {
+        when(systemMessageService.recordGroupEvent(group, subject, eventActor, eventType)).thenReturn(systemMessage);
     }
 
     @Test
@@ -168,6 +183,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
 
         GroupMemberResponse response = groupMembershipService.addMember(actor, 100L, 2L);
 
@@ -183,6 +199,8 @@ class GroupMembershipServiceTest {
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_JOINED);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
     }
 
     @Test
@@ -198,6 +216,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, targetUser);
 
         GroupMemberResponse response = groupMembershipService.joinByToken(targetUser, "join-token");
 
@@ -215,6 +234,8 @@ class GroupMembershipServiceTest {
         assertThat(response.getGroupName()).isEqualTo("Backend Team");
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, targetUser, SystemEventType.USER_JOINED);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
     }
 
     @Test
@@ -249,6 +270,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(targetParticipant));
         when(groupBanRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupBanRepository.save(any(GroupBan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        stubMembershipRealtime(SystemEventType.USER_BANNED, targetUser, actor);
 
         groupMembershipService.banMember(actor, 100L, 2L, "spam");
 
@@ -263,6 +285,8 @@ class GroupMembershipServiceTest {
         assertThat(savedBan.getBannedBy()).isSameAs(actor);
         assertThat(savedBan.getReason()).isEqualTo("spam");
         verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_BANNED);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.USER_BANNED.latestPreview(), "bob");
     }
 
     @Test
@@ -318,6 +342,8 @@ class GroupMembershipServiceTest {
 
         when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(participant);
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
+        when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT)).thenReturn(systemMessage);
+        when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED)).thenReturn(systemMessage);
 
         groupMembershipService.leaveGroup(actor, 100L);
 
@@ -328,5 +354,9 @@ class GroupMembershipServiceTest {
         verify(groupParticipantRepository).delete(participant);
         verify(systemMessageService).recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT);
         verify(systemMessageService).recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.USER_LEFT.latestPreview(), "alice");
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.GROUP_ARCHIVED.latestPreview(), null);
     }
 }

@@ -146,9 +146,9 @@ public class MessageService {
             Group group,
             User subjectUser,
             User actor,
-            SystemEventType eventType,
-            String latestPreview) {
+            SystemEventType eventType) {
         Long groupId = Objects.requireNonNull(group.getId());
+        SystemEventType safeEventType = Objects.requireNonNull(eventType, "eventType must not be null");
         Group existingGroup = groupRepository.findById(groupId)
                 .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
 
@@ -157,12 +157,12 @@ public class MessageService {
         message.setUpdatedBy(actor);
         message.setGroup(existingGroup);
         message.setMessageType(MessageType.SYSTEM);
-        message.setContent(Objects.requireNonNull(eventType, "eventType must not be null").name());
+        message.setContent(safeEventType.name());
 
         Message savedMessage = messageRepository.saveAndFlush(message);
         updateLatestMessageSummary(
                 groupId,
-                latestPreview,
+                safeEventType.latestPreview(),
                 "System",
                 savedMessage.getTimestamp(),
                 Objects.requireNonNull(savedMessage.getId()));
