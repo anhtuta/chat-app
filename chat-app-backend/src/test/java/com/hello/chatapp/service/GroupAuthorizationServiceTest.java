@@ -132,10 +132,41 @@ class GroupAuthorizationServiceTest {
     }
 
     @Test
-    void requireCanEditMessage_allowsOwnerEditingOwnTextMessage() {
+    void requireCanEditMessage_allowsOwnerEditingOwnPublicTextMessage() {
         Message message = buildMessage(actor, null, MessageType.TEXT);
 
         groupAuthorizationService.requireCanEditMessage(actor, message);
+    }
+
+    @Test
+    void requireCanEditMessage_allowsOwnerEditingOwnGroupTextMessageWhenStillMember() {
+        Message message = buildMessage(actor, group, MessageType.TEXT);
+        stubMembership(actor, buildParticipant(group, actor, GroupRole.MEMBER));
+
+        groupAuthorizationService.requireCanEditMessage(actor, message);
+    }
+
+    @Test
+    void requireCanEditMessage_rejectsOwnerEditingOwnGroupTextMessageAfterKick() {
+        Message message = buildMessage(actor, group, MessageType.TEXT);
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(false);
+        when(groupParticipantRepository.findByGroupIdAndUser(100L, actor)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanEditMessage(actor, message))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You are not a member of this group");
+    }
+
+    @Test
+    void requireCanEditMessage_rejectsOwnerEditingOwnGroupTextMessageWhenBanned() {
+        Message message = buildMessage(actor, group, MessageType.TEXT);
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanEditMessage(actor, message))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You are banned from this group");
+
+        verifyNoInteractions(groupParticipantRepository);
     }
 
     @Test
@@ -163,6 +194,29 @@ class GroupAuthorizationServiceTest {
         assertThatThrownBy(() -> groupAuthorizationService.requireCanDeleteMessage(actor, message))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessage("You can only delete your own public messages");
+    }
+
+    @Test
+    void requireCanDeleteMessage_rejectsOwnerDeletingOwnGroupMessageAfterKick() {
+        Message message = buildMessage(actor, group, MessageType.TEXT);
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(false);
+        when(groupParticipantRepository.findByGroupIdAndUser(100L, actor)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanDeleteMessage(actor, message))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You are not a member of this group");
+    }
+
+    @Test
+    void requireCanDeleteMessage_rejectsOwnerDeletingOwnGroupMessageWhenBanned() {
+        Message message = buildMessage(actor, group, MessageType.TEXT);
+        when(groupBanRepository.existsByGroup_IdAndUser_Id(100L, 1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanDeleteMessage(actor, message))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You are banned from this group");
+
+        verifyNoInteractions(groupParticipantRepository);
     }
 
     @Test

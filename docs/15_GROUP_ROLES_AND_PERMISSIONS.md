@@ -92,8 +92,10 @@ This is better than hard delete because message history, media references, unrea
 
 ### Message Editing And Deletion
 
-- All roles can edit their own text messages.
-- All roles can delete their own text or media messages.
+- Active (non-banned) members can edit their own text messages.
+- Active (non-banned) members can delete their own text or media messages.
+- Kicked or banned users cannot edit or delete their old group messages (membership is required even for own-message actions).
+- Public chat messages can still be edited/deleted by their owner without a group membership check.
 - `LEADER` and `CO_LEADER` can edit another user's text messages.
 - `LEADER` and `CO_LEADER` can delete another user's text or media messages.
 - No role can edit media messages. Media messages can only be deleted.
@@ -569,8 +571,7 @@ What changed:
   - `requireMember(user, groupId)`
   - `requirePermission(user, groupId, permission)`
   - `requireCanManageTarget(actor, groupId, target, permission)`
-  - `requireCanEditMessage(user, message)`
-  - `requireCanDeleteMessage(user, message)`
+  - `requireCanEditMessage(user, message)` / `requireCanDeleteMessage(user, message)`: for group messages, require active (non-banned) membership even when the actor owns the message; public messages remain owner-only.
   - `requireNotBanned(user, groupId)`
   - `requireUserTopicAccess(user, topicUsername)`
 - Replaced direct membership checks with `GroupAuthorizationService` in:
@@ -1093,6 +1094,7 @@ What should change:
   - personal group-summary updates for that group
   - further useful realtime delivery on `/topic/group.{groupId}` for that group
 - Validate subscribe/send authorization continues to reject removed/banned users via `GroupAuthorizationService`.
+- Validate message edit/delete authorization rejects removed/banned users even for their own old group messages (`requireCanEditMessage` / `requireCanDeleteMessage` require membership).
 - Keep this task focused on revocation semantics so Tasks 12.1-12.4 can reuse one clear rule instead of ad hoc per-event cleanup.
 
 #### Task 12.6: Archived Group Realtime Guards

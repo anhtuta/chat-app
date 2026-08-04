@@ -145,10 +145,11 @@ public class GroupAuthorizationService {
      * Ensures the user may edit the given message.
      * How it works:
      * 1. Only {@link MessageType#TEXT} messages are editable.
-     * 2. The message owner may always edit their own text message.
-     * 3. For someone else's message: must be a group message, and the actor needs
-     * {@link GroupPermission#EDIT_ANY_TEXT_MESSAGE} (leader / co-leader).
-     * 4. Public (non-group) messages can only be edited by their owner.
+     * 2. Public (non-group) messages: owner only.
+     * 3. Group messages: actor must be an active (non-banned) member.
+     *    The owner may then edit their own text; otherwise the actor needs
+     *    {@link GroupPermission#EDIT_ANY_TEXT_MESSAGE} (leader / co-leader).
+     *    Kicked or banned users cannot mutate old group messages.
      *
      * @throws BadRequestException if the message is not text
      * @throws ForbiddenException if the actor is not allowed to edit it
@@ -160,25 +161,32 @@ public class GroupAuthorizationService {
         if (nonNullMessage.getMessageType() != MessageType.TEXT) {
             throw new BadRequestException("Only text messages can be edited");
         }
-        if (isMessageOwner(actor, nonNullMessage)) {
-            return;
-        }
 
         Group group = nonNullMessage.getGroup();
         if (group == null) {
-            throw new ForbiddenException("You can only edit your own public messages");
+            if (!isMessageOwner(actor, nonNullMessage)) {
+                throw new ForbiddenException("You can only edit your own public messages");
+            }
+            return;
         }
 
-        requirePermission(actor, Objects.requireNonNull(group.getId()), GroupPermission.EDIT_ANY_TEXT_MESSAGE);
+        Long groupId = Objects.requireNonNull(group.getId(), "group.id must not be null");
+        if (isMessageOwner(actor, nonNullMessage)) {
+            requireMember(actor, groupId);
+            return;
+        }
+
+        requirePermission(actor, groupId, GroupPermission.EDIT_ANY_TEXT_MESSAGE);
     }
 
     /**
      * Ensures the user may delete the given message.
      * How it works:
-     * 1. The message owner may always delete their own message (text or media).
-     * 2. For someone else's message: must be a group message, and the actor needs
-     * {@link GroupPermission#DELETE_ANY_MESSAGE} (leader / co-leader).
-     * 3. Public (non-group) messages can only be deleted by their owner.
+     * 1. Public (non-group) messages: owner only.
+     * 2. Group messages: actor must be an active (non-banned) member.
+     *    The owner may then delete their own message (text or media); otherwise the actor needs
+     *    {@link GroupPermission#DELETE_ANY_MESSAGE} (leader / co-leader).
+     *    Kicked or banned users cannot mutate old group messages.
      *
      * @throws ForbiddenException if the actor is not allowed to delete it
      */
@@ -186,16 +194,21 @@ public class GroupAuthorizationService {
         Message nonNullMessage = Objects.requireNonNull(message, "message must not be null");
         User actor = Objects.requireNonNull(user, "user must not be null");
 
-        if (isMessageOwner(actor, nonNullMessage)) {
+        Group group = nonNullMessage.getGroup();
+        if (group == null) {
+            if (!isMessageOwner(actor, nonNullMessage)) {
+                throw new ForbiddenException("You can only delete your own public messages");
+            }
             return;
         }
 
-        Group group = nonNullMessage.getGroup();
-        if (group == null) {
-            throw new ForbiddenException("You can only delete your own public messages");
+        Long groupId = Objects.requireNonNull(group.getId(), "group.id must not be null");
+        if (isMessageOwner(actor, nonNullMessage)) {
+            requireMember(actor, groupId);
+            return;
         }
 
-        requirePermission(actor, Objects.requireNonNull(group.getId()), GroupPermission.DELETE_ANY_MESSAGE);
+        requirePermission(actor, groupId, GroupPermission.DELETE_ANY_MESSAGE);
     }
 
     /**
