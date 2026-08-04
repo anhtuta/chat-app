@@ -585,3 +585,46 @@ Summary:
 4. Browser loads JS; React Router reads `/join/123` and shows `JoinGroupPage`
 
 **Redirect vs forward:** no `302` to `/index.html`. The browser address bar stays `/join/123`, which is what BrowserRouter needs.
+
+## Explain a JPA query
+
+Code:
+
+```java
+// chat-app-backend/src/main/java/com/hello/chatapp/repository/MessageRepository.java
+@EntityGraph(attributePaths = {"user", "updatedBy", "deletedBy", "attachments"})
+Optional<Message> findTopByGroup_IdOrderByTimestampDescIdDesc(Long groupId);
+```
+
+Inferred from the method name + `@EntityGraph`:
+
+```sql
+SELECT
+  m.*,
+  u.*,
+  ub.*,
+  db.*,
+  mm.*
+FROM messages m
+LEFT JOIN users u  ON m.user_id = u.id
+LEFT JOIN users ub ON m.updated_by = ub.id
+LEFT JOIN users db ON m.deleted_by = db.id
+LEFT JOIN message_media mm ON mm.message_id = m.id
+WHERE m.group_id = :groupId
+ORDER BY m.timestamp DESC, m.id DESC
+LIMIT 1
+```
+
+Breakdown:
+
+| Method part                                                 | SQL                                        |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| `findTop`                                                   | `LIMIT 1`                                  |
+| `ByGroup_Id`                                                | `WHERE m.group_id = ?`                     |
+| `OrderByTimestampDescIdDesc`                                | `ORDER BY m.timestamp DESC, m.id DESC`     |
+| `@EntityGraph(... user, updatedBy, deletedBy, attachments)` | eager `LEFT JOIN`s onto those associations |
+
+Notes:
+
+- `group` is **not** in the entity graph here (unlike `findWithMediaById`), so `groups` is not joined — only the FK `group_id` is filtered.
+- Hibernate may emit aliases/`DISTINCT` and, for the `attachments` bag, sometimes a **second** select instead of one join (to avoid cartesian product with `LIMIT 1`). The SQL above is the logical equivalent, not a guaranteed single Hibernate plan.
