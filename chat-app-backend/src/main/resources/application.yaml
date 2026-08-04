@@ -61,7 +61,7 @@ server:
   port: 9010
   servlet:
     session:
-      timeout: 1800 # If a duration suffix is not specified, seconds is used.
+      timeout: 43200 # If a duration suffix is not specified, seconds is used.
 
 logging:
   level:

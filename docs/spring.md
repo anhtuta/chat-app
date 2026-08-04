@@ -540,3 +540,29 @@ Other solutions:
 
 1. Split transactions: Persist in a `REQUIRES_NEW` method so it commits first, then enqueue in the outer flow. Works, but easier to get wrong than `afterCommit`.
 2. Retry on `NotFoundException` in the async worker.
+
+## A sample request flow in Spring Boot
+
+Request flow for `http://localhost:9010/join/123`:
+
+- `SecurityConfig` does **not** redirect `/join/123` to `index.html`. It only allows that URL without login.
+- The SPA fallback is in `WebMvcConfig`, which **forwards** (not redirects) to `/index.html`.
+
+Note (by Google AI):
+
+- In Spring MVC, a forward is a purely internal server-side operation that keeps the browser's original URL unchanged
+- A redirect sends an HTTP response telling the browser to issue a completely new request to a different URL
+
+For `/join/123` specifically
+
+- Request is allowed anonymously. Security then steps aside; it does not rewrite or serve HTML.
+- `/join/123` matches `/join/{path:[^\\.]*}` (`123` has no `.`), so Spring **internally forwards** to `/index.html` (same request, URL stays `/join/123`). That file comes from `classpath:/static/index.html`.
+
+Summary:
+
+1. Security: `/join/**` → `permitAll` → continue
+2. MVC: view controller matches → `forward:/index.html`
+3. Static resource resolver serves `static/index.html`
+4. Browser loads JS; React Router reads `/join/123` and shows `JoinGroupPage`
+
+**Redirect vs forward:** no `302` to `/index.html`. The browser address bar stays `/join/123`, which is what BrowserRouter needs.

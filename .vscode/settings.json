@@ -17,6 +17,7 @@
         "springframework",
         "startuml",
         "Tuzaku",
+        "unban",
         "unsubscription"
     ],
     "java.compile.nullAnalysis.mode": "automatic",

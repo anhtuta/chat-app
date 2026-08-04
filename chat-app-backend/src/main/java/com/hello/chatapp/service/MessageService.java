@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
@@ -140,6 +141,34 @@ public class MessageService {
         return savedMessage;
     }
 
+    @Transactional
+    public Message saveGroupSystemMessage(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String latestPreview) {
+        Long groupId = Objects.requireNonNull(group.getId());
+        Group existingGroup = groupRepository.findById(groupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
+
+        Message message = new Message();
+        message.setUser(Objects.requireNonNull(subjectUser, "subjectUser must not be null"));
+        message.setUpdatedBy(actor);
+        message.setGroup(existingGroup);
+        message.setMessageType(MessageType.SYSTEM);
+        message.setContent(Objects.requireNonNull(eventType, "eventType must not be null").name());
+
+        Message savedMessage = messageRepository.saveAndFlush(message);
+        updateLatestMessageSummary(
+                groupId,
+                latestPreview,
+                "System",
+                savedMessage.getTimestamp(),
+                Objects.requireNonNull(savedMessage.getId()));
+        return savedMessage;
+    }
+
     public static String buildLatestMessagePreview(String content) {
         if (content == null) {
             return null;
@@ -155,6 +184,9 @@ public class MessageService {
         if (message == null) {
             return null;
         }
+        if (message.getDeletedAt() != null) {
+            return "Message deleted";
+        }
         MessageType messageType = message.getMessageType();
         if (messageType == null || messageType == MessageType.TEXT || messageType == MessageType.SYSTEM) {
             return buildLatestMessagePreview(message.getContent());
@@ -169,6 +201,47 @@ public class MessageService {
                     : buildLatestMessagePreview(message.getAttachments().getFirst().getOriginalFilename());
             default -> buildLatestMessagePreview(message.getContent());
         };
+    }
+
+    @Transactional
+    public void refreshGroupLatestMessage(Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        Group group = groupRepository.findById(safeGroupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
+
+        java.util.Optional<Message> latestMessage = messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(safeGroupId);
+        if (latestMessage.isEmpty()) {
+            group.setLatestMessage(null);
+            group.setLatestMessageSender(null);
+            group.setLatestMessageAt(null);
+            groupRepository.save(group);
+            return;
+        }
+
+        Message latest = latestMessage.get();
+        group.setLatestMessage(buildLatestMessagePreview(latest));
+        group.setLatestMessageSender(latest.getMessageType() == MessageType.SYSTEM ? "System" : latest.getUser().getUsername());
+        group.setLatestMessageAt(latest.getTimestamp());
+        groupRepository.save(group);
+    }
+
+    private void updateLatestMessageSummary(
+            Long groupId,
+            String latestMessagePreview,
+            String latestMessageSender,
+            java.time.LocalDateTime latestMessageAt,
+            Long messageId) {
+        int rowsUpdated = groupRepository.updateLatestMessageIfNewer(
+                groupId,
+                latestMessagePreview,
+                latestMessageSender,
+                latestMessageAt,
+                messageId);
+
+        if (rowsUpdated == 0) {
+            logger.debug("Skipped latest-message update for group {} because a newer/equal latest message already exists",
+                    groupId);
+        }
     }
 
     private void attachMedia(Message message, List<MessageMedia> attachments) {

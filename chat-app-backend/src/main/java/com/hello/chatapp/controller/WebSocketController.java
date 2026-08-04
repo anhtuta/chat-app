@@ -1,5 +1,6 @@
 package com.hello.chatapp.controller;
 
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageRequest;
@@ -7,10 +8,7 @@ import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
-import com.hello.chatapp.exception.ForbiddenException;
-import com.hello.chatapp.exception.NotFoundException;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
+import com.hello.chatapp.service.GroupAuthorizationService;
 import com.hello.chatapp.service.GroupSummaryUpdatePublisher;
 import com.hello.chatapp.service.MessageService;
 import org.slf4j.Logger;
@@ -31,21 +29,18 @@ public class WebSocketController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketController.class);
 
-    private final GroupRepository groupRepository;
-    private final GroupParticipantRepository groupParticipantRepository;
+    private final GroupAuthorizationService groupAuthorizationService;
     private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
     private final MessageService messageService;
     private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
-    public WebSocketController(GroupRepository groupRepository,
-            GroupParticipantRepository groupParticipantRepository,
+    public WebSocketController(GroupAuthorizationService groupAuthorizationService,
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
             MessageService messageService,
             GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
-        this.groupRepository = groupRepository;
-        this.groupParticipantRepository = groupParticipantRepository;
+        this.groupAuthorizationService = groupAuthorizationService;
         this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
         this.messageService = messageService;
@@ -158,18 +153,11 @@ public class WebSocketController {
      * Validates that a group exists and that the user is a member of the group.
      * 
      * @throws IllegalArgumentException if the group ID is null
-     * @throws NotFoundException if the group is not found
-     * @throws ForbiddenException if the user is not a member of the group
      */
-    private Group validateGroup(Long groupId, User user) throws NotFoundException, ForbiddenException {
+    private Group validateGroup(Long groupId, User user) {
         if (groupId == null) {
             throw new IllegalArgumentException("Group ID is required for group messages");
         }
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-            throw new ForbiddenException("You are not a member of this group");
-        }
-        return group;
+        return groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.SEND_MESSAGES);
     }
 }

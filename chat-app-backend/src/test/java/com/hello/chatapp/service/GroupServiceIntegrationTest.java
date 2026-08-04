@@ -24,7 +24,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-@Import(GroupService.class)
+@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class, SystemMessageService.class})
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class GroupServiceIntegrationTest {
@@ -95,14 +95,11 @@ class GroupServiceIntegrationTest {
         groupParticipantRepository.saveAndFlush(participantC);
 
         Map<Long, Long> unreadByGroupId = groupService.getUnreadCountByGroupId(targetUser);
-        long totalUnreadCount = groupService.getTotalUnreadCount(targetUser);
 
         assertThat(unreadByGroupId)
                 .containsEntry(groupA.getId(), 2L)
                 .containsEntry(groupB.getId(), 0L)
                 .containsEntry(groupC.getId(), 0L);
-
-        assertThat(totalUnreadCount).isEqualTo(2L);
-        assertThat(totalUnreadCount).isEqualTo(unreadByGroupId.values().stream().mapToLong(Long::longValue).sum());
+        assertThat(unreadByGroupId.values().stream().mapToLong(count -> count).sum()).isEqualTo(2L);
     }
 }

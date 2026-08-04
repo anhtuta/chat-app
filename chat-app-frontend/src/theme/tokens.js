@@ -29,15 +29,6 @@ const THEME_PRESETS = {
             surface: "#A5D7E8",
         },
     },
-    mossNight: {
-        label: "Moss Night",
-        colors: {
-            primary: "#4E9F3D",
-            primaryDark: "#191A19",
-            primarySoft: "#1E5128",
-            surface: "#D8E9A8",
-        },
-    },
     darkSlate: {
         label: "Dark Slate",
         colors: {
@@ -47,15 +38,6 @@ const THEME_PRESETS = {
             surface: "#0F1419",
         },
     },
-    darkNeon: {
-        label: "Dark Neon",
-        colors: {
-            primary: "#FF006E",
-            primaryDark: "#0D0221",
-            primarySoft: "#3A0CA3",
-            surface: "#10002B",
-        },
-    },
     darkForest: {
         label: "Dark Forest",
         colors: {
@@ -63,15 +45,6 @@ const THEME_PRESETS = {
             primaryDark: "#0B3D2C",
             primarySoft: "#1B4332",
             surface: "#081B15",
-        },
-    },
-    darkOcean: {
-        label: "Dark Ocean",
-        colors: {
-            primary: "#00D9FF",
-            primaryDark: "#0B1929",
-            primarySoft: "#1A3A52",
-            surface: "#050E19",
         },
     },
     darkPurple: {

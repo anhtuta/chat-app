@@ -1,0 +1,17 @@
+---
+description: Global workspace routing rules for file edits
+alwaysApply: true
+---
+
+You must strictly adhere to the project architecture. Before modifying any files, check this map and read the referenced rule files if applicable:
+
+- IF modifying files in `chat-app-backend/**/*` -> Read following rule files:
+  - `.cursor/rules/avoid-race-conditions.instructions.mdc`
+  - `.cursor/rules/java-class-member-order.instructions.mdc`
+  - `.cursor/rules/maven-test-split.instructions.mdc`
+- IF modifying files in `chat-app-frontend/**/*` -> Read following rule files:
+  - `.cursor/rules/react-component-wrapper.instructions.mdc`
+  - `.cursor/rules/react-colocate-state.instructions.mdc`
+  - `.cursor/rules/react-interactive-titles.instructions.mdc`
+
+CRITICAL: If a matching rule file exists for your target directory, you MUST explicitly look up its contents before writing any code.

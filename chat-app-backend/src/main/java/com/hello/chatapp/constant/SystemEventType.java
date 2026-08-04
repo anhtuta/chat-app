@@ -1,0 +1,15 @@
+package com.hello.chatapp.constant;
+
+public enum SystemEventType {
+    USER_JOINED,
+    USER_LEFT,
+    USER_KICKED,
+    USER_BANNED,
+    USER_UNBANNED,
+    USER_PROMOTED,
+    USER_DEMOTED,
+    LEADERSHIP_TRANSFERRED,
+    GROUP_NAME_UPDATED,
+    GROUP_DESCRIPTION_UPDATED,
+    GROUP_ARCHIVED
+}

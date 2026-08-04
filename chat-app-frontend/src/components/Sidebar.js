@@ -14,6 +14,7 @@ import {
   MenuItem,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
 import "./Sidebar.css";
 import { useRef, useLayoutEffect } from "react";
 
@@ -23,6 +24,7 @@ function Sidebar({
   currentChatId,
   onChatSelect,
   onCreateGroupClick,
+  onJoinGroupClick,
   selectedThemeId,
   onThemeChange,
   themeOptions,
@@ -89,8 +91,20 @@ function Sidebar({
             fullWidth
             onClick={onCreateGroupClick}
             className="new-group-button"
+            title="Create group"
           >
             New Group
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<LinkOutlinedIcon />}
+            fullWidth
+            onClick={onJoinGroupClick}
+            className="join-group-button"
+            title="Join group with link"
+            sx={{ mt: 1 }}
+          >
+            Join with link
           </Button>
           <FormControl fullWidth size="small" className="theme-selector-form">
             <InputLabel id="theme-selector-label" className="theme-selector-label">

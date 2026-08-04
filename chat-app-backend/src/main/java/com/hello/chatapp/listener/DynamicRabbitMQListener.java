@@ -13,9 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Dynamic message listener that consumes from the per-instance inbound queue.
@@ -38,7 +38,7 @@ public class DynamicRabbitMQListener {
     private String instanceId;
 
     // Track active listeners: queueName -> MessageListenerContainer
-    private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
+    private final Map<String, SimpleMessageListenerContainer> activeListeners = new HashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
         this.connectionFactory = connectionFactory;

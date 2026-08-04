@@ -4,6 +4,7 @@ import com.hello.chatapp.config.MediaStorageProperties;
 import com.hello.chatapp.constant.MediaScanStatus;
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.User;
@@ -55,5 +56,38 @@ class MessageResponseMapperTest {
         assertThat(response.getAttachments()).hasSize(1);
         assertThat(response.getAttachments().getFirst().getContentUrl()).isNotBlank();
         assertThat(response.getAttachments().getFirst().getContentUrl()).contains("chat-media/media/1/photo.png");
+    }
+
+    @Test
+    void toResponse_mapsSystemEventMetadata() {
+        MediaStorageProperties properties = new MediaStorageProperties();
+        properties.setProvider(ObjectStorageProviderType.S3);
+
+        MessageResponseMapper mapper = new MessageResponseMapper(
+                new ObjectStorageProviderRegistry(
+                        List.of(new S3ObjectStorageProvider(properties)),
+                        properties));
+
+        User actor = new User("alice", "secret", "Alice");
+        actor.setId(1L);
+
+        User subject = new User("bob", "secret", "Bob");
+        subject.setId(2L);
+
+        Message message = new Message();
+        message.setId(12L);
+        message.setUser(subject);
+        message.setUpdatedBy(actor);
+        message.setMessageType(MessageType.SYSTEM);
+        message.setContent(SystemEventType.USER_LEFT.name());
+
+        MessageResponse response = mapper.toResponse(message);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getSystemEventType()).isEqualTo(SystemEventType.USER_LEFT);
+        assertThat(response.getSystemEventActor()).isNotNull();
+        assertThat(response.getSystemEventActor().getUsername()).isEqualTo("alice");
+        assertThat(response.getUser()).isNotNull();
+        assertThat(response.getUser().getUsername()).isEqualTo("bob");
     }
 }

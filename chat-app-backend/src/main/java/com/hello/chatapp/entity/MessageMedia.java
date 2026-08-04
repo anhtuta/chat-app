@@ -70,7 +70,7 @@ public class MessageMedia {
     private String checksumSha256;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 64)
+    @Column(name = "status", nullable = false, length = 64)
     private MediaStatus status = MediaStatus.UPLOAD_COMPLETED;
 
     @Enumerated(EnumType.STRING)

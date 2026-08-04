@@ -1,5 +1,5 @@
 ---
-description: React components must use a root wrapper div with a kebab-case -wrapper className
+description: Use when creating or editing React components (.js/.tsx) under chat-app-frontend. Every component return must wrap JSX in a single kebab-case `-wrapper` root div — even if nearby files omit it
 globs: chat-app-frontend/**/*.js, chat-app-frontend/**/*.tsx
 alwaysApply: false
 ---

@@ -193,7 +193,7 @@ Planned implementation phases:
   - `src/services/websocket.js` -> `src/services/websocket.ts`
   - `src/components/chat-area/mediaUtils.js` -> `src/components/chat-area/mediaUtils.ts`
 - Wired API and WebSocket functions to shared types from Phase 2.
-- Added `SelectableUser` and `UnreadSummaryResponse` to `src/types/groups.ts` for group-related API responses.
+- Added `SelectableUser` to `src/types/groups.ts` for group-related API responses.
 - Added typed upload helpers (`UploadHandle`, `UploadProgressOptions`) in `api.ts`.
 - Made `subscribeToTopic` generic so topic callbacks can be typed at call sites.
 

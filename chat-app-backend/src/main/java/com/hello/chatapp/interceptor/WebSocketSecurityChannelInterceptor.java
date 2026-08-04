@@ -1,12 +1,14 @@
 package com.hello.chatapp.interceptor;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.dto.MessageResponse;
-import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
+import com.hello.chatapp.exception.BadRequestException;
+import com.hello.chatapp.exception.ForbiddenException;
+import com.hello.chatapp.exception.NotFoundException;
+import com.hello.chatapp.service.GroupAuthorizationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,13 +39,10 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
     private SimpMessageSendingOperations messagingTemplate;
 
     @Autowired
-    private GroupRepository groupRepository;
-
-    @Autowired
-    private GroupParticipantRepository groupParticipantRepository;
-
-    @Autowired
     private CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+
+    @Autowired
+    private GroupAuthorizationService groupAuthorizationService;
 
     @Override
     public org.springframework.messaging.Message<?> preSend(@NonNull org.springframework.messaging.Message<?> message,
@@ -140,16 +139,21 @@ public class WebSocketSecurityChannelInterceptor implements ChannelInterceptor {
                 String groupIdStr = destination.substring("/topic/group.".length());
                 Long groupId = Long.parseLong(groupIdStr);
 
-                // Find the group
-                Group group = groupRepository.findById(groupId)
-                        .orElseThrow(() -> new SecurityException("Group not found"));
-
-                // Verify user is a member of the group
-                if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-                    throw new SecurityException("You are not a member of this group. Subscription denied.");
-                }
+                groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.READ_MESSAGES);
             } catch (NumberFormatException e) {
                 throw new SecurityException("Invalid group topic format");
+            } catch (NotFoundException | ForbiddenException | BadRequestException e) {
+                throw new SecurityException(e.getMessage());
+            }
+        }
+        if (destination.startsWith("/topic/user.") && destination.endsWith(".group-updates")) {
+            String prefix = "/topic/user.";
+            String suffix = ".group-updates";
+            String topicUsername = destination.substring(prefix.length(), destination.length() - suffix.length());
+            try {
+                groupAuthorizationService.requireUserTopicAccess(user, topicUsername);
+            } catch (ForbiddenException e) {
+                throw new SecurityException(e.getMessage());
             }
         }
         // Allow other topics (if any) - you can add more validation here if needed

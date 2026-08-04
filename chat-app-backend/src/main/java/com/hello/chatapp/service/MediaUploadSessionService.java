@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.MediaStorageProperties;
 import com.hello.chatapp.constant.ChatScope;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.MediaScanStatus;
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.MessageType;
@@ -27,8 +28,6 @@ import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
@@ -52,8 +51,7 @@ import java.util.UUID;
 public class MediaUploadSessionService {
 
     private final MediaUploadRepository mediaUploadRepository;
-    private final GroupRepository groupRepository;
-    private final GroupParticipantRepository groupParticipantRepository;
+    private final GroupAuthorizationService groupAuthorizationService;
     private final MediaStorageProperties mediaStorageProperties;
     private final ObjectStorageProviderRegistry objectStorageProviderRegistry;
     private final MalwareScanService malwareScanService;
@@ -65,8 +63,7 @@ public class MediaUploadSessionService {
 
     public MediaUploadSessionService(
             MediaUploadRepository mediaUploadRepository,
-            GroupRepository groupRepository,
-            GroupParticipantRepository groupParticipantRepository,
+            GroupAuthorizationService groupAuthorizationService,
             MediaStorageProperties mediaStorageProperties,
             ObjectStorageProviderRegistry objectStorageProviderRegistry,
             MalwareScanService malwareScanService,
@@ -76,8 +73,7 @@ public class MediaUploadSessionService {
             SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
         this.mediaUploadRepository = mediaUploadRepository;
-        this.groupRepository = groupRepository;
-        this.groupParticipantRepository = groupParticipantRepository;
+        this.groupAuthorizationService = groupAuthorizationService;
         this.mediaStorageProperties = mediaStorageProperties;
         this.objectStorageProviderRegistry = objectStorageProviderRegistry;
         this.malwareScanService = malwareScanService;
@@ -274,12 +270,7 @@ public class MediaUploadSessionService {
             throw new BadRequestException("groupId is required for GROUP chat scope");
         }
 
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-            throw new ForbiddenException("You are not a member of this group");
-        }
-        return group;
+        return groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.SEND_MESSAGES);
     }
 
     private void validateMessageType(MessageType messageType) {

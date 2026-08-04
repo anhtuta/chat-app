@@ -1,17 +1,29 @@
-.PHONY: help start start.all upd upbd
+.PHONY: help start start.all upd upbd upbd.instance-2
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
-.PHONY: stop restart restart.be2 logs clean status check.env
+.PHONY: stop restart restart.be2 logs clean status check.env check.env.local
 .PHONY: db.migrate db.info db.clean db.repair
-.PHONY: test.be test.ut test.it test.e2e
+.PHONY: test.be test.be.ut test.be.it test.fe test.e2e
 
 .DEFAULT_GOAL := help
 
-# Check and create .env file if it doesn't exist (only in chat-app-backend folder)
+# Check and create .env file if it doesn't exist (used by docker-compose interpolation)
 check.env:
 	@if [ ! -f .env ]; then \
 		echo "📝 Creating .env file from example..."; \
 		cp .env.example .env 2>/dev/null || echo "⚠️  .env.example not found, using defaults"; \
 	fi
+
+# Host-side Spring Boot / Flyway (make run.be, make db.migrate, …). Not used by docker-compose.
+check.env.local:
+	@if [ ! -f .env.local ]; then \
+		echo "📝 Creating .env.local file from example..."; \
+		cp .env.local.example .env.local 2>/dev/null || echo "⚠️  .env.local.example not found, using defaults"; \
+	fi
+
+# Host-side Spring Boot / Flyway (not used by docker-compose).
+# Source .env.local instead of xargs+export — empty xargs output would re-export the
+# whole shell environment and break on values containing quotes.
+LOAD_ENV_LOCAL = set -a && . ./.env.local && set +a
 
 help:
 	@echo "Chat App Docker Commands"
@@ -22,7 +34,7 @@ help:
 	@echo "  make start.all   - Build and start all services"
 	@echo "  make upd         - Start infra only (Postgres/Redis/RabbitMQ) for IDE debugging"
 	@echo "  make build.fe    - Build frontend and copy to Spring Boot static resources"
-	@echo "  make run.local   - Run Spring Boot app locally with .env variables loaded"
+	@echo "  make run.local   - Run Spring Boot app locally with .env.local variables loaded"
 	@echo "  make run.be      - Run Spring Boot backend only (Terminal 1)"
 	@echo "  make run.fe      - Run React dev server (Terminal 2)"
 	@echo "  make stop        - Stop all running services"
@@ -39,8 +51,8 @@ help:
 	@echo ""
 	@echo "Backend Test Commands:"
 	@echo "  make test.be              - Run all backend tests (unit + integration)"
-	@echo "  make test.be.unit         - Run unit tests only (fast, no Spring context)"
-	@echo "  make test.be.integration  - Run integration tests only (@DataJpaTest, @SpringBootTest)"
+	@echo "  make test.be.ut           - Run unit tests only (fast, no Spring context)"
+	@echo "  make test.be.it           - Run integration tests only (@DataJpaTest, @SpringBootTest)"
 	@echo ""
 	@echo "  make help        - Show this help message"
 	@echo ""
@@ -76,6 +88,11 @@ upbd: check.env
 	docker-compose up -d --build postgres redis rabbitmq prometheus grafana minio instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
+upbd.instance-2: check.env
+	@echo "Building and starting instance-2..."
+	docker-compose up -d --build instance-2
+	@echo "✅ instance-2 started!"
+
 # Build FE and copy to BE static resources
 build.fe:
 	@echo "🔨 Building frontend and copying to Spring Boot..."
@@ -83,31 +100,35 @@ build.fe:
 	@echo "✅ Frontend built and copied to src/main/resources/static/"
 
 # Build FE, copy to BE static resources, and run BE
-run.local: check.env build.fe
-	@echo "🚀 Running Spring Boot app locally with .env variables..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
+run.local: check.env.local build.fe
+	@echo "🚀 Running Spring Boot app locally with .env.local variables..."
+	@$(LOAD_ENV_LOCAL) && ./mvnw spring-boot:run
 
 # Similar to run.local but without building frontend
 # (Only run BE, use it when static files are already in place, or when running FE separately)
-run.be: check.env
-	@echo "🚀 Running Spring Boot app locally with .env variables..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw spring-boot:run
+run.be: check.env.local
+	@echo "🚀 Running Spring Boot app locally with .env.local variables..."
+	@$(LOAD_ENV_LOCAL) && ./mvnw spring-boot:run
 
-test.be: check.env test.be.unit test.be.integration
+test.be: test.be.ut test.be.it
 
-test.ut: check.env
+test.be.ut:
 	@echo "🚀 Running backend unit tests..."
 	./mvnw test
 
-test.it: check.env
+test.be.it:
 	@echo "🚀 Running backend integration tests..."
 	./mvnw failsafe:integration-test
 
+test.fe:
+	@echo "🚀 Running frontend tests..."
+	@cd ../chat-app-frontend && npm test
+
 # Used by Cursor "Debug Backend (make run.be)" launch config.
-# Ensures .env exists and compiles with the same env vars as make run.be.
-debug.prepare: check.env
-	@echo "🔧 Preparing backend for IDE debug (load .env + compile)..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw -q -DskipTests compile
+# Ensures .env.local exists and compiles with the same env vars as make run.be.
+debug.prepare: check.env.local
+	@echo "🔧 Preparing backend for IDE debug (load .env.local + compile)..."
+	@$(LOAD_ENV_LOCAL) && ./mvnw -q -DskipTests compile
 	@echo "✅ Ready — start Debug Backend (make run.be) in Cursor"
 
 run.fe:
@@ -142,37 +163,37 @@ logs:
 	docker-compose --profile multi-instance logs -f instance-1
 
 # Database Migration Commands
-db.migrate: check.env
+db.migrate: check.env.local
 	@echo "🔄 Running Flyway migrations..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:migrate
+	@$(LOAD_ENV_LOCAL) && ./mvnw flyway:migrate
 	@echo "✅ Migrations complete!"
 
 # Skip executing migrations but still update the schema history to the target version.
 # Use it when we've already run migrations manually, and flyway_schema_history table doesn't have executed versions.
 # Please update Dflyway.target to the version you want to mark as executed.
-db.migrate.skip: check.env
+db.migrate.skip: check.env.local
 	@echo "🔄 Running Flyway migrations (skip)..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:migrate -Dflyway.target=4 -Dflyway.skipExecutingMigrations=true
+	@$(LOAD_ENV_LOCAL) && ./mvnw flyway:migrate -Dflyway.target=4 -Dflyway.skipExecutingMigrations=true
 	@echo "✅ Migrations complete!"
 
-db.info: check.env
+db.info: check.env.local
 	@echo "📊 Checking migration status..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:info
+	@$(LOAD_ENV_LOCAL) && ./mvnw flyway:info
 
-db.clean: check.env
+db.clean: check.env.local
 	@echo "⚠️  WARNING: This will drop all objects in the schema!"
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:clean; \
+		$(LOAD_ENV_LOCAL) && ./mvnw flyway:clean; \
 		echo "✅ Schema cleaned!"; \
 	else \
 		echo "❌ Cancelled"; \
 	fi
 
-db.repair: check.env
+db.repair: check.env.local
 	@echo "🔧 Repairing Flyway schema history..."
-	@export $$(cat .env 2>/dev/null | grep -v '^#' | xargs) && ./mvnw flyway:repair
+	@$(LOAD_ENV_LOCAL) && ./mvnw flyway:repair
 
 status:
 	docker-compose ps

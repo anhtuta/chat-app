@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { ThemeProvider, createTheme, Box, CircularProgress } from "@mui/material";
 import { checkAuth, logout as apiLogout } from "./services/api";
 import ChatPage from "./pages/ChatPage";
+import JoinGroupPage from "./pages/JoinGroupPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import { DEFAULT_THEME_ID, THEME_STORAGE_KEY, resolveThemeTokens, themeOptions } from "./theme/tokens";
 import { WebSocketProvider } from "./context/WebSocketProvider";
+import { getSafeInternalPath } from "./utils/joinLinks";
 import type { AuthState } from "./types/auth";
 import type { ResolvedTheme, ThemeId } from "./types/theme";
 import "./App.css";
@@ -19,6 +21,22 @@ interface AppRoutesProps {
 
 interface RequireAuthProps {
   children: React.ReactNode;
+}
+
+interface LoginRouteProps {
+  isAuth: boolean;
+  onLoginSuccess: (username: string) => void;
+}
+
+function LoginRoute({ isAuth, onLoginSuccess }: LoginRouteProps) {
+  const [searchParams] = useSearchParams();
+  const redirectTo = getSafeInternalPath(searchParams.get("redirect"));
+
+  if (isAuth) {
+    return <Navigate to={redirectTo || "/group/public"} replace />;
+  }
+
+  return <LoginPage onLoginSuccess={onLoginSuccess} redirectTo={redirectTo} />;
 }
 
 function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesProps) {
@@ -79,8 +97,10 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
   }
 
   const RequireAuth = ({ children }: RequireAuthProps) => {
+    const location = useLocation();
     if (!authState.isAuth) {
-      return <Navigate to="/login" replace />;
+      const redirect = `${location.pathname}${location.search}`;
+      return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
     }
     return <>{children}</>;
   };
@@ -88,37 +108,37 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
   return (
     <WebSocketProvider username={authState.isAuth ? authState.username : null}>
       <Routes>
-      <Route path="/" element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />} />
-      <Route
-        path="/login"
-        element={
-          authState.isAuth ? <Navigate to="/group/public" replace /> : <LoginPage onLoginSuccess={handleLoginSuccess} />
-        }
-      />
-      <Route path="/register" element={authState.isAuth ? <Navigate to="/group/public" replace /> : <RegisterPage />} />
-      <Route
-        path="/group"
-        element={
-          <RequireAuth>
-            <Navigate to="/group/public" replace />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/group/:groupId"
-        element={
-          <RequireAuth>
-            <ChatPage
-              username={authState.username}
-              onLogout={handleLogout}
-              selectedThemeId={selectedThemeId}
-              onThemeChange={onThemeChange}
-              themeOptions={themeOptions}
-            />
-          </RequireAuth>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<Navigate to={authState.isAuth ? "/group/public" : "/login"} replace />} />
+        <Route
+          path="/login"
+          element={<LoginRoute isAuth={authState.isAuth} onLoginSuccess={handleLoginSuccess} />}
+        />
+        <Route path="/register" element={authState.isAuth ? <Navigate to="/group/public" replace /> : <RegisterPage />} />
+        <Route path="/join" element={<JoinGroupPage isAuthenticated={authState.isAuth} />} />
+        <Route path="/join/:token" element={<JoinGroupPage isAuthenticated={authState.isAuth} />} />
+        <Route
+          path="/group"
+          element={
+            <RequireAuth>
+              <Navigate to="/group/public" replace />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/group/:groupId"
+          element={
+            <RequireAuth>
+              <ChatPage
+                username={authState.username}
+                onLogout={handleLogout}
+                selectedThemeId={selectedThemeId}
+                onThemeChange={onThemeChange}
+                themeOptions={themeOptions}
+              />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </WebSocketProvider>
   );
@@ -151,7 +171,7 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme.id);
-  }, [resolvedTheme.id]);
+  }, [resolvedTheme]);
 
   useEffect(() => {
     const root = document.documentElement;

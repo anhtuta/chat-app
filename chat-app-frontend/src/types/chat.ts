@@ -1,6 +1,9 @@
+import type { SystemEventType } from "../constant/systemEventTypes";
+
 export type ChatScope = "PUBLIC" | "GROUP";
 
 export type MessageType = "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "FILE" | "SYSTEM";
+export type { SystemEventType };
 
 export type MediaMessageType = Extract<MessageType, "IMAGE" | "VIDEO" | "AUDIO" | "FILE">;
 
@@ -58,6 +61,12 @@ export interface ChatMessage {
   timestamp?: string | null;
   user?: ChatUser | null;
   messageType?: MessageType | null;
+  systemEventType?: SystemEventType | null;
+  systemEventActor?: ChatUser | null;
+  updatedBy?: ChatUser | null;
+  updatedAt?: string | null;
+  deletedBy?: ChatUser | null;
+  deletedAt?: string | null;
   attachments?: ChatAttachment[];
   localUploadState?: LocalUploadState | null;
 }

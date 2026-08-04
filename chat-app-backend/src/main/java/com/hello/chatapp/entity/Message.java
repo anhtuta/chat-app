@@ -48,11 +48,27 @@ public class Message {
     @Column(name = "message_type", nullable = false, length = 32)
     private MessageType messageType = MessageType.TEXT;
 
+    // For SYSTEM messages, content stores a stable SystemEventType name
+    // (for example USER_JOINED) instead of final human-readable text.
     @Column(nullable = true, length = 1000)
     private String content;
 
     @Column(nullable = false)
     private LocalDateTime timestamp;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "updated_by")
+    private User updatedBy;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "deleted_by")
+    private User deletedBy;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @OneToMany(mappedBy = "message", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("attachmentOrder ASC, id ASC")

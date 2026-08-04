@@ -100,6 +100,55 @@
   font-size: 0.75rem;
 }
 
+.chat-message-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-message-actions-button {
+  padding: 2px !important;
+  color: inherit !important;
+  opacity: 0.75;
+}
+
+.chat-message-actions-button:hover {
+  opacity: 1;
+}
+
+.chat-message-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chat-message-edit-form .MuiInputBase-root {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.chat-message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-message-edit-actions .MuiButton-root {
+  color: inherit;
+}
+
+.chat-message-bubble.own .chat-message-edit-actions .MuiButton-contained {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+}
+
+.chat-message-moderation-alert {
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
 .chat-message-sender-info.own {
   opacity: 0.9;
 }

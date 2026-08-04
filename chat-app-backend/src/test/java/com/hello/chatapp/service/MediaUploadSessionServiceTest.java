@@ -12,8 +12,6 @@ import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.MediaUpload;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
@@ -55,10 +53,7 @@ class MediaUploadSessionServiceTest {
     private MediaUploadRepository mediaUploadRepository;
 
     @Mock
-    private GroupRepository groupRepository;
-
-    @Mock
-    private GroupParticipantRepository groupParticipantRepository;
+    private GroupAuthorizationService groupAuthorizationService;
 
     @Mock
     private MediaStorageProperties mediaStorageProperties;

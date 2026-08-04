@@ -107,7 +107,15 @@ java -jar target/chat-app-0.0.1-SNAPSHOT.jar \
   --spring.application.instance-id=instance-3
 ```
 
+# DEPRECATED
+
+Can stop from here.
+
 ## Hybrid broker using RabbitMQ: Queue per instance, WebSocket per user (`v2.1`)
+
+DEPRECATED! Now we use Topic exchange instead of Fanout exchange.
+
+Ignore this section. We keep it here for reference and history.
 
 Stack: Single Spring Boot app (ChatAppApplication) using MVC + STOMP-over-WebSocket
 
@@ -164,11 +172,11 @@ Túm lại:
 - Sau đó mỗi account vào tất cả các group để nhắn tin. Hiện tại có 4 group
 - 4 exchange được tạo như sau:
 
-  ![](./docs/photo/exchange-list.png)
+  ![](../docs/photo/exchange-list.png)
 
 - Với mỗi instance, ta sẽ tạo 4 queue tương ứng cho từng exchange
 
-  ![](./docs/photo/queue-list.png)
+  ![](../docs/photo/queue-list.png)
 
 - Ở hình trên, riêng user ở instance 3 mới vào 2 nhóm (public và group1, do đó nó mới chỉ tạo 2 queue)
 - Dù có thêm bao nhiêu user thì số lượng exchange vào queue vẫn chỉ có vậy. Tối đa

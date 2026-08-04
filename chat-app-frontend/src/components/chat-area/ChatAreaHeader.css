@@ -7,6 +7,10 @@
   justify-content: space-between !important;
 }
 
+.chat-area-header-title-row {
+  min-width: 0;
+}
+
 .chat-area-header-title {
   font-weight: bold !important;
 }

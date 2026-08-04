@@ -1,19 +1,17 @@
 ---
 description: "Use when implementing, changing, or refactoring any feature. Ensure feature documentation in docs is created or updated, with one markdown file per feature."
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Keep Feature Docs In Sync
 
-- Treat feature documentation updates as required whenever feature behavior, API, data flow, config, UX, or operational behavior changes.
+- Update the docs whenever feature behavior, API, data flow, config, UX, or operational behavior changes. No need to always do it, unless you are asked to do so, or you knew the docs file in current context of the conversation.
 - Store feature documentation as markdown files under `docs/`.
 - If the feature already has a docs file, update it, otherwise, create a new markdown file in `docs/` for that feature.
-- Keep each docs file focused on exactly one feature.
 - Filename should start with a number and a underscore, e.g, `01_AUTH_LOGIN_FLOW.md`.
 - In feature docs updates, include at minimum:
-  - What changed
-  - Why it changed
-  - Any API/contract/config impacts
+  - What changed (mandatory, keep it concise and to the point)
+  - Why it changed (optional, keep it concise and to the point)
   - Rollout, migration, or backward-compatibility notes (if applicable)
 
 # Types of documentation
@@ -23,7 +21,7 @@ alwaysApply: true
 
 # Format of the documentation
 
-## 1. Brand-new feature feature docs
+## 1. Brand-new feature docs
 
 Use following format:
 
@@ -58,7 +56,7 @@ Use following format:
 
 ## High level Architecture/Design
 
-### Component Diagram
+### Component Diagram / Flowchart / Sequence Diagram
 
 (Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
 
@@ -72,16 +70,7 @@ Usually should align with the use cases. Each use case should have a correspondi
 
 ## Recommendation (optional)
 
-(Just a recommendation path, do NOT implement anything in this section)
-
-Recommendation path:
-
-1. Phase 1: Implement the solution
-2. Phase 2: Implement the solution
-
-...
-
-N. Phase N: Implement the solution
+(Just a recommendation path, do NOT implement anything in this section. Keep this short and concise.)
 
 ## Implementation details
 
@@ -115,22 +104,13 @@ Use following format:
 
 ## High level Architecture/Design (optional)
 
-### Component Diagram
+### Component Diagram / Flowchart / Sequence Diagram
 
 (Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
 
 ## Recommendation
 
-(Just a recommendation path, or recommended solution, do NOT implement anything in this section)
-
-Recommendation path (optional, we may have only one phase):
-
-1. Phase 1: Implement the solution
-2. Phase 2: Implement the solution
-
-...
-
-N. Phase N: Implement the solution
+(Just a recommendation path, or recommended solution, do NOT implement anything in this section. Keep this short and concise.)
 
 ## Implementation details
 

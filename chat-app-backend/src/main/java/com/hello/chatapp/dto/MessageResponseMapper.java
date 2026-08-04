@@ -1,5 +1,7 @@
 package com.hello.chatapp.dto;
 
+import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.storage.ObjectStorageProvider;
@@ -28,10 +30,41 @@ public class MessageResponseMapper {
                 .user(message.getUser() != null ? UserResponse.fromUser(message.getUser()) : null)
                 .groupId(message.getGroup() != null ? message.getGroup().getId() : null)
                 .messageType(message.getMessageType())
-                .content(message.getContent())
-                .attachments(toAttachmentResponses(message.getAttachments()))
+                .content(resolveContent(message))
+                .systemEventType(resolveSystemEventType(message))
+                .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
+                .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
+                .updatedAt(message.getUpdatedAt())
+                .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)
+                .deletedAt(message.getDeletedAt())
+                .attachments(resolveAttachments(message))
                 .timestamp(message.getTimestamp())
                 .build();
+    }
+
+    private SystemEventType resolveSystemEventType(Message message) {
+        if (message == null || message.getMessageType() != MessageType.SYSTEM || message.getContent() == null) {
+            return null;
+        }
+        try {
+            return SystemEventType.valueOf(message.getContent());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private String resolveContent(Message message) {
+        if (message == null || message.getDeletedAt() != null) {
+            return null;
+        }
+        return message.getContent();
+    }
+
+    private List<MessageAttachmentResponse> resolveAttachments(Message message) {
+        if (message == null || message.getDeletedAt() != null) {
+            return Collections.emptyList();
+        }
+        return toAttachmentResponses(message.getAttachments());
     }
 
     private List<MessageAttachmentResponse> toAttachmentResponses(List<MessageMedia> attachments) {
