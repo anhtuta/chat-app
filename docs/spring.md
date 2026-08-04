@@ -361,6 +361,25 @@ for (String username : usernames) {
 }
 ```
 
+### Another example of LazyInitializationException
+
+This happens when we update group name or description.
+
+`PATCH` name/description now records system events via `recordGroupEvent` → `saveGroupSystemMessage` → `updateLatestMessageIfNewer`. That update is:
+
+```java
+// chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupRepository.java
+@Modifying(clearAutomatically = true, flushAutomatically = true)
+```
+
+`clearAutomatically = true` clears the persistence context after the bulk update. `createdBy` was never fetched (auth loads the group without `JOIN FETCH createdBy`), so the proxy is uninitialized and detached → `LazyInitializationException`.
+
+Before that phase, update returned the still-managed group and lazy load worked.
+
+**Fix**
+
+Same pattern as `createGroup`: re-fetch with `findByIdWithCreator` before building the response.
+
 ## The difference between Throttle/Buffering vs. Debounce
 
 Suppose `window_time` = 1.5 seconds.
