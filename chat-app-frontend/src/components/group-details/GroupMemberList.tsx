@@ -52,6 +52,7 @@ function GroupMemberList({
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const requestIdRef = useRef(0);
+  const loadMoreInFlightRef = useRef(false);
 
   const canAddMembers = currentUserPermissions.includes("ADD_MEMBERS");
 
@@ -71,6 +72,7 @@ function GroupMemberList({
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setIsLoadingMore(false);
+    loadMoreInFlightRef.current = false;
     setError("");
     setMembers([]);
     setPage(0);
@@ -114,10 +116,19 @@ function GroupMemberList({
   }, [open]);
 
   const loadNextPage = async () => {
-    if (!open || groupId === null || groupId === undefined || !hasNext || isLoading || isLoadingMore) {
+    if (
+      !open
+      || groupId === null
+      || groupId === undefined
+      || !hasNext
+      || isLoading
+      || isLoadingMore
+      || loadMoreInFlightRef.current
+    ) {
       return;
     }
 
+    loadMoreInFlightRef.current = true;
     const nextPage = page + 1;
     const requestId = ++requestIdRef.current;
     setIsLoadingMore(true);
@@ -146,6 +157,7 @@ function GroupMemberList({
       if (requestId === requestIdRef.current) {
         setIsLoadingMore(false);
       }
+      loadMoreInFlightRef.current = false;
     }
   };
 
