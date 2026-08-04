@@ -1,6 +1,5 @@
 package com.hello.chatapp.service;
 
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.config.MediaStorageProperties;
 import com.hello.chatapp.constant.ChatScope;
 import com.hello.chatapp.constant.MessageType;
@@ -25,7 +24,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -74,10 +72,7 @@ class MediaUploadSessionServiceTest {
     private MessageResponseMapper messageResponseMapper;
 
     @Mock
-    private SimpMessagingTemplate messagingTemplate;
-
-    @Mock
-    private CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private RealtimeMessageDeliveryService realtimeMessageDeliveryService;
 
     @Mock
     private ObjectStorageProvider objectStorageProvider;

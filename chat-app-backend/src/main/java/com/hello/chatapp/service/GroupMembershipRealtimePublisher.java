@@ -1,6 +1,5 @@
 package com.hello.chatapp.service;
 
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageResponse;
@@ -8,7 +7,6 @@ import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -30,16 +28,13 @@ public class GroupMembershipRealtimePublisher {
 
     private static final Logger logger = LoggerFactory.getLogger(GroupMembershipRealtimePublisher.class);
 
-    private final SimpMessagingTemplate messagingTemplate;
-    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
     private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
     public GroupMembershipRealtimePublisher(
-            SimpMessagingTemplate messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService,
             GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
-        this.messagingTemplate = messagingTemplate;
-        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
         this.groupSummaryUpdatePublisher = groupSummaryUpdatePublisher;
     }
 
@@ -59,7 +54,10 @@ public class GroupMembershipRealtimePublisher {
         }
 
         runAfterCommit(() -> {
-            publishSystemMessageToGroupTopic(groupId, safeMessage);
+            MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(safeMessage));
+            realtimeMessageDeliveryService.publishToGroup(groupId, response);
+            logger.debug("[publishMembershipChange] Published membership system message to group topic, groupId={}, messageId={}",
+                    groupId, safeMessage.getId());
 
             // Send to all group members: used by FE to update sidebar latest preview ("Member removed", etc.)
             GroupSummaryUpdate membershipChangeUpdate = GroupSummaryUpdate.forSystemEvent(
@@ -76,18 +74,6 @@ public class GroupMembershipRealtimePublisher {
                         removedUsername, removedUpdate);
             }
         });
-    }
-
-    // TODO can we do the same thing as what we did in WebsocketController.sendGroupMessage? Maybe extract to a common method?
-    private void publishSystemMessageToGroupTopic(Long groupId, Message systemMessage) {
-        MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(systemMessage));
-        String destination = "/topic/group." + groupId;
-        messagingTemplate.convertAndSend(destination, response);
-        rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
-        logger.debug(
-                "[publishSystemMessageToGroupTopic] Published membership system message to destination={}, messageId={}",
-                destination,
-                systemMessage.getId());
     }
 
     private void runAfterCommit(Runnable action) {

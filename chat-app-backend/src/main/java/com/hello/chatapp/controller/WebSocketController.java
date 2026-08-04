@@ -1,7 +1,7 @@
 package com.hello.chatapp.controller;
 
-import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageRequest;
 import com.hello.chatapp.dto.MessageResponse;
@@ -11,6 +11,7 @@ import com.hello.chatapp.entity.User;
 import com.hello.chatapp.service.GroupAuthorizationService;
 import com.hello.chatapp.service.GroupSummaryUpdatePublisher;
 import com.hello.chatapp.service.MessageService;
+import com.hello.chatapp.service.RealtimeMessageDeliveryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
@@ -18,7 +19,6 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
@@ -30,19 +30,19 @@ public class WebSocketController {
     private static final Logger logger = LoggerFactory.getLogger(WebSocketController.class);
 
     private final GroupAuthorizationService groupAuthorizationService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
     private final MessageService messageService;
     private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
     public WebSocketController(GroupAuthorizationService groupAuthorizationService,
-            SimpMessagingTemplate messagingTemplate,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService,
             MessageService messageService,
             GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
         this.groupAuthorizationService = groupAuthorizationService;
-        this.messagingTemplate = messagingTemplate;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
         this.messageService = messageService;
         this.groupSummaryUpdatePublisher = groupSummaryUpdatePublisher;
     }
@@ -97,13 +97,7 @@ public class WebSocketController {
             response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
-        // Send to local subscribers via SimpleBroker
-        logger.debug("[sendGroupMessage] Sending to in-memory broker for local subscribers: destination={}", destination);
-        messagingTemplate.convertAndSend(destination, response);
-
-        // Publish to RabbitMQ for cross-instance distribution
-        logger.debug("[sendGroupMessage] Publishing to RabbitMQ for cross-instance distribution: destination={}", destination);
-        rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
+        realtimeMessageDeliveryService.publish(destination, response);
 
         // Buffer group-summary updates per group before fan-out so active chats
         // coalesce to at most one personal-topic publish per buffer interval.

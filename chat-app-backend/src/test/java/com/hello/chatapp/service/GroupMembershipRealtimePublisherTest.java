@@ -1,6 +1,5 @@
 package com.hello.chatapp.service;
 
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
@@ -14,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -32,10 +30,7 @@ import static org.mockito.Mockito.verify;
 class GroupMembershipRealtimePublisherTest {
 
     @Mock
-    private SimpMessagingTemplate messagingTemplate;
-
-    @Mock
-    private CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private RealtimeMessageDeliveryService realtimeMessageDeliveryService;
 
     @Mock
     private GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
@@ -47,8 +42,7 @@ class GroupMembershipRealtimePublisherTest {
     @BeforeEach
     void setUp() {
         publisher = new GroupMembershipRealtimePublisher(
-                messagingTemplate,
-                rabbitMQBrokerHandler,
+                realtimeMessageDeliveryService,
                 groupSummaryUpdatePublisher);
 
         User subject = new User();
@@ -81,8 +75,7 @@ class GroupMembershipRealtimePublisherTest {
     void publishMembershipChange_withoutActiveTransaction_publishesImmediately() {
         publisher.publishMembershipChange(group, systemMessage, "Member removed", "bob");
 
-        verify(messagingTemplate).convertAndSend(eq("/topic/group.100"), any(MessageResponse.class));
-        verify(rabbitMQBrokerHandler).publishToRabbitMQ(eq("/topic/group.100"), any(MessageResponse.class));
+        verify(realtimeMessageDeliveryService).publishToGroup(eq(100L), any(MessageResponse.class));
 
         ArgumentCaptor<GroupSummaryUpdate> summaryCaptor = ArgumentCaptor.forClass(GroupSummaryUpdate.class);
         verify(groupSummaryUpdatePublisher).publishToGroupMembers(eq(100L), summaryCaptor.capture());
@@ -100,14 +93,14 @@ class GroupMembershipRealtimePublisherTest {
         try {
             publisher.publishMembershipChange(group, systemMessage, "Member joined", null);
 
-            verify(messagingTemplate, never()).convertAndSend(any(String.class), any(Object.class));
+            verify(realtimeMessageDeliveryService, never()).publishToGroup(any(), any());
             verify(groupSummaryUpdatePublisher, never()).publishToGroupMembers(any(), any());
 
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCommit();
             }
 
-            verify(messagingTemplate).convertAndSend(eq("/topic/group.100"), any(MessageResponse.class));
+            verify(realtimeMessageDeliveryService).publishToGroup(eq(100L), any(MessageResponse.class));
             verify(groupSummaryUpdatePublisher).publishToGroupMembers(eq(100L), any(GroupSummaryUpdate.class));
             verify(groupSummaryUpdatePublisher, never()).publishToUser(any(), any());
         } finally {

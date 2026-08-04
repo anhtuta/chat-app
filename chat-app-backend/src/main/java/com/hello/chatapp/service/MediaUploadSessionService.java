@@ -7,7 +7,6 @@ import com.hello.chatapp.constant.MediaScanStatus;
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.UploadSessionStatus;
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
 import com.hello.chatapp.dto.MessageResponseMapper;
@@ -32,7 +31,6 @@ import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -58,8 +56,7 @@ public class MediaUploadSessionService {
     private final MessageService messageService;
     private final MediaProcessingService mediaProcessingService;
     private final MessageResponseMapper messageResponseMapper;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
 
     public MediaUploadSessionService(
             MediaUploadRepository mediaUploadRepository,
@@ -70,8 +67,7 @@ public class MediaUploadSessionService {
             MessageService messageService,
             MediaProcessingService mediaProcessingService,
             MessageResponseMapper messageResponseMapper,
-            SimpMessagingTemplate messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService) {
         this.mediaUploadRepository = mediaUploadRepository;
         this.groupAuthorizationService = groupAuthorizationService;
         this.mediaStorageProperties = mediaStorageProperties;
@@ -80,8 +76,7 @@ public class MediaUploadSessionService {
         this.messageService = messageService;
         this.mediaProcessingService = mediaProcessingService;
         this.messageResponseMapper = messageResponseMapper;
-        this.messagingTemplate = messagingTemplate;
-        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
     }
 
     @Transactional
@@ -391,12 +386,12 @@ public class MediaUploadSessionService {
     }
 
     private void publishFinalMessage(MessageResponse response, Message message) {
-        String destination = message.getGroup() == null
-                ? "/topic/public"
-                : "/topic/group." + Objects.requireNonNull(message.getGroup().getId());
         MessageResponse nonNullResponse = Objects.requireNonNull(response);
-        messagingTemplate.convertAndSend(destination, nonNullResponse);
-        rabbitMQBrokerHandler.publishToRabbitMQ(destination, nonNullResponse);
+        if (message.getGroup() == null) {
+            realtimeMessageDeliveryService.publishToPublic(nonNullResponse);
+        } else {
+            realtimeMessageDeliveryService.publishToGroup(Objects.requireNonNull(message.getGroup().getId()), nonNullResponse);
+        }
     }
 
     private void scheduleAsyncProcessingAfterCommit(Message message) {
