@@ -31,10 +31,9 @@ import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
+import com.hello.chatapp.util.AfterCommit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.HashMap;
 import java.time.LocalDateTime;
@@ -400,12 +399,9 @@ public class MediaUploadSessionService {
         if (messageType != MessageType.IMAGE && messageType != MessageType.VIDEO) {
             return;
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                mediaProcessingService.enqueueProcessing(messageId);
-            }
-        });
+        AfterCommit.run(
+                () -> mediaProcessingService.enqueueProcessing(messageId),
+                "Failed to enqueue media processing after commit for messageId=" + messageId);
     }
 
     private long resolveMaxSizeBytes(MessageType messageType) {

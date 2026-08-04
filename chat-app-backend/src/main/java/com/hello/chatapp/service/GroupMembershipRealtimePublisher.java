@@ -5,11 +5,10 @@ import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.util.AfterCommit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Objects;
 
@@ -53,7 +52,7 @@ public class GroupMembershipRealtimePublisher {
             throw new IllegalArgumentException("systemMessage must be a SYSTEM message");
         }
 
-        runAfterCommit(() -> {
+        AfterCommit.run(() -> {
             MessageResponse response = Objects.requireNonNull(MessageResponse.fromMessage(safeMessage));
             realtimeMessageDeliveryService.publishToGroup(groupId, response);
             logger.debug("[publishMembershipChange] Published membership system message to group topic, groupId={}, messageId={}",
@@ -73,23 +72,6 @@ public class GroupMembershipRealtimePublisher {
                 logger.debug("[publishToUser] Delivered personal group summary update to user={}, message={}",
                         removedUsername, removedUpdate);
             }
-        });
-    }
-
-    private void runAfterCommit(Runnable action) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            action.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                try {
-                    action.run();
-                } catch (Exception e) {
-                    logger.error("Failed to publish membership realtime update after commit", e);
-                }
-            }
-        });
+        }, "Failed to publish membership realtime update after commit");
     }
 }
