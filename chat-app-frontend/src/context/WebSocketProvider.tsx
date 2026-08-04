@@ -49,6 +49,8 @@ export function WebSocketProvider({ children, username }: WebSocketProviderProps
 
   const groupSubscriptionRef = useRef<GroupSubscription | null>(null);
   const userGroupUpdatesSubscriptionRef = useRef<UserGroupUpdatesSubscription | null>(null);
+  /** Sidebar handler from ChatPage; kept separate so it can be registered before the STOMP subscription exists. */
+  const groupUpdatesHandlerRef = useRef<TopicCallback<GroupSummaryUpdate> | null>(null);
 
   const subscribeGroupTopic = () => {
     if (!groupSubscriptionRef.current?.callback) return null;
@@ -70,12 +72,15 @@ export function WebSocketProvider({ children, username }: WebSocketProviderProps
 
   const subscribeUserGroupUpdates = (activeUsername: string) => {
     const topic = buildUserGroupUpdatesTopic(activeUsername);
-    const callback = userGroupUpdatesSubscriptionRef.current?.callback ?? null;
     const subscription = subscribeToTopic<GroupSummaryUpdate>(topic, (update) => {
-      userGroupUpdatesSubscriptionRef.current?.callback?.(update);
+      groupUpdatesHandlerRef.current?.(update);
     });
 
-    userGroupUpdatesSubscriptionRef.current = { username: activeUsername, callback, subscription };
+    userGroupUpdatesSubscriptionRef.current = {
+      username: activeUsername,
+      callback: groupUpdatesHandlerRef.current,
+      subscription,
+    };
     console.log("WebSocketProvider.subscribeUserGroupUpdates - subscribed to", topic, "id:", subscription?.id);
   };
 
@@ -140,10 +145,10 @@ export function WebSocketProvider({ children, username }: WebSocketProviderProps
   );
 
   const setGroupUpdatesHandler = useCallback((callback: TopicCallback<GroupSummaryUpdate> | null) => {
-    if (!userGroupUpdatesSubscriptionRef.current) {
-      return;
+    groupUpdatesHandlerRef.current = callback;
+    if (userGroupUpdatesSubscriptionRef.current) {
+      userGroupUpdatesSubscriptionRef.current.callback = callback;
     }
-    userGroupUpdatesSubscriptionRef.current.callback = callback;
   }, []);
 
   // Persistent user group-updates subscription: tied to login session, not chat switching.
@@ -158,13 +163,15 @@ export function WebSocketProvider({ children, username }: WebSocketProviderProps
       return;
     }
 
-    const callback = current?.callback ?? null;
-
     if (current?.subscription) {
       unsubscribeSubscription(current.subscription);
     }
 
-    userGroupUpdatesSubscriptionRef.current = { username, callback, subscription: null };
+    userGroupUpdatesSubscriptionRef.current = {
+      username,
+      callback: groupUpdatesHandlerRef.current,
+      subscription: null,
+    };
 
     if (!isConnected) {
       return;

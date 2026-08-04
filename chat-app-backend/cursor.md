@@ -2689,3 +2689,44 @@ For simplicity:
 - Easier to implement
 
 But this makes it stateful.
+
+# How to avoid regression issues?
+
+Currently, after implementing the feature F-15, we cannot see the Sidebar updates after user sends messages anymore, example:
+
+- we have u1, u2
+- u1 sends messages to group1
+- u2 can receive it in topic `topic/user.u2.group-updates`, but then FE doesn't update the sidebar for u2, the preview message of group1 in sidebar of u2 doesn't change
+
+For **this** bug, the best protection is a focused **FE unit/integration test**, not a manual checklist alone — and not only a full E2E matrix.
+
+### What failed
+
+STOMP delivery still worked; React never applied the update because the handler registration raced subscription setup. That’s a **wiring/lifecycle** bug in `WebSocketProvider` + `ChatPage`, not a pure util bug.
+
+### What to use
+
+| Layer                                                   | Role for this regression                                                                                                                                 | Worth it?                                              |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **FE unit / light integration** (React Testing Library) | Mount provider + page (or call `setGroupUpdatesHandler` before subscribe exists), simulate a group-updates payload, assert sidebar/`setGroups` path runs | **Yes — highest ROI here**                             |
+| **E2E (Playwright)**                                    | Two users: u1 sends in group, u2 sidebar preview changes                                                                                                 | **Yes — 1–2 smoke tests**, already planned in Phase 13 |
+| **Manual checklist**                                    | Quick sanity while building                                                                                                                              | Useful supplement, not enough alone                    |
+| **Broad FE “integration suite”**                        | Heavy harness for every flow                                                                                                                             | Overkill right now                                     |
+
+Your repo today: lots of util unit tests, thin Playwright chat coverage (send/navigate), almost no provider/context tests. Phase 13 already calls out “realtime sidebar/chat updates” — that’s the right place for the E2E smoke.
+
+### Practical recommendation
+
+1. **Add one RTL test** for: “handler registered even if subscription slot isn’t ready yet; incoming `GroupSummaryUpdate` updates group list.” That would have caught the F-6 early-return.
+2. **Add one Playwright smoke** (two contexts/users): send message → other user’s sidebar latest preview updates within N seconds (account for 3s debounce).
+3. **Keep a short manual regression list** for realtime (sidebar preview, unread bump, kick/`removed`) — fine for each F-15 task, but don’t rely on it as the only gate.
+4. Don’t try to unit-test every UI screen; reserve E2E for **cross-user realtime** and critical auth/chat paths.
+
+### Rule of thumb
+
+- Pure logic → unit tests (you already do this for roles/moderation).
+- Provider/subscription wiring → RTL/component tests.
+- Multi-user WebSocket behavior → E2E smoke.
+- Manual → exploratory + checklist while implementing phases.
+
+So: **prefer FE unit/RTL for this specific regression + a small E2E realtime smoke**, with a short manual checklist as backup — not “manual only” and not a giant FE integration suite.
