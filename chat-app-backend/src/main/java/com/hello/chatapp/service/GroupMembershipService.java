@@ -115,9 +115,13 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
-        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
+        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
         User target = loadUser(userId);
         groupAuthorizationService.requireNotBanned(target, groupId);
+
+        // Re-lock + re-check archived under the same lock as leaveGroup's last-member archive.
+        Group group = lockGroupForLifecycleUpdate(groupId);
+        ensureActive(group);
 
         if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already a member of this group");
@@ -166,9 +170,12 @@ public class GroupMembershipService {
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
         validateJoinLink(joinLink);
 
-        Group group = joinLink.getGroup();
-        Long groupId = Objects.requireNonNull(group.getId());
+        Long groupId = Objects.requireNonNull(joinLink.getGroup().getId());
         groupAuthorizationService.requireNotBanned(user, groupId);
+
+        // Same lifecycle lock as addMember/leaveGroup: reject join if a concurrent last-member leave archived us.
+        Group group = lockGroupForLifecycleUpdate(groupId);
+        ensureActive(group);
 
         // If they're already a participant, no new row is saved and no USER_JOINED system message is recorded
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
@@ -303,9 +310,13 @@ public class GroupMembershipService {
     @Transactional
     public void leaveGroup(User actor, Long groupId) {
         GroupParticipant participant = groupAuthorizationService.requireMember(actor, groupId);
-        Group group = participant.getGroup();
+
+        // Lock the group row before counting/archiving so a concurrent addMember/joinByToken
+        // cannot pass its active check and insert a participant into a group we are archiving.
+        Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
 
+        // Count under the lock so "last member" is decided against the same serialized membership set.
         long memberCount = groupParticipantRepository.countByGroupId(groupId);
         if (participant.getRole() == GroupRole.LEADER && memberCount > 1) {
             throw new ForbiddenException("Transfer leadership before leaving the group");
@@ -364,6 +375,17 @@ public class GroupMembershipService {
         Long safeUserId = Objects.requireNonNull(userId, "userId must not be null");
         return userRepository.findById(safeUserId)
                 .orElseThrow(() -> new NotFoundException("User with id " + safeUserId + " not found"));
+    }
+
+    /**
+     * Acquires a pessimistic write lock on the group lifecycle row.
+     * Callers that mutate membership against archived-state (leave/archive, add, self-join)
+     * must hold this lock around the active check and the membership write.
+     */
+    private Group lockGroupForLifecycleUpdate(Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        return groupRepository.findByIdForUpdate(safeGroupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
     }
 
     private GroupParticipant loadParticipant(Long groupId, Long userId) {

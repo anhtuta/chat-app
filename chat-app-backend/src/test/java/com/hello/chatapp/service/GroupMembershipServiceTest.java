@@ -180,6 +180,7 @@ class GroupMembershipServiceTest {
     @Test
     void addMember_createsMemberWithDefaultRole() {
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
@@ -214,6 +215,7 @@ class GroupMembershipServiceTest {
         joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
 
         when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -342,6 +344,7 @@ class GroupMembershipServiceTest {
         participant.setRole(GroupRole.MEMBER);
 
         when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(participant);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
         when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT)).thenReturn(systemMessage);
         when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED)).thenReturn(systemMessage);

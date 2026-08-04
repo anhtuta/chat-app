@@ -625,6 +625,7 @@ What changed:
 - Rejects banned users in direct add and self-join flows.
 - Rejects membership changes for archived groups.
 - Archives a group when the last member leaves.
+- Serializes last-member leave/archive against concurrent `addMember` / `joinByToken` with a pessimistic lock on the group row (`findByIdForUpdate`) so a join cannot land in a group that is being archived.
 - Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
 - Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
 - Ensures kick, ban, promote, and demote checks compare actor and target role ranks.

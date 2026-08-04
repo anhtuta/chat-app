@@ -18,11 +18,13 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
     Optional<Group> findByIdWithCreator(Long id);
 
     /**
-     * Unused
+     * Locks the group row ({@code SELECT … FOR UPDATE}) for membership lifecycle changes.
+     * Used to serialize last-member leave/archive against concurrent add/join so a new
+     * participant cannot be inserted into a group that is about to be (or already) archived.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT g FROM Group g WHERE g.id = :id")
-    Optional<Group> findByIdForLatestMessageUpdate(@Param("id") Long id);
+    Optional<Group> findByIdForUpdate(@Param("id") Long id);
 
     /**
      * Atomically updates the group's latest message summary fields if the provided message is newer than the current latest message.
