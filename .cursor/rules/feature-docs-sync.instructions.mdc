@@ -21,6 +21,8 @@ alwaysApply: false
 
 # Format of the documentation
 
+Note: `optional` means that the section is not mandatory, and can be skipped if not applicable.
+
 ## 1. Brand-new feature docs
 
 Use following format:
