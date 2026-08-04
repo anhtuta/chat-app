@@ -99,6 +99,6 @@ public class MessageModerationService {
         if (message.getGroup() == null || message.getGroup().getId() == null) {
             return;
         }
-        messageService.refreshGroupLatestMessage(message.getGroup().getId());
+        messageService.refreshGroupLatestMessage(message.getGroup().getId(), message.getId());
     }
 }

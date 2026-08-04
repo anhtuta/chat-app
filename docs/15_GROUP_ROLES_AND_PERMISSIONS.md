@@ -758,7 +758,7 @@ What changed:
   - `deletedBy`
   - `deletedAt`
 - Hid deleted message content and attachments from API responses while keeping the row for history/audit purposes.
-- Refreshed group latest-message summaries after edits/deletes so sidebar state stays coherent.
+- Refreshed group latest-message summaries after edits/deletes via `MessageService.refreshGroupLatestMessage` so `groups.latest_message*` stays coherent (see `docs/05_GROUP_LATEST_MESSAGE_UPDATE_STRATEGY.md`). This updates the DB only; realtime sidebar fan-out for other clients is Task 12.4.
 - Updated frontend chat message rendering to show deleted placeholders and edited markers.
 
 Why it changed:
