@@ -61,7 +61,8 @@ server:
   port: 9010
   servlet:
     session:
-      timeout: 43200 # If a duration suffix is not specified, seconds is used.
+      # Set the sliding window idle timeout, if a duration suffix is not specified, seconds is used (e.g. 30m, 3600).
+      timeout: 12h
 
 logging:
   level:
