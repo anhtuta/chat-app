@@ -32,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -140,9 +141,9 @@ public class GroupMembershipService {
     }
 
     @Transactional
-    public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, LocalDateTime expiresAt) {
+    public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, Instant expiresAt) {
         Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
-        if (expiresAt != null && !expiresAt.isAfter(LocalDateTime.now())) {
+        if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new BadRequestException("expiresAt must be in the future");
         }
 
@@ -380,7 +381,7 @@ public class GroupMembershipService {
         if (joinLink.getRevokedAt() != null) {
             throw new BadRequestException("Join link has been revoked");
         }
-        if (joinLink.getExpiresAt() != null && !joinLink.getExpiresAt().isAfter(LocalDateTime.now())) {
+        if (joinLink.getExpiresAt() != null && !joinLink.getExpiresAt().isAfter(Instant.now())) {
             throw new BadRequestException("Join link has expired");
         }
         ensureActive(joinLink.getGroup());

@@ -374,11 +374,8 @@ function toExpiresAtIso(option: ExpiryOption): string | null {
     return null;
   }
   const days = option === "1d" ? 1 : option === "7d" ? 7 : 30;
-  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-  // Backend expects LocalDateTime (no offset); send local wall-clock ISO without Z.
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${expiresAt.getFullYear()}-${pad(expiresAt.getMonth() + 1)}-${pad(expiresAt.getDate())}`
-    + `T${pad(expiresAt.getHours())}:${pad(expiresAt.getMinutes())}:${pad(expiresAt.getSeconds())}`;
+  // Absolute UTC instant so browser TZ and server Instant.now() agree on ACTIVE/EXPIRED.
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function resolveJoinLinkStatus(link: GroupJoinLink): JoinLinkStatus {

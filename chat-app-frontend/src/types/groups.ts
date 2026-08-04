@@ -51,6 +51,7 @@ export interface GroupJoinLink {
   createdById?: number | null;
   createdByUsername?: string | null;
   createdAt?: string | null;
+  /** Absolute expiry instant (UTC ISO-8601). Null means the link does not expire. */
   expiresAt?: string | null;
   revokedAt?: string | null;
 }

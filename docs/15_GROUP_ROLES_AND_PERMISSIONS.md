@@ -944,7 +944,12 @@ What changed:
 - Added `GET /api/groups/{groupId}/join-links` (requires `CREATE_JOIN_LINK`) for join-link history metadata; raw `token` remains create-only because only the hash is stored.
 - Added frontend helpers for list/create/revoke join links.
 - Added a Join links section in group details for users with `CREATE_JOIN_LINK`: optional expiry, create, copy token, revoke active links, and active/expired/revoked status.
+- Join-link `expiresAt` is an absolute UTC instant end-to-end (`timestamptz` / `Instant` / ISO-8601 with `Z`) so browser-local wall-clock values cannot disagree with server `Instant.now()` validation.
 - Icon-only copy/revoke controls expose `title` and `aria-label`.
+
+Rollout / migration notes:
+
+- Flyway `V9__join_link_expires_at_timestamptz.sql` converts `group_join_links.expires_at` to `timestamptz`, treating existing naive timestamps as UTC.
 
 #### Task 10.2: Join Group Via Link
 

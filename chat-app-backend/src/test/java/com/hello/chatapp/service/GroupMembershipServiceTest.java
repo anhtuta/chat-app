@@ -31,6 +31,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -210,7 +211,7 @@ class GroupMembershipServiceTest {
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
         joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
-        joinLink.setExpiresAt(LocalDateTime.now().plusHours(1));
+        joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
 
         when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
@@ -245,7 +246,7 @@ class GroupMembershipServiceTest {
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
         joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
-        joinLink.setExpiresAt(LocalDateTime.now().plusDays(1));
+        joinLink.setExpiresAt(Instant.now().plusSeconds(86_400));
 
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.CREATE_JOIN_LINK))
                 .thenReturn(group);

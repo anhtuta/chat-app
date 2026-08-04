@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Entity
@@ -41,8 +42,12 @@ public class GroupJoinLink {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * Absolute expiry instant. Null means the link does not expire.
+     * Stored as timestamptz; compared with {@link Instant#now()} on join.
+     */
     @Column(name = "expires_at")
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(name = "revoked_at")
     private LocalDateTime revokedAt;
