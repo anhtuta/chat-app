@@ -179,8 +179,8 @@ class GroupMembershipServiceTest {
 
     @Test
     void addMember_createsMemberWithDefaultRole() {
-        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.save(any(GroupParticipant.class)))
@@ -188,6 +188,10 @@ class GroupMembershipServiceTest {
         stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
 
         GroupMemberResponse response = groupMembershipService.addMember(actor, 100L, 2L);
+
+        InOrder order = inOrder(groupRepository, groupAuthorizationService);
+        order.verify(groupRepository).findByIdForUpdate(100L);
+        order.verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS);
 
         ArgumentCaptor<GroupParticipant> participantCaptor = ArgumentCaptor.forClass(GroupParticipant.class);
         verify(groupParticipantRepository).save(participantCaptor.capture());
@@ -268,6 +272,7 @@ class GroupMembershipServiceTest {
         GroupParticipant targetParticipant = new GroupParticipant(group, targetUser);
         targetParticipant.setRole(GroupRole.MEMBER);
 
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.BAN_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(targetParticipant));
@@ -277,6 +282,9 @@ class GroupMembershipServiceTest {
 
         groupMembershipService.banMember(actor, 100L, 2L, "spam");
 
+        InOrder order = inOrder(groupRepository, groupAuthorizationService);
+        order.verify(groupRepository).findByIdForUpdate(100L);
+        order.verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.BAN_MEMBERS);
         verify(groupAuthorizationService).requireCanManageTarget(actor, 100L, targetUser, GroupPermission.BAN_MEMBERS);
         verify(groupParticipantRepository).delete(targetParticipant);
 
@@ -323,6 +331,7 @@ class GroupMembershipServiceTest {
         GroupParticipant newLeader = new GroupParticipant(group, targetUser);
         newLeader.setRole(GroupRole.MEMBER);
 
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(currentLeader);
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(newLeader));
         when(groupParticipantRepository.saveAndFlush(currentLeader)).thenReturn(currentLeader);
@@ -330,6 +339,9 @@ class GroupMembershipServiceTest {
 
         groupMembershipService.transferLeadership(actor, 100L, 2L);
 
+        InOrder lockThenAuth = inOrder(groupRepository, groupAuthorizationService);
+        lockThenAuth.verify(groupRepository).findByIdForUpdate(100L);
+        lockThenAuth.verify(groupAuthorizationService).requireMember(actor, 100L);
         assertThat(currentLeader.getRole()).isEqualTo(GroupRole.MEMBER);
         assertThat(newLeader.getRole()).isEqualTo(GroupRole.LEADER);
         InOrder repositoryInOrder = inOrder(groupParticipantRepository);
@@ -343,8 +355,8 @@ class GroupMembershipServiceTest {
         GroupParticipant participant = new GroupParticipant(group, actor);
         participant.setRole(GroupRole.MEMBER);
 
-        when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(participant);
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(participant);
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
         when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT)).thenReturn(systemMessage);
         when(systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED)).thenReturn(systemMessage);
