@@ -20,6 +20,8 @@ Related code:
 - `MessageModerationService`
 - Feature 15 message moderation APIs (`PATCH` / `DELETE /api/messages/{messageId}`)
 
+**Related but different race:** concurrent kick/ban/role change vs edit/delete (auth TOCTOU on `group_participants`) — see [23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md](./23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md). Message `@Version` does not cover that case.
+
 ## Possible Solutions
 
 ### 1. Dedicated `@Version` column (optimistic locking)
