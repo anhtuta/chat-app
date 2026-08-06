@@ -13,11 +13,13 @@ import com.hello.chatapp.entity.GroupJoinLink;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.repository.GroupBanRepository;
 import com.hello.chatapp.repository.GroupJoinLinkRepository;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -37,11 +39,14 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,6 +77,9 @@ class GroupMembershipServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private EntityManager entityManager;
 
     @InjectMocks
     private GroupMembershipService groupMembershipService;
@@ -239,10 +247,39 @@ class GroupMembershipServiceTest {
         assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
         assertThat(response.getGroupId()).isEqualTo(100L);
         assertThat(response.getGroupName()).isEqualTo("Backend Team");
+        InOrder lockThenRefreshThenAuth = inOrder(groupRepository, entityManager, groupAuthorizationService);
+        lockThenRefreshThenAuth.verify(groupRepository).findByIdForUpdate(100L);
+        lockThenRefreshThenAuth.verify(entityManager).refresh(joinLink);
+        lockThenRefreshThenAuth.verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, targetUser, SystemEventType.USER_JOINED);
         verify(membershipRealtimePublisher).publishMembershipChange(
                 group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
+    }
+
+    @Test
+    void joinByToken_revalidatesJoinLinkAfterGroupLock() {
+        GroupJoinLink joinLink = new GroupJoinLink();
+        joinLink.setId(77L);
+        joinLink.setGroup(group);
+        joinLink.setCreatedBy(actor);
+        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
+
+        when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        doAnswer(invocation -> {
+            joinLink.setRevokedAt(LocalDateTime.now());
+            return null;
+        }).when(entityManager).refresh(joinLink);
+
+        assertThatThrownBy(() -> groupMembershipService.joinByToken(targetUser, "join-token"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Join link has been revoked");
+
+        verify(entityManager).refresh(joinLink);
+        verify(groupAuthorizationService, never()).requireNotBanned(targetUser, 100L);
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
     }
 
     @Test

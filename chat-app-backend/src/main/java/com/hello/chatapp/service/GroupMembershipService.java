@@ -23,6 +23,7 @@ import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.UserRepository;
 import com.hello.chatapp.util.PageableUtil;
 import com.hello.chatapp.util.StringUtil;
+import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class GroupMembershipService {
     private final SystemMessageService systemMessageService;
     private final GroupMembershipRealtimePublisher membershipRealtimePublisher;
     private final UserRepository userRepository;
+    private final EntityManager entityManager;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public GroupMembershipService(
@@ -67,7 +69,8 @@ public class GroupMembershipService {
             GroupRepository groupRepository,
             SystemMessageService systemMessageService,
             GroupMembershipRealtimePublisher membershipRealtimePublisher,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            EntityManager entityManager) {
         this.groupAuthorizationService = groupAuthorizationService;
         this.groupParticipantRepository = groupParticipantRepository;
         this.groupBanRepository = groupBanRepository;
@@ -76,6 +79,7 @@ public class GroupMembershipService {
         this.systemMessageService = systemMessageService;
         this.membershipRealtimePublisher = membershipRealtimePublisher;
         this.userRepository = userRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -167,12 +171,23 @@ public class GroupMembershipService {
 
         GroupJoinLink joinLink = groupJoinLinkRepository.findByTokenHashWithGroup(hashToken(token))
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
+
+        // 1. First validate: optional optimization, the first check is only a fail-fast pre-check.
         validateJoinLink(joinLink);
 
         Long groupId = Objects.requireNonNull(joinLink.getGroup().getId());
 
+        // 2. Then the code waits for the group lock.
+        // While waiting, another transaction can revoke the link or archive the group.
         // Same group lock as other membership mutations (archive + auth serialization).
         Group group = lockActiveGroup(groupId);
+
+        // 3. Reloads the latest DB state.
+        entityManager.refresh(joinLink);
+
+        // 4. Validate again. This second validate is required.
+        validateJoinLink(joinLink);
+
         groupAuthorizationService.requireNotBanned(user, groupId);
 
         // If they're already a participant, no new row is saved and no USER_JOINED system message is recorded
@@ -339,12 +354,13 @@ public class GroupMembershipService {
      * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
      * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
      *
-     * <p>Realtime effects:
+     * <p>
+     * Realtime effects:
      * <ul>
-     *   <li>push the system message to {@code /topic/group.{groupId}}</li>
-     *   <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
-     *   <li>when {@code removedUsername} is set, immediately notify that user with
-     *       {@code removed=true} so their sidebar drops the group</li>
+     * <li>push the system message to {@code /topic/group.{groupId}}</li>
+     * <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
+     * <li>when {@code removedUsername} is set, immediately notify that user with
+     * {@code removed=true} so their sidebar drops the group</li>
      * </ul>
      *
      * @param group the group where the membership event occurred

@@ -626,7 +626,7 @@ What changed:
 - Rejects membership changes for archived groups.
 - Archives a group when the last member leaves.
 - Serializes last-member leave/archive against concurrent `addMember` / `joinByToken` with a pessimistic lock on the group row (`findByIdForUpdate`) so a join cannot land in a group that is being archived.
-- Membership/role mutations acquire that same group lock **before** authorization so a concurrent demotion cannot leave a former leader authorized to mutate (see [24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md](./24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md)).
+- Membership/role mutations acquire that same group lock **before** authorization so a concurrent demotion cannot leave a former privileged member authorized to mutate; join-by-token also revalidates the link under the lock so concurrent revocation cannot admit a member from stale token state (see [24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md](./24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md)).
 - Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
 - Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
 - Ensures kick, ban, promote, and demote checks compare actor and target role ranks.
