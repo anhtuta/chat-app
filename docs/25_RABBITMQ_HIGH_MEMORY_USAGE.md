@@ -133,7 +133,23 @@ The best choice should be verified in this environment, because the issue is spe
   - Does not protect against all stuck subprocess cases.
 - Recommendation for our problem: **Yes**, but only as a mitigation
 
-### 3. Make the RabbitMQ topology less retention-prone
+### 3. Keep RabbitMQ CLI healthchecks, but switch to `rabbitmq-diagnostics -q check_running`
+
+- How it works:
+  - Replace `rabbitmq-diagnostics ping` with:
+    - `test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]`
+  - This checks whether the RabbitMQ node is fully booted and running, while keeping a simple direct `CMD` healthcheck.
+- Pros:
+  - Very simple and readable configuration.
+  - Semantically closer to "is RabbitMQ running?" than a raw TCP or HTTP probe.
+  - In a short manual test in this environment, it returned success and did not visibly increase the `rabbitmq-diagnostics` process count.
+- Cons:
+  - It still depends on the same `rabbitmq-diagnostics` CLI family as the leaking `ping` command.
+  - A short manual test is not the same as multi-day healthcheck soak testing.
+  - If the leak is caused by the CLI/runtime interaction itself, this option may still carry some risk.
+- Recommendation for our problem: **Maybe**
+
+### 4. Make the RabbitMQ topology less retention-prone
 
 - How it works:
   - Revisit whether the per-instance inbound queue should remain durable for dev/staging realtime traffic.
@@ -147,7 +163,7 @@ The best choice should be verified in this environment, because the issue is spe
   - Needs careful review of delivery guarantees before changing durability.
 - Recommendation for our problem: **Yes**, as a secondary hardening task
 
-### 4. Reduce application-level fan-out pressure
+### 5. Reduce application-level fan-out pressure
 
 - How it works:
   - Keep the current fixed-exchange topology, but continue optimizing `GroupSummaryUpdatePublisher`.
@@ -164,10 +180,28 @@ The best choice should be verified in this environment, because the issue is spe
 
 Recommended path:
 
-1. Change the Docker healthcheck away from the current `rabbitmq-diagnostics ping` probe.
+1. Keep the currently applied socket+HTTP healthcheck as the chosen fix.
 2. Restart the RabbitMQ container to clear the already leaked subprocesses and recover memory.
 3. Add basic operational monitoring for RabbitMQ container memory and PID count.
 4. After the immediate fix, review whether realtime instance queues and messages need to stay durable in all environments.
+
+### Current chosen fix
+
+- Use:
+  - `test: ["CMD-SHELL", "nc -z -w 2 127.0.0.1 5672 && wget -q --spider http://127.0.0.1:15672"]`
+- Why this is the chosen fix:
+  - It avoids the `rabbitmq-diagnostics` subprocess family entirely.
+  - It still validates both the AMQP listener and the management HTTP listener.
+  - It is the most conservative option after the observed multi-GB leak.
+
+### Simpler alternative
+
+- Use:
+  - `test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]`
+- Why this was not chosen as the default:
+  - It still depends on the same RabbitMQ CLI tool family as the leaking `ping` healthcheck.
+  - It looked fine in a short manual test, but it has not been soak-tested long enough in this environment.
+  - It remains a reasonable fallback if the team later decides simplicity is more important than being maximally conservative here.
 
 ### Final diagnosis
 
@@ -185,6 +219,52 @@ The root cause of the observed **5 GB** memory usage is most likely **leaked Doc
   - We needed to distinguish between a real RabbitMQ broker memory issue and a container/process-level issue.
 - Rollout, migration, or backward-compatibility notes:
   - No code or infrastructure change has been applied yet in this phase.
+
+### Phase 2 - Docker healthcheck fix applied
+
+- What changed:
+  - Replaced the RabbitMQ Docker healthcheck command from `rabbitmq-diagnostics ping` to a lightweight socket+HTTP probe:
+    - `nc -z -w 2 127.0.0.1 5672`
+    - `wget -q --spider http://127.0.0.1:15672`
+  - Increased the healthcheck interval from `10s` to `30s`.
+  - Added `start_period: 20s` to reduce startup flapping.
+- Why it changed:
+  - The old healthcheck was the most likely source of leaked `rabbitmq-diagnostics` subprocesses and multi-GB anonymous memory growth.
+  - The new probe avoids spawning Erlang CLI diagnostics on every healthcheck run while still verifying both the AMQP port and management UI listener.
+- How the new command works:
+  - `nc -z -w 2 127.0.0.1 5672`
+    - `nc` (netcat) opens a lightweight TCP check.
+    - `-z` means "scan only" or "do not send data"; it only checks whether the port is accepting connections.
+    - `-w 2` sets a 2-second timeout.
+    - `127.0.0.1 5672` targets the RabbitMQ AMQP listener inside the same container.
+    - In short: this confirms the broker is accepting AMQP TCP connections.
+  - `wget -q --spider http://127.0.0.1:15672`
+    - `wget` performs a lightweight HTTP request.
+    - `-q` suppresses noisy output.
+    - `--spider` checks the URL without downloading a response body to a file.
+    - `http://127.0.0.1:15672` targets the RabbitMQ management UI listener inside the same container.
+    - In short: this confirms the HTTP management endpoint is up.
+  - `&&`
+    - The second check only runs if the first one succeeds.
+    - The whole healthcheck fails if either the AMQP port or the management HTTP listener is unavailable.
+  - Combined effect:
+    - The healthcheck verifies both network listeners we care about, while avoiding the `rabbitmq-diagnostics` subprocess family entirely.
+- Rollout, migration, or backward-compatibility notes:
+  - Existing leaked processes are not removed by the compose-file change alone; the RabbitMQ container must be recreated or restarted to reclaim RAM.
+  - Recreating a RabbitMQ container on a persisted bind mount can expose a separate startup issue if the Erlang node name changes between runs.
+
+### Phase 3 - Stabilize RabbitMQ node name across container recreation
+
+- What changed:
+  - Added `hostname: rabbitmq` to the RabbitMQ service in Compose.
+  - Added `RABBITMQ_NODENAME: rabbit@rabbitmq` to keep the persisted Mnesia node name stable.
+- Why it changed:
+  - The bind-mounted RabbitMQ data directory already contained state for old node names such as `rabbit@3d18070d6c34`.
+  - After recreating the container, Docker assigned a new hostname such as `f0f9702f4721`, which changed the RabbitMQ Erlang node name to `rabbit@f0f9702f4721`.
+  - That node-name mismatch can prevent RabbitMQ from finishing boot on reused persisted state.
+- Rollout, migration, or backward-compatibility notes:
+  - This prevents future random node-name drift when the container is recreated.
+  - Existing persisted state may still need one-time cleanup in dev/staging if it already contains broken or stale node-specific Mnesia data from old container hostnames.
 
 ## Lesson (look back here)
 

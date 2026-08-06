@@ -64,7 +64,6 @@ help:
 	@echo "       make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
 	@echo "  3.2. make run.local   - Start Backend with embedded frontend (http://localhost:9010)"
 	@echo "  4. Visit http://localhost:9010/login.html to login"
-	@echo "  5. After login, you'll be redirected to http://localhost:3000"
 
 start: start.all
 
