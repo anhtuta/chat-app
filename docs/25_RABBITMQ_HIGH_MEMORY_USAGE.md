@@ -1,136 +1,50 @@
-Command: `docker stats`
+## Current Problem
 
-Output:
+`docker stats` shows the `chat-app-rabbitmq` container using about **5.28 GiB** of memory, which looks alarming for a dev/staging chat broker:
 
-```
-CONTAINER ID   NAME                  CPU %     MEM USAGE / LIMIT    MEM %     NET I/O           BLOCK I/O         PIDS
-23c6d8e960aa   bdi-vb-redis-1        1.15%     5.094MiB / 7.75GiB   0.06%     20.2MB / 7.52MB   1.39TB / 2.68MB   6
-cb987b7f17d8   chat-app-grafana      1.54%     185.2MiB / 7.75GiB   2.33%     7.1MB / 1.48MB    2.82TB / 2MB      22
-7970cde58fd1   chat-app-postgres     0.00%     89.87MiB / 7.75GiB   1.13%     15.4MB / 191MB    598GB / 49.1MB    22
-5b7f32496f79   chat-app-redis        2.07%     8.883MiB / 7.75GiB   0.11%     73.2MB / 360MB    1.34TB / 1.76MB   6
-466c793a7a4b   chat-app-prometheus   0.00%     75.27MiB / 7.75GiB   0.95%     1.07GB / 18.9MB   1.15TB / 1.36MB   15
-3d18070d6c34   chat-app-rabbitmq     3.34%     5.281GiB / 7.75GiB   68.14%    3.47MB / 3.65MB   3.51TB / 1.02GB   5032
-4aab32bf5a87   chat-app-minio        0.36%     138MiB / 7.75GiB     1.74%     10.9MB / 529MB    1.06TB / 4.01MB   16
+```text
+CONTAINER ID   NAME                MEM USAGE / LIMIT    MEM %   PIDS
+3d18070d6c34   chat-app-rabbitmq   5.281GiB / 7.75GiB   68.14%  5032
 ```
 
-RabbitMQ memory usage is 5.281GiB, why is it so high?
-
-Investigation:
-
-Generate the Internal Memory Breakdown (command is run inside the rabbitmq container):
+At first glance this looks like a RabbitMQ memory leak or a large queue backlog, but the broker's own internal memory report says otherwise:
 
 ```sh
 rabbitmq-diagnostics memory_breakdown
-
-Reporting memory breakdown on node rabbit@3d18070d6c34...
-code: 0.0358 gb (34.18%)
-other_system: 0.0265 gb (25.31%)
-other_proc: 0.0163 gb (15.59%)
-reserved_unallocated: 0.0146 gb (13.97%)
-binary: 0.0028 gb (2.63%)
-other_ets: 0.0027 gb (2.57%)
-plugins: 0.002 gb (1.89%)
-atom: 0.0019 gb (1.82%)
-metrics: 0.0011 gb (1.03%)
-mgmt_db: 0.0003 gb (0.29%)
-msg_index: 0.0002 gb (0.22%)
-metadata_store: 0.0001 gb (0.14%)
-connection_other: 0.0001 gb (0.1%)
-mnesia: 0.0001 gb (0.08%)
-allocated_unused: 0.0 gb (0.05%)
-connection_readers: 0.0 gb (0.03%)
-metadata_store_ets: 0.0 gb (0.03%)
-quorum_ets: 0.0 gb (0.02%)
-queue_procs: 0.0 gb (0.02%)
-connection_channels: 0.0 gb (0.01%)
-connection_writers: 0.0 gb (0.0%)
-quorum_queue_procs: 0.0 gb (0.0%)
-quorum_queue_dlx_procs: 0.0 gb (0.0%)
-stream_queue_procs: 0.0 gb (0.0%)
-stream_queue_replica_reader_procs: 0.0 gb (0.0%)
-queue_slave_procs: 0.0 gb (0.0%)
-stream_queue_coordinator_procs: 0.0 gb (0.0%)
 ```
 
-The reason docker stats reports 5 GB while RabbitMQ reports 104 MB is almost always due to the Linux Page Cache (OS File Cache), not an internal RabbitMQ memory leak.
+```text
+code: 0.0358 gb
+other_system: 0.0265 gb
+other_proc: 0.0163 gb
+reserved_unallocated: 0.0146 gb
+...
+queue_procs: 0.0 gb
+msg_index: 0.0002 gb
+mgmt_db: 0.0003 gb
+```
 
-Verify it is just Page Cache (command is run inside the rabbitmq container):
+RabbitMQ itself only accounts for about **104 MB**. That means the 5 GB seen by Docker is **not primarily broker heap, queue state, or message index state**.
+
+Further inspection of the container cgroup memory shows the usage is dominated by **anonymous process memory**, not file cache:
 
 ```sh
 cat /sys/fs/cgroup/memory.stat
-
-anon 4795621376
-file 569593856
-kernel 167936000
-kernel_stack 81346560
-pagetables 42930176
-sec_pagetables 0
-percpu 126200
-sock 0
-vmalloc 1236992
-shmem 560095232
-zswap 0
-zswapped 0
-file_mapped 491581440
-file_dirty 0
-file_writeback 0
-swapcached 6160384
-anon_thp 3059744768
-file_thp 0
-shmem_thp 0
-inactive_anon 2696347648
-active_anon 2665529344
-inactive_file 1589248
-active_file 7909376
-unevictable 0
-slab_reclaimable 4199912
-slab_unreclaimable 32974328
-slab 37174240
-workingset_refault_anon 5330
-workingset_refault_file 617749399
-workingset_activate_anon 989
-workingset_activate_file 61366432
-workingset_restore_anon 980
-workingset_restore_file 61009560
-workingset_nodereclaim 0
-pgdemote_kswapd 0
-pgdemote_direct 0
-pgdemote_khugepaged 0
-pgscan 993187808
-pgsteal 619776829
-pgscan_kswapd 804415450
-pgscan_direct 188763268
-pgscan_khugepaged 9090
-pgsteal_kswapd 503018093
-pgsteal_direct 116754102
-pgsteal_khugepaged 4634
-pgfault 717480824
-pgmajfault 22092074
-pgrefill 593791715
-pgactivate 189049445
-pgdeactivate 0
-pglazyfree 0
-pglazyfreed 0
-swpin_zero 36
-swpout_zero 5323
-zswpin 0
-zswpout 0
-zswpwb 0
-thp_fault_alloc 52784
-thp_collapse_alloc 1583
-thp_swpout 0
-thp_swpout_fallback 209
 ```
 
-This output changes the diagnostic entirely: your 5GB footprint is not a passive file cache issue.
+```text
+anon 4795621376
+file 569593856
+shmem 560095232
+```
 
-Your container is actively holding 4.47 GB of anonymous memory (anon) and 0.52 GB of shared memory (shmem). Because your internal rabbitmq-diagnostics tool only sees 104 MB, this means something else running inside your container (or an underlying memory allocator fragmentation bug) is hoarding your RAM.
-
-Find the exact process consuming the 4.47 GB (command is run inside the rabbitmq container), this is the top result, we have about 150 lines like this:
+Finally, the process list inside the container shows the real problem:
 
 ```sh
 ps aux --sort=-%mem
+```
 
+```text
 USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
 rabbitmq     1  3.1  1.2 1252056 101748 ?      Ssl  Aug02 150:42 /opt/erlang/lib/erlang/erts-14.2.5.12/bin/beam.smp -W w -MBas ageffcbf -MHas ageffcbf -MBlmbcs 5
 root     22576  0.0  0.7 1185296 60316 ?       Sl   Aug03   2:06 /opt/rabbitmq/escript/rabbitmq-diagnostics -B -- -root /opt/erlang/lib/erlang -bindir /opt/erlan
@@ -144,13 +58,144 @@ root     70246  0.0  0.6 1184712 55788 ?       Sl   Aug04   0:22 /opt/rabbitmq/e
 ...
 ```
 
-This output completely exposes the root cause, and it is a fascinating, known issue with how health checks are interacting with your Docker setup.
+There are roughly **150 stuck `rabbitmq-diagnostics` processes**, each consuming around **55 to 60 MB RSS**. The main RabbitMQ BEAM process is only about **100 MB RSS**.
 
-Look closely at your process list: you have a massive pile of zombie rabbitmq-diagnostics processes running as root (PIDs 22576, 19481, 47562, etc.). Each one is eating ~56MB of RAM.
+### Root cause
 
-Your main RabbitMQ process (PID 1) is actually completely healthy and only using a tiny 101 MB (RSS).
-The other 4.4+ GB of anon memory is being leaked by your Docker Healthcheck.
+The most likely root cause is the Docker healthcheck in `chat-app-backend/docker-compose.yml`:
 
-1.  Docker is configured to regularly run rabbitmq-diagnostics inside the container to see if the node is alive.
-2.  For some reason (usually a timeout, network hang, or standard Erlang CLI tool behavior), these health-check commands are not exiting completely.
-3.  They get stuck in the background, pile up over days (notice the start dates spanning from Aug 03 to Aug 05), and continuously hoard your RAM.
+```yaml
+healthcheck:
+  test: ["CMD", "rabbitmq-diagnostics", "ping"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+```
+
+This healthcheck runs every 10 seconds inside the container. In the observed environment, those `rabbitmq-diagnostics ping` invocations are not exiting cleanly, so they accumulate over days and consume several gigabytes of RAM. The 5 GB footprint is therefore **mostly leaked healthcheck subprocess memory**, not normal RabbitMQ broker memory.
+
+### Secondary contributing risks in this app
+
+These do **not** explain the measured 5 GB spike as well as the healthcheck leak does, but they are still operational risks:
+
+- The app uses **durable exchanges** and a **durable per-instance queue** (`ws.{instance-id}.inbound`).
+- Messages are published with the default Spring AMQP behavior, which is typically **persistent delivery** unless overridden.
+- There is **no queue TTL**, **no max-length**, and **no dead-letter policy** on the instance queue.
+- A crashed instance can leave a durable queue on the persisted RabbitMQ volume until that same `instance-id` comes back and deletes it.
+- `GroupSummaryUpdatePublisher` still does **O(group_members)** application-level fan-out for sidebar updates.
+
+Those issues matter for backlog growth, broker throughput, and disk usage, but the observed 5 GB memory symptom is best explained by the healthcheck process leak.
+
+### Supporting evidence summary
+
+- `docker stats` shows about **5.28 GiB** and **5032 PIDs** for the RabbitMQ container.
+- `rabbitmq-diagnostics memory_breakdown` shows only about **104 MB** attributed to RabbitMQ internals.
+- `memory.stat` shows about **4.8 GB anon memory**, not just page cache.
+- `ps aux` shows many stuck `rabbitmq-diagnostics` subprocesses at around **56 MB RSS each**.
+- The current Docker healthcheck runs that command every **10 seconds**.
+
+## Possible Solutions
+
+### 1. Replace the RabbitMQ healthcheck command
+
+- How it works:
+  - Stop using `rabbitmq-diagnostics ping` as the frequent Docker healthcheck.
+  - Replace it with a lighter and safer probe, or disable the Docker healthcheck temporarily until a stable probe is chosen.
+- Pros:
+  - Directly addresses the most likely root cause.
+  - Smallest and fastest fix.
+  - Does not require app-level topology changes.
+- Cons:
+  - Requires validating which alternative probe is reliable for this image/environment.
+  - Existing leaked processes will still need a container restart to reclaim RAM.
+- Recommendation for our problem: **Yes**
+
+Possible replacement candidates to evaluate:
+
+- `rabbitmq-diagnostics -q ping`
+- `rabbitmqctl status`
+- HTTP health probe against the management API
+- Less frequent healthcheck interval if a CLI probe must remain
+
+The best choice should be verified in this environment, because the issue is specifically about how the current CLI probe behaves under Docker here.
+
+### 2. Reduce healthcheck frequency and add operational guardrails
+
+- How it works:
+  - Increase the healthcheck interval from 10s to something much less aggressive.
+  - Add alerts on container PID count and RabbitMQ container memory.
+  - Restart the container automatically or manually when the leak pattern reappears.
+- Pros:
+  - Reduces the blast radius even before a perfect probe is chosen.
+  - Easy operational mitigation.
+- Cons:
+  - Mitigates symptoms rather than removing the underlying bad probe behavior.
+  - Does not protect against all stuck subprocess cases.
+- Recommendation for our problem: **Yes**, but only as a mitigation
+
+### 3. Make the RabbitMQ topology less retention-prone
+
+- How it works:
+  - Revisit whether the per-instance inbound queue should remain durable for dev/staging realtime traffic.
+  - Add queue policies such as TTL and max-length where message durability is not critical.
+  - Periodically clean orphaned `ws.*.inbound` queues when instance identities change.
+- Pros:
+  - Reduces backlog and stale-object risk.
+  - Improves broker hygiene for realtime workloads.
+- Cons:
+  - Does not explain the measured 5 GB symptom by itself.
+  - Needs careful review of delivery guarantees before changing durability.
+- Recommendation for our problem: **Yes**, as a secondary hardening task
+
+### 4. Reduce application-level fan-out pressure
+
+- How it works:
+  - Keep the current fixed-exchange topology, but continue optimizing `GroupSummaryUpdatePublisher`.
+  - Monitor large-group traffic because sidebar updates still publish once per online member.
+- Pros:
+  - Helps future scale and broker throughput.
+  - Complements the existing topology optimizations in `10_RABBITMQ_TOPOLOGY_OPTIMIZATION.md` and `11_GROUP_SUMMARY_UPDATE_FANOUT_SCALING.md`.
+- Cons:
+  - Not the main fix for this 5 GB incident.
+  - More code-level work than changing the healthcheck.
+- Recommendation for our problem: **Yes**, but lower priority than fixing the healthcheck
+
+## Recommendation
+
+Recommended path:
+
+1. Change the Docker healthcheck away from the current `rabbitmq-diagnostics ping` probe.
+2. Restart the RabbitMQ container to clear the already leaked subprocesses and recover memory.
+3. Add basic operational monitoring for RabbitMQ container memory and PID count.
+4. After the immediate fix, review whether realtime instance queues and messages need to stay durable in all environments.
+
+### Final diagnosis
+
+The root cause of the observed **5 GB** memory usage is most likely **leaked Docker healthcheck subprocesses** created by `rabbitmq-diagnostics ping`, not excessive RabbitMQ broker memory, queue backlog, or message payload size.
+
+## Implementation details
+
+### Phase 1 - Investigation completed
+
+- What changed:
+  - Collected container-level memory evidence (`docker stats`, `memory.stat`, process list).
+  - Compared Docker memory with RabbitMQ internal memory accounting.
+  - Reviewed the current app topology and delivery model to separate primary cause from secondary risks.
+- Why it changed:
+  - We needed to distinguish between a real RabbitMQ broker memory issue and a container/process-level issue.
+- Rollout, migration, or backward-compatibility notes:
+  - No code or infrastructure change has been applied yet in this phase.
+
+## Lesson (look back here)
+
+- High container memory does not automatically mean high RabbitMQ broker memory.
+- Always compare `docker stats` with `rabbitmq-diagnostics memory_breakdown` before assuming queue or heap growth.
+- If RabbitMQ internal memory is small but container RSS is huge, inspect cgroup memory and process lists next.
+- PID count is an important clue: thousands of processes inside a RabbitMQ container usually point to a sidecar/tooling/healthcheck problem, not normal broker behavior.
+
+## Future Higher-Scale Path
+
+- If RabbitMQ remains in the architecture, continue reducing unnecessary persistence for ephemeral realtime events where safe.
+- Periodically review orphan queue cleanup on the persisted RabbitMQ volume.
+- Keep watching the per-member sidebar fan-out path for large active groups.
+- If the system fully migrates to Redis pub/sub for cross-instance realtime delivery, remove RabbitMQ entirely and drop this operational class of problems.
