@@ -7,7 +7,7 @@ Standalone Spring Boot app that load-tests your chat backend with WebSocket STOM
 ## What it does
 
 - Logs in existing users through `/api/auth/login`.
-- Opens authenticated WebSocket STOMP sessions at `/ws` using the `JSESSIONID` cookie.
+- Opens authenticated WebSocket STOMP sessions at `/ws` using the app session cookie (`CHATAPP_SESSION` by default).
 - Sends group messages continuously to `/app/group.send`.
 - Runs one bot per virtual thread, so scaling to 1000 bots is practical.
 - Prints runtime metrics every few seconds.
