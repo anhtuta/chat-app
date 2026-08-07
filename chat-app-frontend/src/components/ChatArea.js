@@ -3,7 +3,13 @@ import { Box } from "@mui/material";
 import ChatAreaHeader from "./chat-area/ChatAreaHeader";
 import ChatMessageList from "./chat-area/ChatMessageList";
 import ChatMessageComposer from "./chat-area/ChatMessageComposer";
-import { completeMediaMessage, prepareMediaMessage, uploadFileToPresignedUrl } from "../services/api";
+import {
+  completeMediaMessage,
+  prepareMediaMessage,
+  requestMultipartPartUrls,
+  uploadBlobToPresignedUrl,
+  uploadFileToPresignedUrl,
+} from "../services/api";
 import {
   isPreviewableFile,
   LOCAL_UPLOAD_STATUSES,
@@ -11,6 +17,8 @@ import {
   validateSelectedFiles,
 } from "./chat-area/mediaUtils";
 import "./ChatArea.css";
+
+const MULTIPART_PART_URL_BATCH_SIZE = 4;
 
 function ChatArea({
   chatId,
@@ -355,6 +363,104 @@ function ChatArea({
     },
   });
 
+  const updateUploadProgress = (localId, uploadedBytes, totalBytes) => {
+    const progressPercent = totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
+    updatePendingMessage(localId, (currentMessage) => ({
+      ...currentMessage,
+      localUploadState: {
+        ...currentMessage.localUploadState,
+        status: LOCAL_UPLOAD_STATUSES.UPLOAD_IN_PROGRESS,
+        progressPercent,
+        errorMessage: "",
+      },
+    }));
+  };
+
+  const uploadMultipartFile = async ({
+    uploadSessionId,
+    preparedAttachment,
+    file,
+    task,
+    baseUploadedBytes,
+    totalBytes,
+    pendingMessageLocalId,
+  }) => {
+    const partSize = Number(preparedAttachment.recommendedPartSize);
+    if (!Number.isFinite(partSize) || partSize <= 0) {
+      throw new Error("The upload session did not include a valid multipart part size.");
+    }
+
+    const partNumbers = Array.from(
+      { length: Math.ceil(file.size / partSize) },
+      (_, index) => index + 1,
+    );
+    const loadedBytesByPart = new Map();
+    const activeUploadHandles = new Map();
+    const completedParts = [];
+
+    const updateMultipartProgress = () => {
+      const currentFileUploadedBytes = Array.from(loadedBytesByPart.values())
+        .reduce((sum, loadedBytes) => sum + loadedBytes, 0);
+      updateUploadProgress(
+        pendingMessageLocalId,
+        baseUploadedBytes + Math.min(currentFileUploadedBytes, file.size),
+        totalBytes,
+      );
+    };
+
+    task.abort = () => {
+      activeUploadHandles.forEach((uploadHandle) => uploadHandle.abort());
+    };
+
+    for (let batchStart = 0; batchStart < partNumbers.length; batchStart += MULTIPART_PART_URL_BATCH_SIZE) {
+      if (task.canceled) {
+        throw createAbortError();
+      }
+
+      const batchPartNumbers = partNumbers.slice(batchStart, batchStart + MULTIPART_PART_URL_BATCH_SIZE);
+      const partUrlResponse = await requestMultipartPartUrls(
+        uploadSessionId,
+        preparedAttachment.attachmentId,
+        batchPartNumbers,
+      );
+      const presignedUrlByPartNumber = new Map(
+        (partUrlResponse.parts || []).map((part) => [part.partNumber, part.presignedUrl]),
+      );
+
+      const uploadedBatchParts = await Promise.all(batchPartNumbers.map(async (partNumber) => {
+        const presignedUrl = presignedUrlByPartNumber.get(partNumber);
+        if (!presignedUrl) {
+          throw new Error(`Missing multipart upload URL for part ${partNumber}.`);
+        }
+
+        const startByte = (partNumber - 1) * partSize;
+        const endByte = Math.min(startByte + partSize, file.size);
+        const partBlob = file.slice(startByte, endByte, file.type || undefined);
+        const uploadHandle = uploadBlobToPresignedUrl(presignedUrl, partBlob, {
+          onProgress: (loadedBytes) => {
+            loadedBytesByPart.set(partNumber, Math.min(loadedBytes, partBlob.size));
+            updateMultipartProgress();
+          },
+        });
+
+        activeUploadHandles.set(partNumber, uploadHandle);
+        try {
+          const etag = await uploadHandle.promise;
+          loadedBytesByPart.set(partNumber, partBlob.size);
+          updateMultipartProgress();
+          return { partNumber, etag };
+        } finally {
+          activeUploadHandles.delete(partNumber);
+        }
+      }));
+
+      completedParts.push(...uploadedBatchParts);
+    }
+
+    task.abort = null;
+    return completedParts.sort((left, right) => left.partNumber - right.partNumber);
+  };
+
   const uploadPendingMessage = async (pendingMessage) => {
     const files = pendingMessage.attachments.map((attachment) => attachment.file).filter(Boolean);
     const task = {
@@ -392,24 +498,36 @@ function ChatArea({
         const file = files[index];
         const baseUploadedBytes = uploadedBytesBeforeCurrentFile;
 
+        if (preparedAttachment.uploadStrategy === "MULTIPART") {
+          const parts = await uploadMultipartFile({
+            uploadSessionId: prepareResponse.uploadSessionId,
+            preparedAttachment,
+            file,
+            task,
+            baseUploadedBytes,
+            totalBytes,
+            pendingMessageLocalId: pendingMessage.localId,
+          });
+          uploadedBytesBeforeCurrentFile += file.size;
+          completionAttachments.push({
+            attachmentId: preparedAttachment.attachmentId,
+            parts,
+          });
+          continue;
+        }
+
         if (preparedAttachment.uploadStrategy !== "SINGLE_PART") {
-          // TODO: Replace this guard with browser multipart upload once backend multipart completion is real.
-          throw new Error("This file is too large for the current UI upload flow. Try a smaller file for now.");
+          throw new Error(`Unsupported upload strategy: ${preparedAttachment.uploadStrategy}`);
+        }
+
+        if (!preparedAttachment.presignedUrl) {
+          throw new Error("The upload session did not include a presigned upload URL.");
         }
 
         const uploadHandle = uploadFileToPresignedUrl(preparedAttachment.presignedUrl, file, {
           onProgress: (loadedBytes) => {
             const totalUploadedBytes = baseUploadedBytes + Math.min(loadedBytes, file.size);
-            const progressPercent = totalBytes > 0 ? Math.round((totalUploadedBytes / totalBytes) * 100) : 0;
-            updatePendingMessage(pendingMessage.localId, (currentMessage) => ({
-              ...currentMessage,
-              localUploadState: {
-                ...currentMessage.localUploadState,
-                status: LOCAL_UPLOAD_STATUSES.UPLOAD_IN_PROGRESS,
-                progressPercent,
-                errorMessage: "",
-              },
-            }));
+            updateUploadProgress(pendingMessage.localId, totalUploadedBytes, totalBytes);
           },
         });
 

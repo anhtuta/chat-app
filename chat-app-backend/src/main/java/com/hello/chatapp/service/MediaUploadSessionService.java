@@ -9,6 +9,7 @@ import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
+import com.hello.chatapp.dto.CompletedMultipartPartRequest;
 import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.dto.MultipartPartResponse;
 import com.hello.chatapp.dto.PrepareMediaAttachmentRequest;
@@ -29,6 +30,7 @@ import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
+import com.hello.chatapp.storage.ObjectStorageCompletedPart;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.util.AfterCommit;
@@ -130,6 +132,7 @@ public class MediaUploadSessionService {
                 .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
 
         ensureUploadBelongsToUser(mediaUpload, user);
+        ensureNotExpired(mediaUpload);
         if (resolveUploadStrategy(mediaUpload.getRequestedSizeBytes()) != UploadStrategy.MULTIPART) {
             throw new BadRequestException("Attachment does not use multipart upload");
         }
@@ -139,12 +142,10 @@ public class MediaUploadSessionService {
             throw new BadRequestException("All partNumbers must be positive");
         }
 
-        if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
-            mediaUpload.setMultipartUploadId(UUID.randomUUID().toString());
-        }
+        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(mediaUpload.getStorageProvider());
+        ensureMultipartUploadInitialized(mediaUpload, provider);
         mediaUpload.setStatus(UploadSessionStatus.UPLOAD_IN_PROGRESS);
 
-        ObjectStorageProvider provider = objectStorageProviderRegistry.getActiveProvider();
         List<MultipartPartResponse> parts = uniquePartNumbers.stream()
                 .map(partNumber -> MultipartPartResponse.builder()
                         .partNumber(partNumber)
@@ -185,17 +186,6 @@ public class MediaUploadSessionService {
             throw new BadRequestException("Completion request must include every prepared attachment exactly once");
         }
 
-        for (MediaUpload upload : uploads) {
-            CompleteMediaAttachmentRequest attachmentRequest = requestByAttachmentId.get(upload.getUploadId());
-            if (attachmentRequest == null) {
-                throw new BadRequestException("Missing completion metadata for attachment " + upload.getUploadId());
-            }
-            validateCompletionRequest(upload, attachmentRequest);
-            verifyUploadedObjectExists(upload);
-            malwareScanService.assertClean(upload);
-            upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
-        }
-
         // Re-check SEND_MESSAGES at complete time: prepare can succeed, then kick/ban before finalize.
         // Intentionally no group FOR UPDATE here — membership mutations own that lock; media complete
         // only needs a fresh permission read (narrow residual race vs concurrent kick during this tx).
@@ -203,6 +193,17 @@ public class MediaUploadSessionService {
                 ? null
                 : Objects.requireNonNull(firstUpload.getGroup().getId());
         validateScopeAndMembership(user, firstUpload.getChatScope(), preparedGroupId);
+
+        for (MediaUpload upload : uploads) {
+            CompleteMediaAttachmentRequest attachmentRequest = requestByAttachmentId.get(upload.getUploadId());
+            if (attachmentRequest == null) {
+                throw new BadRequestException("Missing completion metadata for attachment " + upload.getUploadId());
+            }
+            validateCompletionRequest(upload, attachmentRequest);
+            finalizeAndVerifyUploadedObject(upload, attachmentRequest);
+            malwareScanService.assertClean(upload);
+            upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
+        }
 
         Message message = persistFinalMessage(user, uploads);
         uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
@@ -332,6 +333,7 @@ public class MediaUploadSessionService {
             if (upload.getMultipartUploadId() == null || upload.getMultipartUploadId().isBlank()) {
                 throw new BadRequestException("Multipart upload was not initialized for attachment " + upload.getUploadId());
             }
+            validateMultipartParts(request.getParts());
             return;
         }
 
@@ -340,17 +342,47 @@ public class MediaUploadSessionService {
         }
     }
 
-    private void verifyUploadedObjectExists(MediaUpload upload) {
+    private void finalizeAndVerifyUploadedObject(MediaUpload upload, CompleteMediaAttachmentRequest request) {
+        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(upload.getStorageProvider());
         UploadStrategy uploadStrategy = resolveUploadStrategy(upload.getRequestedSizeBytes());
         if (uploadStrategy == UploadStrategy.MULTIPART) {
-            // TODO: Replace this with real MinIO multipart finalize + object verification.
-            return;
+            provider.completeMultipartUpload(
+                    upload.getObjectKey(),
+                    Objects.requireNonNull(upload.getMultipartUploadId()),
+                    toStorageCompletedParts(Objects.requireNonNull(request.getParts())));
         }
 
-        ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(upload.getStorageProvider());
         if (!provider.objectExists(upload.getObjectKey())) {
             throw new BadRequestException("Uploaded object not found in storage for attachment " + upload.getUploadId());
         }
+    }
+
+    private void ensureMultipartUploadInitialized(MediaUpload mediaUpload, ObjectStorageProvider provider) {
+        if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
+            mediaUpload.setMultipartUploadId(provider.createMultipartUpload(mediaUpload.getObjectKey()));
+        }
+    }
+
+    private void validateMultipartParts(List<CompletedMultipartPartRequest> parts) {
+        Set<Integer> partNumbers = new LinkedHashSet<>();
+        for (CompletedMultipartPartRequest part : parts) {
+            if (part.getPartNumber() == null || part.getPartNumber() <= 0) {
+                throw new BadRequestException("All multipart part numbers must be positive");
+            }
+            if (part.getEtag() == null || part.getEtag().isBlank()) {
+                throw new BadRequestException("All multipart parts must include etag");
+            }
+            if (!partNumbers.add(part.getPartNumber())) {
+                throw new BadRequestException("Duplicate multipart partNumber " + part.getPartNumber());
+            }
+        }
+    }
+
+    private List<ObjectStorageCompletedPart> toStorageCompletedParts(List<CompletedMultipartPartRequest> parts) {
+        return parts.stream()
+                .sorted((left, right) -> Integer.compare(left.getPartNumber(), right.getPartNumber()))
+                .map(part -> new ObjectStorageCompletedPart(part.getPartNumber(), part.getEtag()))
+                .toList();
     }
 
     private Message persistFinalMessage(User user, List<MediaUpload> uploads) {

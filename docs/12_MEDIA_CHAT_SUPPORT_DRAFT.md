@@ -929,7 +929,8 @@ Status:
 - Phase 6 completed
 - Phase 7 completed
 - Phase 8 completed
-- Phases 9-12 not implemented yet
+- Phase 9 completed
+- Phases 10-12 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1404,35 +1405,52 @@ Phase-8 implementation note:
 
 ### Phase 9 - Real multipart upload end-to-end
 
-Planned for `chat-app-backend`:
+Implemented in `chat-app-backend`:
 
-- Extend `ObjectStorageProvider` with real multipart operations:
+- Extended `ObjectStorageProvider` with multipart lifecycle operations:
   - create multipart upload
   - build/sign part upload URL
   - complete multipart upload with ordered part ETags
   - abort multipart upload
   - verify finalized object metadata
-- Replace the temporary local UUID `multipartUploadId` with the provider-issued multipart upload id
-- Implement MinIO multipart create/complete/abort first
-- Keep S3 adapter API-compatible with the same internal contract
-- Persist enough metadata to make retries and cleanup safe
-- Add cleanup for expired multipart sessions so provider-side partial uploads do not leak storage
+- Added provider-neutral `ObjectStorageCompletedPart`
+- Updated `MinioObjectStorageProvider` to use MinIO multipart create/complete/abort APIs
+- Replaced the temporary local UUID `multipartUploadId` with the provider-issued multipart upload id
+- Updated `MediaUploadSessionService` to:
+  - initialize multipart uploads when the first part URL batch is requested
+  - validate multipart completion part metadata
+  - complete the provider multipart upload before final message creation
+  - verify the finalized object exists after provider completion
+  - re-check group `SEND_MESSAGES` before provider-side multipart completion
+- Added focused backend unit coverage for:
+  - provider multipart upload id initialization
+  - provider multipart completion before message persistence
 
-Planned for `chat-app-frontend`:
+Implemented in `chat-app-frontend`:
 
-- Add `requestMultipartPartUrls(...)` to `src/services/api.ts`
-- Extend media upload types with multipart fields and completed part metadata
-- Replace the `ChatArea` guard for `MULTIPART` plans with a browser multipart uploader
-- Slice files by backend `recommendedPartSize`
-- Request part URLs in batches
-- Upload parts with bounded concurrency
-- Collect ETags per part and call `completeMediaMessage(...)` with `parts`
-- Aggregate progress across all parts and selected attachments
-- Preserve cancel/retry/dismiss behavior for multipart placeholders
+- Added `requestMultipartPartUrls(...)` to `src/services/api.ts`
+- Extended media upload types with multipart fields and completed part metadata
+- Replaced the `ChatArea` guard for `MULTIPART` plans with a browser multipart uploader
+- Slices files by backend `recommendedPartSize`
+- Requests part URLs in batches
+- Uploads parts with bounded concurrency
+- Collects ETags per part and calls `completeMediaMessage(...)` with `parts`
+- Aggregates progress across all parts and selected attachments
+- Preserves existing cancel/retry/dismiss behavior for multipart placeholders
 
-Acceptance target:
+Phase-9 behavior currently covers:
 
 - A file larger than `chat.media.multipart-threshold-bytes` can be uploaded through local MinIO, completed by the backend, persisted as a media message, and rendered by the sender/recipient without the current frontend "too large" error.
+
+Current Phase-9 limitations:
+
+- S3 multipart remains fail-fast / not implemented because the current S3 provider is still placeholder-level compared with MinIO
+- provider-side abort exists in the storage contract, but there is not yet a user-facing cancel endpoint or scheduled expired multipart cleanup job
+- backend verification confirms object existence after multipart complete; deeper finalized size/content-type validation is still future hardening
+
+Phase-9 implementation note:
+
+- Phase 9 makes MinIO multipart usable end to end and removes the frontend hard stop on `MULTIPART` upload plans, but operational cleanup and S3 production parity still belong to later hardening work
 
 ### Phase 10 - Micronaut media-processing service
 

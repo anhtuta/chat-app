@@ -10,6 +10,7 @@ import type {
   GroupMessagesQuery,
   PrepareMediaMessageRequest,
   PrepareMediaMessageResponse,
+  RequestMultipartPartUrlsResponse,
 } from "../types/chat";
 import type { ChatGroup, GroupBan, GroupJoinLink, GroupMember, GroupMemberPage, GroupRole, SelectableUser } from "../types/groups";
 
@@ -579,6 +580,34 @@ export async function prepareMediaMessage(
 }
 
 /**
+ * Request presigned upload URLs for selected multipart part numbers.
+ */
+export async function requestMultipartPartUrls(
+  uploadSessionId: string,
+  attachmentId: string,
+  partNumbers: number[],
+): Promise<RequestMultipartPartUrlsResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/media/messages/upload-sessions/${encodeURIComponent(uploadSessionId)}` +
+      `/attachments/${encodeURIComponent(attachmentId)}/parts`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ partNumbers }),
+    },
+  );
+
+  if (response.ok) {
+    return response.json();
+  }
+
+  throw new Error(await readErrorMessage(response, "Failed to prepare multipart upload parts"));
+}
+
+/**
  * Complete a prepared media upload session and publish the final message.
  */
 export async function completeMediaMessage(
@@ -605,11 +634,11 @@ export async function completeMediaMessage(
 }
 
 /**
- * Upload a file directly to a storage-provider presigned URL.
+ * Upload bytes directly to a storage-provider presigned URL.
  */
-export function uploadFileToPresignedUrl(
+export function uploadBlobToPresignedUrl(
   url: string,
-  file: File,
+  blob: Blob,
   { onProgress }: UploadProgressOptions = {},
 ): UploadHandle {
   const xhr = new XMLHttpRequest();
@@ -642,16 +671,27 @@ export function uploadFileToPresignedUrl(
     });
 
     xhr.open("PUT", url);
-    if (file.type) {
-      xhr.setRequestHeader("Content-Type", file.type);
+    if (blob.type) {
+      xhr.setRequestHeader("Content-Type", blob.type);
     }
-    xhr.send(file);
+    xhr.send(blob);
   });
 
   return {
     promise,
     abort: () => xhr.abort(),
   };
+}
+
+/**
+ * Upload a file directly to a storage-provider presigned URL.
+ */
+export function uploadFileToPresignedUrl(
+  url: string,
+  file: File,
+  options: UploadProgressOptions = {},
+): UploadHandle {
+  return uploadBlobToPresignedUrl(url, file, options);
 }
 
 function handleErrorResponse(response: Response): never {

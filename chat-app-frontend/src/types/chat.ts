@@ -102,8 +102,11 @@ export interface PrepareMediaMessageRequest {
 
 export interface PreparedMediaAttachment {
   attachmentId: string;
-  presignedUrl: string;
-  uploadStrategy: "SINGLE_PART" | string;
+  presignedUrl?: string | null;
+  uploadStrategy: "SINGLE_PART" | "MULTIPART" | string;
+  multipartUploadId?: string | null;
+  recommendedPartSize?: number | null;
+  completeBy?: string | null;
 }
 
 export interface PrepareMediaMessageResponse {
@@ -111,9 +114,25 @@ export interface PrepareMediaMessageResponse {
   attachments: PreparedMediaAttachment[];
 }
 
+export interface MultipartPartUrl {
+  partNumber: number;
+  presignedUrl: string;
+}
+
+export interface RequestMultipartPartUrlsResponse {
+  multipartUploadId: string;
+  parts: MultipartPartUrl[];
+}
+
+export interface CompletedMultipartPartInput {
+  partNumber: number;
+  etag: string;
+}
+
 export interface CompleteMediaAttachmentInput {
   attachmentId: string;
-  etag: string;
+  etag?: string;
+  parts?: CompletedMultipartPartInput[];
 }
 
 export interface ProcessingIndicator {

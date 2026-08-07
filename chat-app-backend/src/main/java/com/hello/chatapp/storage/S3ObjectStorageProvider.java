@@ -3,6 +3,8 @@ package com.hello.chatapp.storage;
 import com.hello.chatapp.config.MediaStorageProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * S3-backed provider descriptor for AWS-style object storage.
  * This is a concrete strategy.
@@ -46,8 +48,26 @@ public class S3ObjectStorageProvider implements ObjectStorageProvider {
     }
 
     @Override
+    public String createMultipartUpload(String objectKey) {
+        throw new UnsupportedOperationException("S3 multipart upload is not implemented yet");
+    }
+
+    @Override
     public String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber) {
         return buildUploadUrl(objectKey) + "?uploadId=" + multipartUploadId + "&partNumber=" + partNumber;
+    }
+
+    @Override
+    public void completeMultipartUpload(
+            String objectKey,
+            String multipartUploadId,
+            List<ObjectStorageCompletedPart> parts) {
+        throw new UnsupportedOperationException("S3 multipart upload is not implemented yet");
+    }
+
+    @Override
+    public void abortMultipartUpload(String objectKey, String multipartUploadId) {
+        throw new UnsupportedOperationException("S3 multipart upload is not implemented yet");
     }
 
     @Override
