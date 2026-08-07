@@ -22,14 +22,17 @@ public class MediaProcessingJobHandler {
 
     private final MediaProcessingWorkerProperties workerProperties;
     private final MediaProcessingJobDeduplicationStore deduplicationStore;
+    private final MediaProcessingSourceLoader sourceLoader;
     private final Validator validator;
 
     public MediaProcessingJobHandler(
             MediaProcessingWorkerProperties workerProperties,
             MediaProcessingJobDeduplicationStore deduplicationStore,
+            MediaProcessingSourceLoader sourceLoader,
             Validator validator) {
         this.workerProperties = workerProperties;
         this.deduplicationStore = deduplicationStore;
+        this.sourceLoader = sourceLoader;
         this.validator = validator;
     }
 
@@ -55,9 +58,23 @@ public class MediaProcessingJobHandler {
             return MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS;
         }
 
-        // TODO: Fan out into actual processing executors once Phase 3 object-storage loading is implemented.
-        logTransition(MediaProcessingJobStatus.DISPATCHED, job, "handoff=" + workerProperties.getHandoff());
-        return MediaProcessingJobStatus.DISPATCHED;
+        try (LoadedMediaSource source = sourceLoader.load(job)) {
+            // TODO: Fan out into actual processing executors once Phase 4 metadata extraction is implemented.
+            logTransition(
+                    MediaProcessingJobStatus.DISPATCHED,
+                    job,
+                    "handoff=" + workerProperties.getHandoff()
+                            + ", localSource=" + source.getLocalFile()
+                            + ", contentType=" + source.getContentType()
+                            + ", bytes=" + source.getObjectSize());
+            return MediaProcessingJobStatus.DISPATCHED;
+        } catch (MediaProcessingSourceLoadException e) {
+            logTransition(
+                    MediaProcessingJobStatus.PROCESSING_FAILED,
+                    job,
+                    "failureReason=" + e.getFailureReason() + ", message=" + e.getMessage());
+            return MediaProcessingJobStatus.PROCESSING_FAILED;
+        }
     }
 
     private Set<ProcessingTarget> resolveEnabledTargets(MediaProcessingJobMessage job) {

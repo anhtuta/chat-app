@@ -369,11 +369,31 @@ Recommended path:
 
 ### Phase 3 - Object storage and video source loading
 
-- Add MinIO object-storage integration in `media-processing-service`.
-- Load source video objects using service credentials, not user-facing signed URLs.
-- Define temporary working-file strategy for downloaded media.
-- Define cleanup rules for temporary local files after processing.
-- Record processing failures cleanly when the source object is missing, unreadable, or corrupted.
+- Added MinIO object-storage integration in `media-processing-service`.
+- Added service-side storage configuration for:
+  - storage provider
+  - MinIO endpoint
+  - MinIO access key
+  - MinIO secret key
+  - MinIO region
+  - path-style access
+- Source objects are now loaded with service credentials through the MinIO SDK, not via user-facing signed URLs.
+- Added a temp workspace strategy:
+  - one per-job workspace directory under a configurable base temp directory
+  - source object downloaded into that workspace using the original object filename
+- Added cleanup behavior:
+  - workspace is cleaned on successful completion of the current load step
+  - workspace is also cleaned when source download fails
+  - cleanup can be disabled via configuration for debugging if needed
+- Added typed failure handling for source loading:
+  - `SOURCE_MISSING`
+  - `SOURCE_UNREADABLE`
+  - `SOURCE_CORRUPTED`
+  - `TEMP_FILE_PREPARATION_FAILED`
+- Worker flow now marks source-load failures as `PROCESSING_FAILED` with the failure reason logged in the transition detail.
+- Current corruption detection is intentionally conservative:
+  - zero-byte source objects are treated as corrupted
+  - deeper decoder-level corruption validation is deferred to Phase 4 metadata extraction
 
 ### Phase 4 - Video metadata extraction
 

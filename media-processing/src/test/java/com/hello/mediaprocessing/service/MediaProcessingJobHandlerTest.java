@@ -10,6 +10,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,7 @@ class MediaProcessingJobHandlerTest {
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-1", List.of(ProcessingTarget.METADATA)));
@@ -39,6 +41,7 @@ class MediaProcessingJobHandlerTest {
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
                 validator);
 
         MediaProcessingJobMessage job = buildVideoJob("job-dup", List.of(ProcessingTarget.METADATA));
@@ -53,11 +56,25 @@ class MediaProcessingJobHandlerTest {
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 properties,
                 new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-2", List.of(ProcessingTarget.TRANSCODE)));
 
         assertEquals(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS, status);
+    }
+
+    @Test
+    void handle_sourceMissing_marksProcessingFailed() {
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                new MediaProcessingWorkerProperties(),
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
+
+        assertEquals(MediaProcessingJobStatus.PROCESSING_FAILED, status);
     }
 
     private MediaProcessingJobMessage buildVideoJob(String jobId, List<ProcessingTarget> targets) {
@@ -71,5 +88,45 @@ class MediaProcessingJobHandlerTest {
                 "media/7/video/demo.mp4",
                 "video/mp4",
                 targets);
+    }
+
+    private static final class SuccessfulSourceLoader implements MediaProcessingSourceLoader {
+
+        @Override
+        public LoadedMediaSource load(MediaProcessingJobMessage job) {
+            return new LoadedMediaSource(
+                    Path.of("/tmp/" + job.jobId()),
+                    Path.of("/tmp/" + job.jobId() + "/demo.mp4"),
+                    1024L,
+                    job.requestedMimeType(),
+                    new NoopWorkspaceManager(),
+                    false);
+        }
+    }
+
+    private static final class FailingSourceLoader implements MediaProcessingSourceLoader {
+
+        private final MediaProcessingFailureReason failureReason;
+
+        private FailingSourceLoader(MediaProcessingFailureReason failureReason) {
+            this.failureReason = failureReason;
+        }
+
+        @Override
+        public LoadedMediaSource load(MediaProcessingJobMessage job) {
+            throw new MediaProcessingSourceLoadException(failureReason, "Simulated source load failure");
+        }
+    }
+
+    private static final class NoopWorkspaceManager extends MediaProcessingWorkspaceManager {
+
+        private NoopWorkspaceManager() {
+            super(new com.hello.mediaprocessing.config.MediaProcessingWorkspaceProperties());
+        }
+
+        @Override
+        public void cleanupWorkspaceQuietly(Path workspaceDirectory) {
+            // No-op for unit tests.
+        }
     }
 }
