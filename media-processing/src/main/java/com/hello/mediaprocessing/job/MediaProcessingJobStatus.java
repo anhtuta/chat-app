@@ -1,5 +1,8 @@
 package com.hello.mediaprocessing.job;
 
+/**
+ * Describes the worker-side lifecycle state recorded while handling a processing job.
+ */
 public enum MediaProcessingJobStatus {
     RECEIVED,
     VALIDATED,

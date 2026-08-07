@@ -20,11 +20,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Covers workspace creation, cleanup, and typed failure handling for source loading.
+ */
 class ObjectStorageMediaProcessingSourceLoaderTest {
 
     @TempDir
     Path tempDir;
 
+    /**
+     * Verifies that a successful source download lands in a temp workspace and cleans up on close.
+     */
     @Test
     void load_downloadsIntoWorkspaceAndCleansUpOnClose() throws IOException {
         MediaProcessingWorkspaceProperties workspaceProperties = new MediaProcessingWorkspaceProperties();
@@ -47,6 +53,9 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
         assertFalse(Files.exists(workspaceDirectory));
     }
 
+    /**
+     * Verifies that download failures clean the workspace and preserve the failure reason.
+     */
     @Test
     void load_failureCleansWorkspaceAndRaisesTypedException() {
         MediaProcessingWorkspaceProperties workspaceProperties = new MediaProcessingWorkspaceProperties();
@@ -66,6 +75,12 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
         assertTrue(isWorkspaceBaseEmpty());
     }
 
+    /**
+     * Builds a representative video-processing job used across source-loader tests.
+     *
+     * @param jobId idempotency key to embed in the test payload
+     * @return processing job payload for the test case
+     */
     private MediaProcessingJobMessage buildJob(String jobId) {
         return new MediaProcessingJobMessage(
                 jobId,
@@ -79,6 +94,11 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
                 List.of(ProcessingTarget.METADATA));
     }
 
+    /**
+     * Checks whether the temporary workspace base directory is empty after a test action.
+     *
+     * @return {@code true} when no child paths remain under the temp base directory
+     */
     private boolean isWorkspaceBaseEmpty() {
         try (var children = Files.list(tempDir)) {
             return children.findAny().isEmpty();
@@ -87,8 +107,19 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
         }
     }
 
+    /**
+     * Test double that simulates a successful source-object download.
+     */
     private static final class SuccessfulDownloader implements ObjectStorageDownloader {
 
+        /**
+         * Writes a small local file to mimic a downloaded object.
+         *
+         * @param bucket unused in the test double
+         * @param objectKey unused in the test double
+         * @param targetPath destination path to receive the fake file
+         * @return synthetic download metadata for assertions
+         */
         @Override
         public ObjectStorageDownloadResult download(String bucket, String objectKey, Path targetPath) {
             try {
@@ -100,8 +131,19 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
         }
     }
 
+    /**
+     * Test double that always reports a missing source object.
+     */
     private static final class MissingSourceDownloader implements ObjectStorageDownloader {
 
+        /**
+         * Throws a typed missing-source exception instead of writing a local file.
+         *
+         * @param bucket source bucket name from the test payload
+         * @param objectKey source object key from the test payload
+         * @param targetPath ignored because the download fails immediately
+         * @return never returns because the method always throws
+         */
         @Override
         public ObjectStorageDownloadResult download(String bucket, String objectKey, Path targetPath) {
             throw new ObjectStorageDownloadException(

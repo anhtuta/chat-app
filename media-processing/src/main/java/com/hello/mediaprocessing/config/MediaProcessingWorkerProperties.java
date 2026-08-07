@@ -10,6 +10,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * Binds worker execution settings for the media-processing service.
+ */
 @ConfigurationProperties("media-processing.worker")
 @Introspected
 @Getter
@@ -34,11 +37,13 @@ public class MediaProcessingWorkerProperties {
     @NotNull
     private FeatureFlags featureFlags = new FeatureFlags();
 
+    /**
+     * Toggles individual processing capabilities while the pipeline is still being built incrementally.
+     */
     @Introspected
     @Getter
     @Setter
     public static class FeatureFlags {
-
         private boolean videoMetadata = true;
 
         private boolean videoPoster = true;

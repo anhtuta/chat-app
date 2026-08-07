@@ -6,6 +6,9 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * Binds the temporary workspace location and cleanup behavior for local media files.
+ */
 @ConfigurationProperties("media-processing.workspace")
 @Introspected
 @Getter

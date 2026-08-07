@@ -9,6 +9,9 @@ import jakarta.inject.Singleton;
 
 import java.nio.file.Path;
 
+/**
+ * Downloads a job's source object into the worker temp workspace and returns a local source handle.
+ */
 @Singleton
 public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessingSourceLoader {
 
@@ -25,6 +28,12 @@ public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessing
         this.workspaceProperties = workspaceProperties;
     }
 
+    /**
+     * Creates a workspace, downloads the remote object into it, and returns a handle that owns cleanup.
+     *
+     * @param job job describing the source object that should be materialized locally
+     * @return handle for the downloaded local file
+     */
     @Override
     public LoadedMediaSource load(MediaProcessingJobMessage job) {
         Path workspaceDirectory = workspaceManager.createWorkspace(job.jobId());

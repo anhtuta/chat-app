@@ -1,5 +1,8 @@
 package com.hello.mediaprocessing.service;
 
+/**
+ * Signals that the worker could not materialize a usable local source file for a job.
+ */
 public class MediaProcessingSourceLoadException extends RuntimeException {
 
     private final MediaProcessingFailureReason failureReason;

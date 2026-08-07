@@ -15,6 +15,9 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Validates, deduplicates, and advances processing jobs through the initial worker lifecycle.
+ */
 @Singleton
 public class MediaProcessingJobHandler {
 
@@ -36,6 +39,12 @@ public class MediaProcessingJobHandler {
         this.validator = validator;
     }
 
+    /**
+     * Handles a single processing job from validation through source-file acquisition.
+     *
+     * @param job queue payload describing the media object and requested outputs
+     * @return terminal status reached by the worker for this handling attempt
+     */
     public MediaProcessingJobStatus handle(MediaProcessingJobMessage job) {
         logTransition(MediaProcessingJobStatus.RECEIVED, job, "received");
 
@@ -77,6 +86,12 @@ public class MediaProcessingJobHandler {
         }
     }
 
+    /**
+     * Filters requested targets down to the subset currently enabled by worker feature flags.
+     *
+     * @param job processing job being evaluated
+     * @return enabled targets that may proceed in the pipeline
+     */
     private Set<ProcessingTarget> resolveEnabledTargets(MediaProcessingJobMessage job) {
         EnumSet<ProcessingTarget> enabledTargets = EnumSet.noneOf(ProcessingTarget.class);
         MediaProcessingWorkerProperties.FeatureFlags flags = workerProperties.getFeatureFlags();
@@ -90,6 +105,14 @@ public class MediaProcessingJobHandler {
         return enabledTargets;
     }
 
+    /**
+     * Checks whether a specific target is enabled for the current media type and feature-flag set.
+     *
+     * @param messageType high-level media type for the job
+     * @param target requested output to evaluate
+     * @param flags worker feature flags controlling partial rollouts
+     * @return {@code true} when the target can currently run
+     */
     private boolean isTargetEnabled(
             MediaProcessingMessageType messageType,
             ProcessingTarget target,
@@ -109,6 +132,13 @@ public class MediaProcessingJobHandler {
         };
     }
 
+    /**
+     * Logs a structured state transition for observability while the pipeline is still lightweight.
+     *
+     * @param status status reached by the worker
+     * @param job job being processed
+     * @param detail additional context for operators and debugging
+     */
     private void logTransition(MediaProcessingJobStatus status, MediaProcessingJobMessage job, String detail) {
         logger.info(
                 "media-processing jobId={} mediaId={} messageId={} status={} detail={}",

@@ -1,5 +1,8 @@
 package com.hello.mediaprocessing.job;
 
+/**
+ * Enumerates the concrete processing outputs that a worker may produce for a media object.
+ */
 public enum ProcessingTarget {
     THUMBNAIL,
     PREVIEW,

@@ -394,6 +394,8 @@ Recommended path:
 - Current corruption detection is intentionally conservative:
   - zero-byte source objects are treated as corrupted
   - deeper decoder-level corruption validation is deferred to Phase 4 metadata extraction
+- Added Javadocs to the Java classes and non-boilerplate methods introduced across implemented Phases 1 through 3.
+- Added `.cursor/rules/java-javadocs.instructions.mdc` so future Java work keeps the same documentation baseline.
 
 ### Phase 4 - Video metadata extraction
 

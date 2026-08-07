@@ -2,6 +2,9 @@ package com.hello.mediaprocessing.service;
 
 import java.nio.file.Path;
 
+/**
+ * Wraps a locally downloaded source file together with the workspace that owns it.
+ */
 public class LoadedMediaSource implements AutoCloseable {
 
     private final Path workspaceDirectory;
@@ -42,6 +45,9 @@ public class LoadedMediaSource implements AutoCloseable {
         return contentType;
     }
 
+    /**
+     * Cleans the owning workspace when automatic cleanup is enabled for the current worker run.
+     */
     @Override
     public void close() {
         if (cleanupEnabled) {

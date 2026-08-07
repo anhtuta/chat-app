@@ -10,6 +10,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 
+/**
+ * Creates and removes the temporary directories used while a worker is handling a media file.
+ */
 @Singleton
 public class MediaProcessingWorkspaceManager {
 
@@ -21,6 +24,12 @@ public class MediaProcessingWorkspaceManager {
         this.workspaceProperties = workspaceProperties;
     }
 
+    /**
+     * Creates a new isolated workspace directory for a single job attempt.
+     *
+     * @param jobId job identifier used to build a readable workspace prefix
+     * @return path to the created workspace directory
+     */
     public Path createWorkspace(String jobId) {
         try {
             Path baseDirectory = Path.of(workspaceProperties.getBaseDirectory());
@@ -34,6 +43,13 @@ public class MediaProcessingWorkspaceManager {
         }
     }
 
+    /**
+     * Resolves the local destination path for a downloaded source object inside a workspace.
+     *
+     * @param workspaceDirectory workspace allocated for the job
+     * @param objectKey provider-specific object key
+     * @return local file path that should receive the object contents
+     */
     public Path resolveLocalSourcePath(Path workspaceDirectory, String objectKey) {
         String fileName = objectKey == null ? "source.bin" : Path.of(objectKey).getFileName().toString();
         if (fileName.isBlank()) {
@@ -42,6 +58,11 @@ public class MediaProcessingWorkspaceManager {
         return workspaceDirectory.resolve(fileName);
     }
 
+    /**
+     * Attempts to remove a workspace and logs any cleanup failure without interrupting the worker flow.
+     *
+     * @param workspaceDirectory workspace directory to remove
+     */
     public void cleanupWorkspaceQuietly(Path workspaceDirectory) {
         try {
             cleanupWorkspace(workspaceDirectory);
@@ -50,6 +71,12 @@ public class MediaProcessingWorkspaceManager {
         }
     }
 
+    /**
+     * Recursively deletes a workspace directory and all files contained in it.
+     *
+     * @param workspaceDirectory workspace directory to delete
+     * @throws IOException when filesystem traversal or deletion fails
+     */
     private void cleanupWorkspace(Path workspaceDirectory) throws IOException {
         if (workspaceDirectory == null || Files.notExists(workspaceDirectory)) {
             return;
@@ -60,6 +87,11 @@ public class MediaProcessingWorkspaceManager {
         }
     }
 
+    /**
+     * Deletes a single file-system path as part of recursive workspace cleanup.
+     *
+     * @param path file or directory to delete
+     */
     private void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
@@ -68,6 +100,12 @@ public class MediaProcessingWorkspaceManager {
         }
     }
 
+    /**
+     * Converts a job id into a filesystem-safe directory prefix.
+     *
+     * @param value raw job id
+     * @return sanitized value that is safe to embed in directory names
+     */
     private String sanitize(String value) {
         return value.replaceAll("[^a-zA-Z0-9-_]", "_");
     }

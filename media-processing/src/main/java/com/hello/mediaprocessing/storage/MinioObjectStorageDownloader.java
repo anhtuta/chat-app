@@ -18,6 +18,9 @@ import java.nio.file.StandardCopyOption;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 
+/**
+ * Downloads source objects directly from MinIO using service credentials.
+ */
 @Singleton
 @Requires(property = "media-processing.storage.provider", value = "MINIO", defaultValue = "MINIO")
 public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
@@ -32,6 +35,14 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                 .build();
     }
 
+    /**
+     * Downloads a MinIO object to a local file and returns metadata captured from the storage response.
+     *
+     * @param bucket bucket that contains the source object
+     * @param objectKey object key to download
+     * @param targetPath local destination path for the downloaded bytes
+     * @return storage metadata for the downloaded object
+     */
     @Override
     public ObjectStorageDownloadResult download(String bucket, String objectKey, Path targetPath) {
         try {

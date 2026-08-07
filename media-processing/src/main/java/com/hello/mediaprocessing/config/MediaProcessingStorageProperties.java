@@ -9,6 +9,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * Binds object-storage settings used when workers download media source files.
+ */
 @ConfigurationProperties("media-processing.storage")
 @Introspected
 @Getter
@@ -22,11 +25,13 @@ public class MediaProcessingStorageProperties {
     @NotNull
     private Minio minio = new Minio();
 
+    /**
+     * Holds the service credentials and connection details for direct MinIO access.
+     */
     @Introspected
     @Getter
     @Setter
     public static class Minio {
-
         @NotBlank
         private String endpoint = "http://localhost:9000";
 
