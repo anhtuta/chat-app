@@ -1,5 +1,7 @@
 # Membership Mutation Auth Before Lock (TOCTOU)
 
+TL;DR: "Auth Before Lock" causes the issue, "Lock Before Auth" fixes it.
+
 ## Current Problem
 
 `addMember` (and similar mutations) called `requireActivePermission` **before** `findByIdForUpdate`. A concurrent demotion/kick could revoke the actor's role after that check and before the membership write - e.g. a former privileged member still adds a member.
@@ -104,6 +106,8 @@ Shared helper `lockActiveGroup(groupId)` = `findByIdForUpdate` + `ensureActive`.
 `joinByToken` also refreshes and revalidates the loaded `GroupJoinLink` after `lockActiveGroup` so `revokeJoinLink` cannot win the lock and still let the waiting join insert from stale token state.
 
 Applies to: `addMember`, `createJoinLink`, `revokeJoinLink`, `joinByToken` (link refresh/revalidation and ban recheck after lock), `kickMember`, `banMember`, `unbanMember`, `updateMemberRole`, `transferLeadership`, `leaveGroup`.
+
+Group media finalize (`MediaUploadSessionService.completeUploadSession`) re-checks `SEND_MESSAGES` but does **not** take this lock — separate prepare/complete requests make a long-held group lock on complete a poor fit; the residual race is only concurrent revoke during the complete transaction.
 
 ## Lesson
 

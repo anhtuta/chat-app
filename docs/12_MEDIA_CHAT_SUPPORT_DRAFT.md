@@ -992,7 +992,7 @@ Implemented in `chat-app-backend`:
   - load all uploads for a session
   - verify ownership and expiry
   - validate completion metadata for single-part vs multipart uploads
-  - re-check active `SEND_MESSAGES` for group sessions **before** persisting the final message (prepare alone is not enough after kick/ban)
+  - re-check active `SEND_MESSAGES` for group sessions **before** persisting the final message (prepare alone is not enough after kick/ban; no group lifecycle lock on complete)
   - mark upload rows completed
   - create the final `Message`
   - create linked `MessageMedia` rows

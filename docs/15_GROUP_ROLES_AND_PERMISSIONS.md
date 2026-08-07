@@ -475,7 +475,7 @@ Known enforcement points:
 - `MessageController.getGroupMessages`: require `READ_MESSAGES`.
 - `WebSocketController.sendGroupMessage`: require `SEND_MESSAGES`.
 - `WebSocketSecurityChannelInterceptor.validateSubscription`: require `READ_MESSAGES` for group topics.
-- `MediaUploadSessionService.validateScopeAndMembership`: require `SEND_MESSAGES` on **prepare** and again on **complete** (so a kicked/banned user cannot finalize an unexpired session).
+- `MediaUploadSessionService.validateScopeAndMembership`: require `SEND_MESSAGES` on **prepare** and again on **complete** (so a user kicked/banned after prepare usually cannot finalize). This is a fresh permission read, not the membership lifecycle `FOR UPDATE` lock — a concurrent kick during complete can still race the persist.
 - `GroupService.markGroupAsRead`: require membership/read access.
 - `GroupSummaryUpdatePublisher`: ensure removed or banned users stop receiving personal updates.
 - New join-link endpoints: require `CREATE_JOIN_LINK` for link creation and ban/archive checks for joining.
@@ -578,7 +578,7 @@ What changed:
   - `MessageController`
   - `WebSocketController`
   - `WebSocketSecurityChannelInterceptor`
-  - `MediaUploadSessionService` (prepare **and** complete re-check `SEND_MESSAGES` for group uploads)
+  - `MediaUploadSessionService` (prepare and complete both require `SEND_MESSAGES` for group uploads; complete does not take the membership lifecycle lock)
   - `GroupService.markGroupAsRead`
 - Added unit tests for `GroupAuthorizationService`.
 
