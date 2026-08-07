@@ -61,8 +61,11 @@ public class MessageModerationService {
         message.setUpdatedAt(LocalDateTime.now());
 
         Message savedMessage = messageRepository.save(message);
+        // Map before refresh: refreshGroupLatestMessage may run @Modifying(clearAutomatically=true)
+        // and detach this entity, which would LazyInitializationException on user/group/etc.
+        MessageResponse response = messageResponseMapper.toResponse(savedMessage);
         refreshGroupSummaryIfNeeded(savedMessage);
-        return messageResponseMapper.toResponse(savedMessage);
+        return response;
     }
 
     @Transactional
@@ -77,8 +80,9 @@ public class MessageModerationService {
         message.setDeletedAt(LocalDateTime.now());
 
         Message savedMessage = messageRepository.save(message);
+        MessageResponse response = messageResponseMapper.toResponse(savedMessage);
         refreshGroupSummaryIfNeeded(savedMessage);
-        return messageResponseMapper.toResponse(savedMessage);
+        return response;
     }
 
     private Message loadMessage(Long messageId) {

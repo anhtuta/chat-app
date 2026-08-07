@@ -380,6 +380,8 @@ Before that phase, update returned the still-managed group and lazy load worked.
 
 Same pattern as `createGroup`: re-fetch with `findByIdWithCreator` before building the response.
 
+The same clear also hits `MessageModerationService` after `refreshGroupLatestMessage` (edit/delete of the latest group message). Mapping `savedMessage` *after* that call can `LazyInitializationException` on lazy `user` / `updatedBy` / `deletedBy` / `group` / `attachments`. Fix there: build `MessageResponse` **before** calling `refreshGroupLatestMessage`.
+
 ## The difference between Throttle/Buffering vs. Debounce
 
 Suppose `window_time` = 1.5 seconds.
