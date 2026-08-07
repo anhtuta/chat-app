@@ -58,8 +58,13 @@ services:
     volumes:
       - ./docker/data/rabbitmq:/var/lib/rabbitmq
     healthcheck:
-      # Avoid spawning frequent Erlang diagnostics processes inside the container.
-      test: ["CMD-SHELL", "nc -z -w 2 127.0.0.1 5672 && wget -q --spider http://127.0.0.1:15672"]
+      # Authenticated aliveness test (publish/consume on vhost /) — port/UI up is not enough for AmqpAdmin.
+      # Uses management HTTP (not rabbitmq-diagnostics) to avoid the Erlang CLI healthcheck memory leak in docs/25.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- \"http://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@127.0.0.1:15672/api/aliveness-test/%2F\" | grep -q '\"status\":\"ok\"'",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
