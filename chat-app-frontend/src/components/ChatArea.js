@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Box } from "@mui/material";
 import ChatAreaHeader from "./chat-area/ChatAreaHeader";
 import ChatMessageList from "./chat-area/ChatMessageList";
@@ -29,9 +29,11 @@ function ChatArea({
   onOpenGroupDetails,
   onLogout,
 }) {
+  const AUTO_FILL_MAX_BATCHES = 3;
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [mediaComposerError, setMediaComposerError] = useState("");
   const [pendingMediaMessages, setPendingMediaMessages] = useState([]);
+  const [showLoadOlderFallback, setShowLoadOlderFallback] = useState(false);
   const chatMessagesRef = useRef(null);
   const messagesEndRef = useRef(null);
   const isPrependingRef = useRef(false);
@@ -41,6 +43,8 @@ function ChatArea({
   const pendingMediaMessagesRef = useRef([]);
   const selectedMediaRef = useRef([]);
   const uploadTasksRef = useRef(new Map());
+  const autoFillBatchCountRef = useRef(0);
+  const isAutoFillingRef = useRef(false);
 
   useEffect(() => {
     pendingMediaMessagesRef.current = pendingMediaMessages;
@@ -75,6 +79,10 @@ function ChatArea({
     [messages, visiblePendingMediaMessages],
   );
 
+  const scrollToBottom = useCallback((behavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
   useEffect(() => {
     const container = chatMessagesRef.current;
     const prevMessages = prevMessagesRef.current;
@@ -106,17 +114,66 @@ function ChatArea({
 
     forceScrollToBottomRef.current = false;
     prevMessagesRef.current = displayMessages;
-  }, [displayMessages]);
+  }, [displayMessages, scrollToBottom]);
 
   useEffect(() => {
     isPrependingRef.current = false;
     forceScrollToBottomRef.current = true;
     prevMessagesRef.current = [];
+    autoFillBatchCountRef.current = 0;
+    isAutoFillingRef.current = false;
+    setShowLoadOlderFallback(false);
   }, [chatId]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const isContainerScrollable = useCallback((container) => {
+    if (!container) {
+      return false;
+    }
+
+    return container.scrollHeight > container.clientHeight + 1;
+  }, []);
+
+  const loadOlderMessages = useCallback(async ({ preserveViewport }) => {
+    const container = chatMessagesRef.current;
+    if (
+      !container ||
+      !hasMoreMessages ||
+      isLoadingOlderRef.current ||
+      isLoading ||
+      !onLoadOlderMessages
+    ) {
+      return false;
+    }
+
+    const previousHeight = container.scrollHeight;
+    const previousTop = container.scrollTop;
+
+    isPrependingRef.current = true;
+    const loaded = await onLoadOlderMessages();
+
+    if (!loaded) {
+      isPrependingRef.current = false;
+      return false;
+    }
+
+    requestAnimationFrame(() => {
+      const updatedContainer = chatMessagesRef.current;
+      if (!updatedContainer) {
+        isPrependingRef.current = false;
+        return;
+      }
+
+      if (preserveViewport) {
+        updatedContainer.scrollTop = updatedContainer.scrollHeight - previousHeight + previousTop;
+      } else {
+        updatedContainer.scrollTop = updatedContainer.scrollHeight;
+      }
+
+      isPrependingRef.current = false;
+    });
+
+    return true;
+  }, [hasMoreMessages, isLoading, onLoadOlderMessages]);
 
   const handleMessagesScroll = async (event) => {
     const container = event.currentTarget;
@@ -130,22 +187,83 @@ function ChatArea({
       return;
     }
 
-    const previousHeight = container.scrollHeight;
-    const previousTop = container.scrollTop;
+    await loadOlderMessages({ preserveViewport: true });
+  };
 
-    isPrependingRef.current = true;
-    const loaded = await onLoadOlderMessages();
-
-    if (!loaded) {
-      isPrependingRef.current = false;
+  useEffect(() => {
+    if (
+      chatId === "public" ||
+      isLoading ||
+      isLoadingOlder ||
+      !hasMoreMessages ||
+      !onLoadOlderMessages ||
+      !displayMessages.length
+    ) {
+      if (chatId === "public" || !hasMoreMessages) {
+        setShowLoadOlderFallback(false);
+      }
       return;
     }
 
-    requestAnimationFrame(() => {
-      const updatedHeight = container.scrollHeight;
-      container.scrollTop = updatedHeight - previousHeight + previousTop;
-      isPrependingRef.current = false;
+    const container = chatMessagesRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (isContainerScrollable(container)) {
+      setShowLoadOlderFallback(false);
+      return;
+    }
+
+    if (autoFillBatchCountRef.current >= AUTO_FILL_MAX_BATCHES) {
+      setShowLoadOlderFallback(true);
+      return;
+    }
+
+    if (isAutoFillingRef.current) {
+      return;
+    }
+
+    let canceled = false;
+    isAutoFillingRef.current = true;
+
+    requestAnimationFrame(async () => {
+      if (canceled) {
+        isAutoFillingRef.current = false;
+        return;
+      }
+
+      const currentContainer = chatMessagesRef.current;
+      if (!currentContainer || isContainerScrollable(currentContainer) || !hasMoreMessages) {
+        isAutoFillingRef.current = false;
+        return;
+      }
+
+      // Auto-top-off the first load so tall viewports still expose older history.
+      autoFillBatchCountRef.current += 1;
+      setShowLoadOlderFallback(false);
+      await loadOlderMessages({ preserveViewport: false });
+      isAutoFillingRef.current = false;
     });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    AUTO_FILL_MAX_BATCHES,
+    chatId,
+    displayMessages,
+    hasMoreMessages,
+    isContainerScrollable,
+    isLoading,
+    isLoadingOlder,
+    loadOlderMessages,
+    onLoadOlderMessages,
+  ]);
+
+  const handleLoadOlderFallbackClick = async () => {
+    setShowLoadOlderFallback(false);
+    await loadOlderMessages({ preserveViewport: false });
   };
 
   const handleFilesSelected = (files) => {
@@ -419,6 +537,8 @@ function ChatArea({
           isLoading={isLoading}
           isLoadingOlder={isLoadingOlder}
           onScroll={handleMessagesScroll}
+          showLoadOlderFallback={showLoadOlderFallback}
+          onLoadOlderFallback={handleLoadOlderFallbackClick}
           onRetryPendingMessage={handleRetryPendingMedia}
           onCancelPendingMessage={handleCancelPendingMedia}
           onDismissPendingMessage={removePendingMessage}

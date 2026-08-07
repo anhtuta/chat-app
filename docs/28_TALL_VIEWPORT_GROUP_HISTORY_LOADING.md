@@ -171,6 +171,19 @@ Why this path:
 
 ## Implementation details
 
+### Phase 1
+
+- What changed:
+  - `ChatArea` now auto-fetches older group-message pages after the initial render when the loaded messages still do not make the container scrollable.
+  - The auto-fill logic stops when the list becomes scrollable, when the backend reports there is no more history, or after a small cap of extra fetches.
+  - When the cap is reached and the list is still not scrollable, the UI now shows a manual `Load older messages` control at the top of the conversation.
+  - Scroll-triggered older-message loading still preserves the user's viewport position, while auto-fill and manual fallback keep the user anchored near the newest messages.
+- Why it changed:
+  - The old design assumed the first page of 10 messages would always create a scrollbar, which breaks on tall screens and sparse conversations.
+- Rollout, migration, or backward-compatibility notes:
+  - No backend API change was required.
+  - Existing cursor-based pagination remains unchanged.
+
 ## Lesson (look back here)
 
 - A scroll-triggered pagination design should not assume the viewport is always smaller than the first page of content.
