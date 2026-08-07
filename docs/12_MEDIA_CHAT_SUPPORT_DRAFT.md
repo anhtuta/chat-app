@@ -891,18 +891,27 @@ Recommendation path:
    - add frontend multipart uploader with chunking, bounded concurrency, retry, cancel, and progress aggregation
    - verify files larger than `chat.media.multipart-threshold-bytes` through local MinIO
    - remove the temporary frontend guard that rejects `MULTIPART` upload plans
-10. Phase 10: Extract media processing to Micronaut service
-   - create a dedicated `media-processing-service`
-   - enqueue jobs only after chat-backend transaction commit
-   - move thumbnail/preview/transcode/metadata extraction out of `chat-app-backend`
-   - add media-derived text extraction for future search:
-     - image OCR
-     - video-frame OCR
-     - speech-to-text transcripts
-   - keep processing jobs idempotent and retryable
-   - store extracted text in a DB-backed source of truth and emit search-indexing events
-   - publish processing status updates for chat backend instances to deliver over the existing realtime path
-11. Phase 11: Add abuse protection and operational hardening
+10. Phase 10: Move media processing planning to `docs/29_MEDIA_PROCESSING_SERVICE.md`
+   - keep detailed Micronaut service design in `docs/29_MEDIA_PROCESSING_SERVICE.md`
+   - prioritize video processing first in that document:
+     - poster thumbnail
+     - video metadata extraction
+     - normalized/transcoded playback asset
+     - later adaptive/mobile-friendly video outputs
+11. Phase 11: Build the video player after video processing outputs exist
+   - do not treat the current inline native HTML `<video controls>` player as the long-term UX
+   - wait until `media-processing-service` can produce:
+     - poster thumbnail
+     - metadata such as duration, width, and height
+     - normalized/transcoded playback asset
+     - later, optional adaptive streaming outputs
+   - then update the frontend video experience in this order:
+     - show a poster-based video card in the chat bubble instead of raw native controls
+     - show filename, duration, and size before playback starts
+     - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
+     - play `transcodedUrl` first and keep `contentUrl` as fallback/download
+     - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
+12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration
    - Redis-based rate limiting
    - orphan upload cleanup
@@ -911,7 +920,7 @@ Recommendation path:
      - Focus on orphan cleanup first. That’s where real waste is (DB rows + MinIO objects nobody will ever complete)
      - Add optional purge of old `UPLOAD_SESSION_COMPLETED` rows if the table grows or you need GDPR-style retention
    - failure observability and alerts
-12. Phase 12: Add optional optimizations after v1 works end-to-end
+13. Phase 13: Add optional optimizations after v1 works end-to-end
     - better thumbnails and previews
     - asynchronous secondary derivatives
     - CDN-backed delivery for clean media
@@ -930,7 +939,7 @@ Status:
 - Phase 7 completed
 - Phase 8 completed
 - Phase 9 completed
-- Phases 10-12 not implemented yet
+- Phases 10-13 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -1452,60 +1461,13 @@ Phase-9 implementation note:
 
 - Phase 9 makes MinIO multipart usable end to end and removes the frontend hard stop on `MULTIPART` upload plans, but operational cleanup and S3 production parity still belong to later hardening work
 
-### Phase 10 - Micronaut media-processing service
+### Phase 10 - Media-processing-service design moved
 
-Detailed service design:
+Detailed Phase 10 planning now lives in:
 
 - `docs/29_MEDIA_PROCESSING_SERVICE.md`
 
-Planned new service:
-
-- `media-processing-service`
-- Framework: Micronaut
-- Runtime role: worker service, not user-facing chat API
-
-Responsibilities:
-
-- consume media-processing jobs emitted after final message creation commits
-- process `IMAGE` and `VIDEO` attachments outside `chat-app-backend`
-- generate thumbnails, previews, optional compressed images, video poster thumbnails, and optional transcoded previews
-- extract detected MIME type, width, height, and duration metadata
-- extract searchable text from media:
-  - image OCR
-  - video-frame OCR
-  - speech-to-text transcript segments for video/audio
-- update media rows through a controlled persistence/API boundary
-- store extracted text in a DB model such as `media_extracted_text`
-- emit media-text-extracted events for the search pipeline described in `docs/27_SEARCH_FEATURE.md`
-- emit processing status updates so chat backend instances can republish media-state changes to users
-
-Initial integration shape:
-
-- `chat-app-backend` creates the final message and `message_media` rows
-- after commit, `chat-app-backend` publishes a processing job containing only `messageId` / `attachmentId` / storage metadata pointers
-- Micronaut worker loads original objects from storage with service credentials
-- Micronaut worker writes derivative objects back to storage
-- Micronaut worker writes OCR/transcript rows linked to `message_id` and `media_id`
-- Micronaut worker records or publishes a search-indexing event after extracted text changes
-- Micronaut worker marks attachments `PROCESSING_IN_PROGRESS`, `MEDIA_READY`, or `PROCESSING_FAILED`
-- `chat-app-backend` remains the owner of client-facing `MessageResponse` mapping and WebSocket/STOMP delivery
-
-Why this phase should happen before real derivative generation becomes heavy:
-
-- keeps chat API/WebSocket latency isolated from CPU-heavy image/video work
-- allows independent worker concurrency limits
-- allows different deployment resources for FFmpeg/image tooling
-- avoids mixing chat-domain transactions with long-running binary processing
-- creates one processing boundary for both media rendering and media search enrichment
-
-Open design choices for Phase 10:
-
-- whether the Micronaut worker updates the chat database directly or calls a narrow internal backend API
-- whether RabbitMQ is enough for initial processing jobs or whether a dedicated durable job table should be the source of truth
-- where real ClamAV scanning should live after the first working split
-- which OCR/speech-to-text provider gives acceptable Vietnamese accuracy, privacy, and cost
-
-### Phase 11 - Abuse protection and operational hardening
+### Phase 12 - Abuse protection and operational hardening
 
 Planned:
 
@@ -1517,7 +1479,7 @@ Planned:
 - scheduled hard-delete of expired files and related metadata cleanup
 - failure observability and alerts
 
-### Phase 12 - Optional optimizations after v1 works end-to-end
+### Phase 13 - Optional optimizations after v1 works end-to-end
 
 Planned:
 

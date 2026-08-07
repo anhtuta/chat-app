@@ -6,6 +6,12 @@ The media processing service is a new Micronaut worker service for CPU- and I/O-
 
 The service processes accepted chat media after the final media message is created. It generates media derivatives, extracts technical metadata, and prepares media-derived searchable text so future search can find words inside images, video frames, and spoken audio.
 
+Current priority:
+
+- video processing comes first
+- the first production goal is to turn uploaded videos into chat-friendly playback assets
+- image OCR, video OCR, and speech-to-text remain important, but they should follow the first usable video pipeline
+
 The main goal is to keep `chat-app-backend` responsible for chat-domain workflow while moving long-running thumbnail, transcode, OCR, and transcription work into an independently scalable service.
 
 ## Functional Requirements
@@ -62,31 +68,36 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
 
 ## Use Cases
 
-1. Image thumbnail and preview generation
+1. Video poster and metadata extraction
+   - User sends a video message.
+   - The service extracts width, height, duration, and a poster thumbnail.
+   - The service optionally writes a lightweight preview/transcoded object later.
+   - Chat clients can render a better video card after processing finishes.
+
+2. Video playback optimization
+   - User sends a large video.
+   - The service writes a chat-friendly playback asset with lower bitrate and more predictable codec/container choices.
+   - Later the service can emit multiple renditions for adaptive playback.
+
+3. Image thumbnail and preview generation
    - User sends an image message.
    - `chat-app-backend` creates the message with media status `PROCESSING_PENDING`.
    - `media-processing-service` generates thumbnail/preview objects.
    - The service updates media rows to `MEDIA_READY`.
    - Chat clients receive a refreshed message payload through the existing realtime path.
 
-2. Video poster and metadata extraction
-   - User sends a video message.
-   - The service extracts width, height, duration, and a poster thumbnail.
-   - The service optionally writes a lightweight preview/transcoded object later.
-   - Chat clients can render a better video card after processing finishes.
-
-3. Search text in images
+4. Search text in images
    - User sends an image containing visible text.
    - The service runs OCR after upload approval.
    - Extracted text is stored as `IMAGE_OCR` text linked to the message attachment.
    - Search can later match the image message by visible text.
 
-4. Search text in video frames
+5. Search text in video frames
    - User sends a video containing slides, captions, signs, or screen-recorded text.
    - The service samples selected frames and runs OCR.
    - Extracted text is stored as `VIDEO_OCR` with timestamp ranges when available.
 
-5. Search spoken words in video or audio
+6. Search spoken words in video or audio
    - The service extracts audio from a video/audio object.
    - Speech-to-text creates transcript segments.
    - Transcript text is stored as `SPEECH_TO_TEXT` with timestamp ranges.
@@ -293,88 +304,155 @@ Payload fields:
 Recommended path:
 
 1. Keep Phase 5 in-process media processing as a temporary placeholder only.
-2. Add real multipart upload before large media processing so videos/files can enter the pipeline reliably.
-3. Create `media-processing-service` with Micronaut as Phase 10.
-4. Start with image/video thumbnails, metadata extraction, and status updates.
-5. Add `media_extracted_text` before enabling OCR/transcription search.
-6. Add image OCR first, then video frame OCR, then speech-to-text.
-7. Store extracted text in the DB first and emit search-indexing events for `docs/27_SEARCH_FEATURE.md`.
-8. Move to a dedicated search engine when media-derived text makes database search too limited.
+2. Treat the new `media-processing/` Micronaut project as the service scaffold that Phase 1 already established.
+3. Prioritize video processing before broader media-search enrichment.
+4. Build the first usable video pipeline in this order:
+   - consume post-commit processing jobs
+   - extract video metadata
+   - generate poster thumbnails
+   - write a normalized/transcoded playback asset
+   - expose derivative URLs/status back to `chat-app-backend`
+5. After the first usable video pipeline works, add the contract needed for a better frontend video player in `docs/12_MEDIA_CHAT_SUPPORT_DRAFT.md`.
+6. Add adaptive video outputs later:
+   - lower-resolution renditions
+   - mobile-friendly playback defaults
+   - optional HLS/adaptive streaming
+7. Add `media_extracted_text` before enabling OCR/transcription search.
+8. Add video OCR and speech-to-text before image OCR only if search value for video is more urgent than image search.
+9. Store extracted text in the DB first and emit search-indexing events for `docs/27_SEARCH_FEATURE.md`.
+10. Move to a dedicated search engine when media-derived text makes database search too limited.
 
 ## Implementation details
 
-Planned phases:
-
 ### Phase 1 - Service Scaffold
 
-- What changed
-  - Create a new Micronaut service module named `media-processing-service`.
-  - Add config for database access, object storage credentials, queue/outbox consumption, worker concurrency, and processing feature flags.
-  - Add health checks and basic metrics.
-- Why it changed
-  - Establish the service boundary before moving real processing out of `chat-app-backend`.
+- `media-processing/` has been initialized as a Micronaut project.
+- Current scaffold evidence in the repo:
+  - `media-processing/pom.xml`
+  - `media-processing/mvnw`
+  - `media-processing/src/main/java/com/hello/mediaprocessing/Application.java`
+  - `media-processing/src/main/resources/application.properties`
+  - `media-processing/README.md`
+- No processing workflow, queue/outbox consumer, object-storage integration, or video pipeline is implemented yet.
 
-### Phase 2 - Job Contract and Idempotency
+### Phase 2 - Processing job contract and worker wiring
 
-- What changed
-  - Define processing job payloads and status events.
-  - Add idempotency rules keyed by `jobId` and/or `(mediaId, jobType)`.
-  - Add retry/backoff and dead-letter/failure behavior.
-- Why it changed
-  - Processing jobs may be retried or redelivered, so repeated execution must not corrupt media metadata.
+- Define the processing job payload consumed by `media-processing-service`.
+- Decide the initial handoff mechanism:
+  - RabbitMQ queue
+  - durable job table
+  - or outbox + publisher
+- Define idempotency keys, retry policy, and failure/dead-letter behavior.
+- Add the first worker loop / consumer that can receive a job and move it through basic status transitions.
+- Add service configuration for:
+  - queue or job source
+  - worker concurrency
+  - feature flags for video processing steps
 
-### Phase 3 - Metadata and Derivative Generation
+### Phase 3 - Object storage and video source loading
 
-- What changed
-  - Extract MIME type, width, height, and duration.
-  - Generate image thumbnails/previews.
-  - Generate video poster thumbnails.
-  - Write derivative object keys back to `message_media`.
-- Why it changed
-  - Replaces placeholder derivative metadata in `chat-app-backend` with real generated files.
+- Add MinIO object-storage integration in `media-processing-service`.
+- Load source video objects using service credentials, not user-facing signed URLs.
+- Define temporary working-file strategy for downloaded media.
+- Define cleanup rules for temporary local files after processing.
+- Record processing failures cleanly when the source object is missing, unreadable, or corrupted.
 
-### Phase 4 - Realtime Status Refresh
+### Phase 4 - Video metadata extraction
 
-- What changed
-  - Emit processing status events after media rows change.
-  - Let `chat-app-backend` hydrate and republish the updated `MessageResponse`.
-- Why it changed
-  - Keeps client-facing DTOs and WebSocket delivery owned by the chat backend.
+- Extract video metadata from the original upload:
+  - duration
+  - width
+  - height
+  - detected MIME type
+  - codec/container details if needed
+- Define where this metadata is written so `chat-app-backend` can include it in media DTOs later.
+- Define how processing status moves from:
+  - `PROCESSING_PENDING`
+  - `PROCESSING_IN_PROGRESS`
+  - `MEDIA_READY`
+  - `PROCESSING_FAILED`
 
-### Phase 5 - Image OCR for Search
+### Phase 5 - Video poster thumbnail generation
 
-- What changed
-  - Run OCR on image attachments.
-  - Store extracted rows in `media_extracted_text` with `source_type = IMAGE_OCR`.
-  - Emit `MEDIA_TEXT_EXTRACTED` for search indexing.
-- Why it changed
-  - Enables future search results for text visible inside image messages.
+- Generate a poster thumbnail for each processed video.
+- Decide thumbnail capture rules:
+  - first usable frame
+  - fixed timestamp
+  - or heuristic based on black-frame avoidance
+- Write poster object metadata and storage pointers back to the shared persistence/API boundary.
+- Ensure `chat-app-backend` can later expose this poster to the frontend as the default pre-play preview.
 
-### Phase 6 - Video OCR
+### Phase 6 - First usable transcoded playback asset
 
-- What changed
-  - Sample video frames by interval or scene-change detection.
-  - Run OCR on selected frames.
-  - Store `VIDEO_OCR` rows with timestamp ranges when available.
-- Why it changed
-  - Supports searching screen recordings, slides, captions, signs, and other visible text in videos.
+- Produce a normalized/transcoded playback asset for chat video playback.
+- Choose the initial output target:
+  - one normalized MP4/H.264 + AAC file
+- Optimize for:
+  - reliable browser playback
+  - smaller bandwidth than the original upload
+  - acceptable startup time for chat use
+- Store the derived playback object and expose a field that `chat-app-backend` can map to `transcodedUrl`.
+- Keep the original object available as fallback/download until deletion/retention rules say otherwise.
 
-### Phase 7 - Speech-to-Text
+### Phase 7 - Chat-backend integration contract
 
-- What changed
-  - Extract audio from video/audio attachments.
-  - Generate transcript segments.
-  - Store `SPEECH_TO_TEXT` rows with timestamp ranges.
-- Why it changed
-  - Supports searching spoken content in media messages.
+- Define how `media-processing-service` reports completed outputs back to the chat system.
+- Decide whether the worker:
+  - writes directly to the shared database
+  - or calls a narrow internal API in `chat-app-backend`
+- Update the shared contract so `chat-app-backend` can republish message updates after video processing finishes.
+- Ensure the backend can expose these fields to the frontend:
+  - poster thumbnail URL
+  - transcoded playback URL
+  - duration
+  - width
+  - height
+  - processing status
 
-### Phase 8 - Search Engine Integration
+### Phase 8 - Frontend video-player dependency contract
 
-- What changed
-  - Index media-derived text into the search system described in `docs/27_SEARCH_FEATURE.md`.
-  - Include source type and media timestamp metadata in search results.
-- Why it changed
-  - Allows search to return image/video/audio matches without coupling search queries directly to processing internals.
+- Define the minimum processed video outputs required before frontend player work starts:
+  - poster thumbnail
+  - duration metadata
+  - transcoded playback asset
+- Align this phase with `docs/12_MEDIA_CHAT_SUPPORT_DRAFT.md` Phase 11.
+- Keep this phase focused on the contract and payload shape, not on implementing the player UI inside this service.
+
+### Phase 9 - Adaptive/mobile-friendly video outputs
+
+- Add lower-resolution renditions for constrained networks and mobile devices.
+- Decide whether the next step is:
+  - multiple MP4 renditions first
+  - or HLS directly
+- Define the initial rendition ladder, for example:
+  - 240p
+  - 480p
+  - 720p
+- Decide how the frontend should choose low-resolution playback by default on mobile or poor networks.
+
+### Phase 10 - Adaptive streaming
+
+- Add HLS/adaptive streaming if video size and playback quality require it.
+- Produce playlist/manifests and segment outputs.
+- Decide how `chat-app-backend` exposes adaptive playback URLs to the frontend.
+- Keep original download and simpler fallback playback available for unsupported clients.
+
+### Phase 11 - Video search enrichment
+
+- Add video OCR on sampled frames when video search becomes important enough.
+- Add speech-to-text transcript extraction for video audio.
+- Store extracted rows in `media_extracted_text`.
+- Emit `MEDIA_TEXT_EXTRACTED` events for the search pipeline in `docs/27_SEARCH_FEATURE.md`.
+- Keep OCR/transcription behind feature flags until cost, privacy, and quality are validated.
+
+### Phase 12 - Image processing and image OCR
+
+- After the first usable video pipeline is stable, add image-specific processing here:
+  - thumbnails
+  - previews
+  - optional compression
+- Add image OCR after the video-first priorities are under control.
+- Reuse the same persistence/event patterns established for video.
 
 ## Future Higher-Scale Path
 
