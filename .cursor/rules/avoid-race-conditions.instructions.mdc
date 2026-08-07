@@ -22,16 +22,11 @@ public void complete() {
     mediaProcessingService.enqueueProcessing(message.getId());
 }
 
-// GOOD — defer until after commit
-TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-    @Override
-    public void afterCommit() {
-        mediaProcessingService.enqueueProcessing(messageId);
-    }
-});
+// GOOD — defer until after commit (prefer shared helper)
+AfterCommit.run(() -> mediaProcessingService.enqueueProcessing(messageId));
 ```
 
-Also acceptable: `@TransactionalEventListener(phase = AFTER_COMMIT)`, or persist in `REQUIRES_NEW` then trigger side effects outside that transaction.
+Also acceptable: raw `TransactionSynchronizationManager.registerSynchronization(...)`, `@TransactionalEventListener(phase = AFTER_COMMIT)`, or persist in `REQUIRES_NEW` then trigger side effects outside that transaction.
 
 ### 2. Read-modify-write (DB or application state)
 

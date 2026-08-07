@@ -3,11 +3,14 @@ package com.hello.chatapp.exception;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,8 +38,34 @@ public class GlobalExceptionHandler {
                 .body(e.getMessage());
     }
 
+    /**
+     * Bean Validation failures on {@code @RequestBody} / {@code @Valid} — client error, not 500.
+     * Body stays a plain string like other 4xx handlers so FE {@code response.text()} keeps working.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<String> handleMethodArgumentNotValid(MethodArgumentNotValidException e) {
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        if (message.isBlank()) {
+            message = "Validation failed";
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(message);
+    }
+
+    /**
+     * Malformed JSON / unreadable body — client error, not 500.
+     * Avoid returning parser internals; keep a stable message for clients.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<String> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
+        logger.warn("Malformed request body: {}", e.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body("Malformed request body");
+    }
+
     @ExceptionHandler({ForbiddenException.class, SecurityException.class})
-    public ResponseEntity<String> handleForbiddenException(ForbiddenException e) {
+    public ResponseEntity<String> handleForbiddenException(RuntimeException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(e.getMessage());
     }
@@ -66,4 +95,3 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }
-

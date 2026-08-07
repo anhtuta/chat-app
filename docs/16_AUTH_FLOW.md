@@ -146,7 +146,7 @@ It does **not**:
 - `disconnectWebSocket()` runs only when the provider **unmounts**, not automatically on every logout navigation
 - So logout + stay in SPA may leave the socket open with the pre-logout `user` snapshot until something else disconnects it
 
-Practical implication: **HTTP logout ≠ WebSocket session clear**. To fully end WS auth you need an explicit client disconnect (and ideally server-side close of sessions tied to that user/session id — not implemented as part of logout today).
+Practical implication: **HTTP logout ≠ WebSocket session clear**. To fully end WS auth you need an explicit client disconnect (and ideally server-side close of sessions tied to that user/session id — not implemented as part of logout today). Planning / proposed fix: [`18_LOGOUT_WEBSOCKET_SESSION_LIFECYCLE.md`](./18_LOGOUT_WEBSOCKET_SESSION_LIFECYCLE.md).
 
 ### Code map
 

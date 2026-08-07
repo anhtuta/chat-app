@@ -4,6 +4,7 @@ import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.repository.GroupParticipantRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.lang.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -111,24 +112,9 @@ public class GroupSummaryUpdatePublisher {
             List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
             int deliveredCount = 0;
             for (String username : usernames) {
-                String safeUsername = Objects.requireNonNull(username);
-
-                // Check if the user is online on any instance
-                if (!groupUpdatesSubscriptionRegistry.hasClusterSubscriber(safeUsername)) {
-                    continue;
+                if (publishToUser(username, updateToPublish)) {
+                    deliveredCount++;
                 }
-
-                String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
-                deliveredCount++;
-
-                // Local delivery on current instance.
-                // Check if the user is online on this instance (current instance that runs this code)
-                if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
-                    messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
-                }
-
-                // Cross-instance delivery via RabbitMQ.
-                rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, updateToPublish);
             }
             logger.debug(
                     "[flushGroupMembers] Flushed buffered group summary update to {}/{} subscribed users in groupId={}, message={}",
@@ -150,6 +136,38 @@ public class GroupSummaryUpdatePublisher {
                 }
             }
         }
+    }
+
+    /**
+     * Delivers a personal group-summary update to one user.
+     * This could be used in 2 cases:
+     * 
+     * 1. Immediately, no debounce. Used for membership removal so the target's sidebar clears without waiting on the
+     * member-list fan-out buffer (called from GroupMembershipRealtimePublisher.publishMembershipChange).
+     * 2. With delay and debounce. Used for flushing messages to the user (called from flushGroupMembers).
+     * 
+     * @return true if the update was delivered, false otherwise (user is offline)
+     */
+    public boolean publishToUser(String username, @NonNull GroupSummaryUpdate updateToPublish) {
+        String safeUsername = Objects.requireNonNull(username, "username must not be null");
+
+        // Check if the user is online on any instance
+        if (!groupUpdatesSubscriptionRegistry.hasClusterSubscriber(safeUsername)) {
+            return false;
+        }
+
+        String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
+
+        // Local delivery on current instance.
+        // F-11 P-1b: Check if the user is online on this instance (current instance that runs this code)
+        if (rabbitMQBrokerHandler.hasLocalSubscribers(userScopedTopicDestination)) {
+            messagingTemplate.convertAndSend(userScopedTopicDestination, updateToPublish);
+        }
+
+        // Cross-instance delivery via RabbitMQ.
+        rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, updateToPublish);
+
+        return true;
     }
 
     private static final class PendingGroupSummaryUpdate {

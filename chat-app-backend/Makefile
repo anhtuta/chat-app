@@ -116,9 +116,11 @@ test.be.ut:
 	@echo "🚀 Running backend unit tests..."
 	./mvnw test
 
+# integration-test runs ITs but does not fail the build on failures; verify checks the results.
+# Avoid `mvn verify` here so unit tests (Surefire) are not re-run — use test.be for both.
 test.be.it:
 	@echo "🚀 Running backend integration tests..."
-	./mvnw failsafe:integration-test
+	./mvnw failsafe:integration-test failsafe:verify
 
 test.fe:
 	@echo "🚀 Running frontend tests..."

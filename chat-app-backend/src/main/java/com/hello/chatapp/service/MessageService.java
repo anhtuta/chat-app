@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.List;
 
 @Service
@@ -146,9 +147,9 @@ public class MessageService {
             Group group,
             User subjectUser,
             User actor,
-            SystemEventType eventType,
-            String latestPreview) {
+            SystemEventType eventType) {
         Long groupId = Objects.requireNonNull(group.getId());
+        SystemEventType safeEventType = Objects.requireNonNull(eventType, "eventType must not be null");
         Group existingGroup = groupRepository.findById(groupId)
                 .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
 
@@ -157,12 +158,12 @@ public class MessageService {
         message.setUpdatedBy(actor);
         message.setGroup(existingGroup);
         message.setMessageType(MessageType.SYSTEM);
-        message.setContent(Objects.requireNonNull(eventType, "eventType must not be null").name());
+        message.setContent(safeEventType.name());
 
         Message savedMessage = messageRepository.saveAndFlush(message);
         updateLatestMessageSummary(
                 groupId,
-                latestPreview,
+                safeEventType.latestPreview(),
                 "System",
                 savedMessage.getTimestamp(),
                 Objects.requireNonNull(savedMessage.getId()));
@@ -203,26 +204,68 @@ public class MessageService {
         };
     }
 
+    /**
+     * Recomputes and persists {@code groups.latest_message*} after a group message edit/delete.
+     * <p>
+     * Only updates when {@code moderatedMessageId} is still the group's chronologically latest row
+     * (soft-delete keeps that row in place, so a deleted latest message still matches). Writes use
+     * {@code updateLatestMessageIfNotStale} so a concurrent newer send cannot be overwritten.
+     * <p>
+     * Does not publish WebSocket {@code GroupSummaryUpdate} events (Feature 15 Task 12.4).
+     * See {@code docs/05_GROUP_LATEST_MESSAGE_UPDATE_STRATEGY.md}.
+     *
+     * @param groupId group whose denormalized latest-message fields may need a rewrite
+     * @param moderatedMessageId id of the message that was just edited or soft-deleted
+     */
     @Transactional
-    public void refreshGroupLatestMessage(Long groupId) {
+    public void refreshGroupLatestMessage(Long groupId, Long moderatedMessageId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-        Group group = groupRepository.findById(safeGroupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
+        Long safeModeratedMessageId = Objects.requireNonNull(moderatedMessageId, "moderatedMessageId must not be null");
 
-        java.util.Optional<Message> latestMessage = messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(safeGroupId);
+        // Guard: group must still exist (e.g. not removed between moderation save and refresh).
+        if (!groupRepository.existsById(safeGroupId)) {
+            throw new NotFoundException("Group with id " + safeGroupId + " not found");
+        }
+
+        // Chronological latest row for this group (soft-deleted messages are still included).
+        Optional<Message> latestMessage = messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(safeGroupId);
+
+        // Rare: no messages left. Clear denormalized fields only if the table is still empty
+        // (conditional UPDATE avoids wiping a summary written by a concurrent send).
         if (latestMessage.isEmpty()) {
-            group.setLatestMessage(null);
-            group.setLatestMessageSender(null);
-            group.setLatestMessageAt(null);
-            groupRepository.save(group);
+            int cleared = groupRepository.clearLatestMessageIfEmpty(safeGroupId);
+            if (cleared == 0) {
+                logger.debug(
+                        "Skipped clearing latest-message for group {} because messages appeared concurrently",
+                        safeGroupId);
+            }
             return;
         }
 
         Message latest = latestMessage.get();
-        group.setLatestMessage(buildLatestMessagePreview(latest));
-        group.setLatestMessageSender(latest.getMessageType() == MessageType.SYSTEM ? "System" : latest.getUser().getUsername());
-        group.setLatestMessageAt(latest.getTimestamp());
-        groupRepository.save(group);
+        Long latestId = Objects.requireNonNull(latest.getId(), "latest message id must not be null");
+
+        // Early exit: editing/deleting an older message cannot change the sidebar preview.
+        // Soft-delete of the latest message still matches here (same row, new "Message deleted" preview).
+        if (!safeModeratedMessageId.equals(latestId)) {
+            logger.debug(
+                    "Skipped latest-message refresh for group {}: moderatedMessageId={} is not latestMessageId={}",
+                    safeGroupId, safeModeratedMessageId, latestId);
+            return;
+        }
+
+        // Build the preview/sender for the (still) latest row — edited text or "Message deleted".
+        String preview = buildLatestMessagePreview(latest);
+        String sender = latest.getMessageType() == MessageType.SYSTEM ? "System" : latest.getUser().getUsername();
+
+        // CAS write: allow same-id preview rewrite (<=), but do not overwrite a newer concurrent send.
+        int rowsUpdated = groupRepository.updateLatestMessageIfNotStale(
+                safeGroupId, preview, sender, latest.getTimestamp(), latestId);
+        if (rowsUpdated == 0) {
+            logger.debug(
+                    "Skipped latest-message refresh for group {} because a newer latest message already exists",
+                    safeGroupId);
+        }
     }
 
     private void updateLatestMessageSummary(

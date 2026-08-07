@@ -112,17 +112,42 @@ function AddGroupMemberDialog({
 
     setIsSubmitting(true);
     setError("");
-    try {
-      for (const userId of selectedUserIds) {
+
+    const failedUserIds: number[] = [];
+    let addedCount = 0;
+    let lastError: unknown;
+
+    for (const userId of selectedUserIds) {
+      try {
         await addGroupMember(groupId, userId);
+        addedCount += 1;
+      } catch (submitError: unknown) {
+        console.error("Error adding group member:", submitError);
+        failedUserIds.push(userId);
+        lastError = submitError;
       }
+    }
+
+    setIsSubmitting(false);
+
+    if (addedCount > 0) {
+      // Parent member list must refresh even when later adds fail.
       onMembersAdded();
+      setUsers((previous) => previous.filter((user) => failedUserIds.includes(user.id)));
+    }
+
+    if (failedUserIds.length === 0) {
       onClose();
-    } catch (submitError: unknown) {
-      console.error("Error adding group members:", submitError);
-      setError(toErrorMessage(submitError, "Failed to add group member"));
-    } finally {
-      setIsSubmitting(false);
+      return;
+    }
+
+    // Keep only failed users selected so retry does not re-add successes.
+    setSelectedUserIds(failedUserIds);
+    if (addedCount > 0) {
+      const detail = lastError instanceof Error && lastError.message ? `: ${lastError.message}` : "";
+      setError(`Added ${addedCount} member(s), but ${failedUserIds.length} failed${detail}`);
+    } else {
+      setError(toErrorMessage(lastError, "Failed to add group member"));
     }
   };
 

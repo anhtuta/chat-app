@@ -36,6 +36,14 @@ public class Message {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Primary user on the message row ({@code messages.user_id}).
+     * <ul>
+     *   <li>{@link MessageType#TEXT} / media: the author who sent the message</li>
+     *   <li>{@link MessageType#SYSTEM}: the <em>subject</em> of the event (who joined, was kicked,
+     *       was promoted, etc.), not necessarily who performed the action</li>
+     * </ul>
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -56,6 +64,17 @@ public class Message {
     @Column(nullable = false)
     private LocalDateTime timestamp;
 
+    /**
+     * Second user reference ({@code messages.updated_by}). Meaning depends on message type:
+     * <ul>
+     *   <li>{@link MessageType#TEXT}: who last edited the message content (with {@code updatedAt});
+     *       null until the first edit</li>
+     *   <li>{@link MessageType#SYSTEM}: the <em>actor</em> who performed the event (exposed to clients
+     *       as {@code systemEventActor}); may equal {@link #user} for self-actions such as leave
+     *       or self-join</li>
+     *   <li>media: typically unused for content edits (media is not editable)</li>
+     * </ul>
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "updated_by")
     private User updatedBy;
@@ -63,6 +82,11 @@ public class Message {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    /**
+     * Who soft-deleted this message ({@code messages.deleted_by}), with {@code deletedAt}.
+     * Null while the message is not deleted. Own-message deletes and moderator deletes both
+     * set this field; content/attachments are hidden from API responses once deleted.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "deleted_by")
     private User deletedBy;

@@ -51,6 +51,7 @@ export interface GroupJoinLink {
   createdById?: number | null;
   createdByUsername?: string | null;
   createdAt?: string | null;
+  /** Absolute expiry instant (UTC ISO-8601). Null means the link does not expire. */
   expiresAt?: string | null;
   revokedAt?: string | null;
 }
@@ -65,9 +66,15 @@ export interface SelectableUser {
 // Similar to chat-app-backend/src/main/java/com/hello/chatapp/dto/GroupSummaryUpdate.java
 export interface GroupSummaryUpdate {
   groupId: number | string;
+  name?: string | null;
+  description?: string | null;
   latestMessage?: string | null;
   latestMessageSender?: string | null;
   latestMessageAt?: string | null;
   // TODO: Confirm whether backend should eventually send authoritative unreadCount here.
   unreadCount?: number;
+  currentUserRole?: string | null;
+  currentUserPermissions?: string[];
+  /** When true, the current user should drop this group from the sidebar. */
+  removed?: boolean;
 }

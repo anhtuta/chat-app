@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -45,16 +45,21 @@ function GroupDetailsDialog({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [bannedReloadToken, setBannedReloadToken] = useState(0);
+  const initialGroupRef = useRef(initialGroup);
+  initialGroupRef.current = initialGroup;
 
+  // Seed form when the dialog opens or the selected group changes — not when the
+  // parent replaces initialGroup identity (e.g. sidebar refresh), so unsaved edits survive.
   useEffect(() => {
     if (!open) {
       return;
     }
-    setGroupDetails(initialGroup);
-    setGroupName(initialGroup?.name || "");
-    setDescription(initialGroup?.description || "");
+    const seed = initialGroupRef.current;
+    setGroupDetails(seed);
+    setGroupName(seed?.name || "");
+    setDescription(seed?.description || "");
     setError("");
-  }, [initialGroup, open]);
+  }, [groupId, open]);
 
   useEffect(() => {
     if (!open || groupId === null || groupId === undefined) {

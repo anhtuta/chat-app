@@ -56,6 +56,7 @@ Target-role rules:
 - A user cannot kick, ban, promote, or demote themselves. A leader stepping down must use the leadership-transfer flow.
 - A banned user cannot rejoin the group until manually unbanned.
 - A kicked user can rejoin if they receive or still have a valid join path and are not banned.
+- Ban = block, unban = unblock, kick = remove.
 
 ### Group Creation And Membership
 
@@ -91,8 +92,10 @@ This is better than hard delete because message history, media references, unrea
 
 ### Message Editing And Deletion
 
-- All roles can edit their own text messages.
-- All roles can delete their own text or media messages.
+- Active (non-banned) members can edit their own text messages.
+- Active (non-banned) members can delete their own text or media messages.
+- Kicked or banned users cannot edit or delete their old group messages (membership is required even for own-message actions).
+- Public chat messages can still be edited/deleted by their owner without a group membership check.
 - `LEADER` and `CO_LEADER` can edit another user's text messages.
 - `LEADER` and `CO_LEADER` can delete another user's text or media messages.
 - No role can edit media messages. Media messages can only be deleted.
@@ -568,8 +571,7 @@ What changed:
   - `requireMember(user, groupId)`
   - `requirePermission(user, groupId, permission)`
   - `requireCanManageTarget(actor, groupId, target, permission)`
-  - `requireCanEditMessage(user, message)`
-  - `requireCanDeleteMessage(user, message)`
+  - `requireCanEditMessage(user, message)` / `requireCanDeleteMessage(user, message)`: for group messages, require active (non-banned) membership even when the actor owns the message; public messages remain owner-only.
   - `requireNotBanned(user, groupId)`
   - `requireUserTopicAccess(user, topicUsername)`
 - Replaced direct membership checks with `GroupAuthorizationService` in:
@@ -623,6 +625,7 @@ What changed:
 - Rejects banned users in direct add and self-join flows.
 - Rejects membership changes for archived groups.
 - Archives a group when the last member leaves.
+- Serializes last-member leave/archive against concurrent `addMember` / `joinByToken` with a pessimistic lock on the group row (`findByIdForUpdate`) so a join cannot land in a group that is being archived.
 - Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
 - Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
 - Ensures kick, ban, promote, and demote checks compare actor and target role ranks.
@@ -757,7 +760,7 @@ What changed:
   - `deletedBy`
   - `deletedAt`
 - Hid deleted message content and attachments from API responses while keeping the row for history/audit purposes.
-- Refreshed group latest-message summaries after edits/deletes so sidebar state stays coherent.
+- Refreshed group latest-message summaries after edits/deletes via `MessageService.refreshGroupLatestMessage` so `groups.latest_message*` stays coherent (see `docs/05_GROUP_LATEST_MESSAGE_UPDATE_STRATEGY.md`). This updates the DB only; realtime sidebar fan-out for other clients is Task 12.4.
 - Updated frontend chat message rendering to show deleted placeholders and edited markers.
 
 Why it changed:
@@ -942,7 +945,12 @@ What changed:
 - Added `GET /api/groups/{groupId}/join-links` (requires `CREATE_JOIN_LINK`) for join-link history metadata; raw `token` remains create-only because only the hash is stored.
 - Added frontend helpers for list/create/revoke join links.
 - Added a Join links section in group details for users with `CREATE_JOIN_LINK`: optional expiry, create, copy token, revoke active links, and active/expired/revoked status.
+- Join-link `expiresAt` is an absolute UTC instant end-to-end (`timestamptz` / `Instant` / ISO-8601 with `Z`) so browser-local wall-clock values cannot disagree with server `Instant.now()` validation.
 - Icon-only copy/revoke controls expose `title` and `aria-label`.
+
+Rollout / migration notes:
+
+- Flyway `V9__join_link_expires_at_timestamptz.sql` converts `group_join_links.expires_at` to `timestamptz`, treating existing naive timestamps as UTC.
 
 #### Task 10.2: Join Group Via Link
 
@@ -1007,20 +1015,39 @@ Tasks:
 
 #### Task 12.1: Membership Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when membership changes from the Phase 9/10 flows:
+- Added `GroupMembershipRealtimePublisher` to publish membership events **after commit**:
+  - structured `SYSTEM` `MessageResponse` to `/topic/group.{groupId}` (local + RabbitMQ)
+  - sidebar `GroupSummaryUpdate` fan-out to remaining members (includes group `name` + System latest preview)
+  - immediate personal `removed` update to kicked/banned/leaving users via new `GroupSummaryUpdatePublisher.publishToUser`
+- Wired membership mutations in `GroupMembershipService`:
   - add member
+  - join via link (new join only)
   - kick
   - ban / unban
-  - leave
-  - join via link
-- Online clients should update without refresh:
-  - sidebar group list / membership presence where relevant
-  - open group chat when the corresponding structured `SYSTEM` message is created
-- Removed or newly banned users must stop receiving that group's personal summary updates as part of this path (shared with Task 12.5 if the revocation helper is extracted there first).
+  - leave (including last-member `GROUP_ARCHIVED` system line)
+- Frontend `GroupSummaryUpdate` now accepts `removed`, `name`, and related fields.
+- `ChatPage` sidebar handler:
+  - drops groups on `removed` and navigates to public when that chat is open
+  - inserts unknown groups on add/join summary updates so the joiner sidebar updates without refresh
+- Open group chats already upsert incoming topic messages, so membership `SYSTEM` lines appear live once published.
+
+Why it changed:
+
+- Phase 9/10 membership UI already mutated state over REST; online peers still needed WebSocket delivery for chat lines and sidebar membership presence.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal topic payload may now include `removed=true` and `name` for membership-driven summary updates.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore unknown `GroupSummaryUpdate` fields remain compatible; they simply will not drop/insert sidebar rows until updated.
+- Force-closing an already-open `/topic/group.{id}` subscription for removed users remains Task 12.5.
 
 #### Task 12.2: Role Change Notifications
 
@@ -1073,6 +1100,7 @@ What should change:
   - personal group-summary updates for that group
   - further useful realtime delivery on `/topic/group.{groupId}` for that group
 - Validate subscribe/send authorization continues to reject removed/banned users via `GroupAuthorizationService`.
+- Validate message edit/delete authorization rejects removed/banned users even for their own old group messages (`requireCanEditMessage` / `requireCanDeleteMessage` require membership).
 - Keep this task focused on revocation semantics so Tasks 12.1-12.4 can reuse one clear rule instead of ad hoc per-event cleanup.
 
 #### Task 12.6: Archived Group Realtime Guards

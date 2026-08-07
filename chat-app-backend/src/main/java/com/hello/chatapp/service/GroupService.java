@@ -138,8 +138,12 @@ public class GroupService {
         if (!Objects.equals(group.getDescription(), originalDescription)) {
             systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_DESCRIPTION_UPDATED);
         }
+
         // Unread/role/permissions are unchanged; clients keep existing values (realtime fan-out: Phase 12).
-        return GroupResponse.fromGroup(savedGroup);
+        // recordGroupEvent → updateLatestMessageIfNewer clears the persistence context
+        // (@Modifying(clearAutomatically = true)), so re-fetch createdBy before mapping the response.
+        Group responseGroup = groupRepository.findByIdWithCreator(safeGroupId).orElse(savedGroup);
+        return GroupResponse.fromGroup(responseGroup);
     }
 
     public Map<Long, Long> getUnreadCountByGroupId(User currentUser) {

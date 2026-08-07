@@ -85,7 +85,7 @@ class MessageModerationServiceTest {
         assertThat(message.getContent()).isEqualTo("updated");
         assertThat(message.getUpdatedBy()).isSameAs(actor);
         assertThat(message.getUpdatedAt()).isNotNull();
-        verify(messageService).refreshGroupLatestMessage(100L);
+        verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
     }
 
@@ -101,7 +101,7 @@ class MessageModerationServiceTest {
 
         assertThat(message.getDeletedBy()).isSameAs(actor);
         assertThat(message.getDeletedAt()).isNotNull();
-        verify(messageService).refreshGroupLatestMessage(100L);
+        verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
     }
 }

@@ -11,6 +11,7 @@ import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
 import com.hello.chatapp.entity.GroupJoinLink;
 import com.hello.chatapp.entity.GroupParticipant;
+import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
@@ -31,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -53,6 +55,7 @@ public class GroupMembershipService {
     private final GroupJoinLinkRepository groupJoinLinkRepository;
     private final GroupRepository groupRepository;
     private final SystemMessageService systemMessageService;
+    private final GroupMembershipRealtimePublisher membershipRealtimePublisher;
     private final UserRepository userRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -63,6 +66,7 @@ public class GroupMembershipService {
             GroupJoinLinkRepository groupJoinLinkRepository,
             GroupRepository groupRepository,
             SystemMessageService systemMessageService,
+            GroupMembershipRealtimePublisher membershipRealtimePublisher,
             UserRepository userRepository) {
         this.groupAuthorizationService = groupAuthorizationService;
         this.groupParticipantRepository = groupParticipantRepository;
@@ -70,6 +74,7 @@ public class GroupMembershipService {
         this.groupJoinLinkRepository = groupJoinLinkRepository;
         this.groupRepository = groupRepository;
         this.systemMessageService = systemMessageService;
+        this.membershipRealtimePublisher = membershipRealtimePublisher;
         this.userRepository = userRepository;
     }
 
@@ -110,9 +115,13 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
-        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
+        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
         User target = loadUser(userId);
         groupAuthorizationService.requireNotBanned(target, groupId);
+
+        // Re-lock + re-check archived under the same lock as leaveGroup's last-member archive.
+        Group group = lockGroupForLifecycleUpdate(groupId);
+        ensureActive(group);
 
         if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already a member of this group");
@@ -121,7 +130,7 @@ public class GroupMembershipService {
         GroupParticipant participant = new GroupParticipant(group, target);
         participant.setRole(GroupRole.MEMBER);
         GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_JOINED);
+        publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
         return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
@@ -136,9 +145,9 @@ public class GroupMembershipService {
     }
 
     @Transactional
-    public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, LocalDateTime expiresAt) {
+    public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, Instant expiresAt) {
         Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
-        if (expiresAt != null && !expiresAt.isAfter(LocalDateTime.now())) {
+        if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new BadRequestException("expiresAt must be in the future");
         }
 
@@ -161,9 +170,12 @@ public class GroupMembershipService {
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
         validateJoinLink(joinLink);
 
-        Group group = joinLink.getGroup();
-        Long groupId = Objects.requireNonNull(group.getId());
+        Long groupId = Objects.requireNonNull(joinLink.getGroup().getId());
         groupAuthorizationService.requireNotBanned(user, groupId);
+
+        // Same lifecycle lock as addMember/leaveGroup: reject join if a concurrent last-member leave archived us.
+        Group group = lockGroupForLifecycleUpdate(groupId);
+        ensureActive(group);
 
         // If they're already a participant, no new row is saved and no USER_JOINED system message is recorded
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
@@ -172,7 +184,7 @@ public class GroupMembershipService {
                     GroupParticipant participant = new GroupParticipant(group, user);
                     participant.setRole(GroupRole.MEMBER);
                     GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-                    systemMessageService.recordGroupEvent(group, user, user, SystemEventType.USER_JOINED);
+                    publishMembershipEvent(group, user, user, SystemEventType.USER_JOINED, null);
                     return GroupMemberResponse.fromParticipant(savedParticipant);
                 });
     }
@@ -193,9 +205,11 @@ public class GroupMembershipService {
         groupAuthorizationService.requireCanManageTarget(actor, groupId, loadUser(userId), GroupPermission.KICK_MEMBERS);
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         ensureActive(targetParticipant.getGroup());
+        User targetUser = targetParticipant.getUser();
+        Group group = targetParticipant.getGroup();
+        String removedUsername = targetUser.getUsername();
         groupParticipantRepository.delete(targetParticipant);
-        systemMessageService.recordGroupEvent(targetParticipant.getGroup(), targetParticipant.getUser(), actor,
-                SystemEventType.USER_KICKED);
+        publishMembershipEvent(group, targetUser, actor, SystemEventType.USER_KICKED, removedUsername);
     }
 
     @Transactional(readOnly = true)
@@ -217,10 +231,13 @@ public class GroupMembershipService {
         }
         validateBanReason(reason);
 
-        groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).ifPresent(participant -> {
-            groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.BAN_MEMBERS);
-            groupParticipantRepository.delete(Objects.requireNonNull(participant));
-        });
+        String removedUsername = groupParticipantRepository.findByGroupIdAndUserId(groupId, userId)
+                .map(participant -> {
+                    groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.BAN_MEMBERS);
+                    groupParticipantRepository.delete(Objects.requireNonNull(participant));
+                    return target.getUsername();
+                })
+                .orElse(null);
 
         if (groupBanRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already banned from this group");
@@ -232,7 +249,7 @@ public class GroupMembershipService {
         ban.setBannedBy(actor);
         ban.setReason(reason);
         groupBanRepository.save(ban);
-        systemMessageService.recordGroupEvent(group, target, actor, SystemEventType.USER_BANNED);
+        publishMembershipEvent(group, target, actor, SystemEventType.USER_BANNED, removedUsername);
     }
 
     @Transactional
@@ -241,7 +258,7 @@ public class GroupMembershipService {
         GroupBan ban = groupBanRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new NotFoundException("Ban not found"));
         groupBanRepository.delete(Objects.requireNonNull(ban));
-        systemMessageService.recordGroupEvent(group, ban.getUser(), actor, SystemEventType.USER_UNBANNED);
+        publishMembershipEvent(group, ban.getUser(), actor, SystemEventType.USER_UNBANNED, null);
     }
 
     @Transactional
@@ -293,9 +310,13 @@ public class GroupMembershipService {
     @Transactional
     public void leaveGroup(User actor, Long groupId) {
         GroupParticipant participant = groupAuthorizationService.requireMember(actor, groupId);
-        Group group = participant.getGroup();
+
+        // Lock the group row before counting/archiving so a concurrent addMember/joinByToken
+        // cannot pass its active check and insert a participant into a group we are archiving.
+        Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
 
+        // Count under the lock so "last member" is decided against the same serialized membership set.
         long memberCount = groupParticipantRepository.countByGroupId(groupId);
         if (participant.getRole() == GroupRole.LEADER && memberCount > 1) {
             throw new ForbiddenException("Transfer leadership before leaving the group");
@@ -309,16 +330,62 @@ public class GroupMembershipService {
         }
 
         groupParticipantRepository.delete(participant);
-        systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.USER_LEFT);
+        publishMembershipEvent(group, actor, actor, SystemEventType.USER_LEFT, actor.getUsername());
         if (memberCount <= 1) {
-            systemMessageService.recordGroupEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED);
+            // Archive system line is part of last-member leave; profile-wide archive paths stay in Task 12.3.
+            publishMembershipEvent(group, actor, actor, SystemEventType.GROUP_ARCHIVED, null);
         }
+    }
+
+    /**
+     * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
+     * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
+     *
+     * <p>Realtime effects:
+     * <ul>
+     *   <li>push the system message to {@code /topic/group.{groupId}}</li>
+     *   <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
+     *   <li>when {@code removedUsername} is set, immediately notify that user with
+     *       {@code removed=true} so their sidebar drops the group</li>
+     * </ul>
+     *
+     * @param group the group where the membership event occurred
+     * @param subjectUser the user the event is about (e.g. joined, kicked, banned)
+     * @param actor the user who performed the action (may be the same as {@code subjectUser})
+     * @param eventType stable system event stored on the message and used for the sidebar preview
+     * @param removedUsername username to receive a personal {@code removed} update
+     *        (kick / ban of a participant / leave); {@code null} when nobody should be removed
+     *        from their own sidebar (e.g. add, join, unban)
+     */
+    private void publishMembershipEvent(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String removedUsername) {
+        Message systemMessage = systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType);
+        membershipRealtimePublisher.publishMembershipChange(
+                group,
+                systemMessage,
+                eventType.latestPreview(),
+                removedUsername);
     }
 
     private User loadUser(Long userId) {
         Long safeUserId = Objects.requireNonNull(userId, "userId must not be null");
         return userRepository.findById(safeUserId)
                 .orElseThrow(() -> new NotFoundException("User with id " + safeUserId + " not found"));
+    }
+
+    /**
+     * Acquires a pessimistic write lock on the group lifecycle row.
+     * Callers that mutate membership against archived-state (leave/archive, add, self-join)
+     * must hold this lock around the active check and the membership write.
+     */
+    private Group lockGroupForLifecycleUpdate(Long groupId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        return groupRepository.findByIdForUpdate(safeGroupId)
+                .orElseThrow(() -> new NotFoundException("Group with id " + safeGroupId + " not found"));
     }
 
     private GroupParticipant loadParticipant(Long groupId, Long userId) {
@@ -336,7 +403,7 @@ public class GroupMembershipService {
         if (joinLink.getRevokedAt() != null) {
             throw new BadRequestException("Join link has been revoked");
         }
-        if (joinLink.getExpiresAt() != null && !joinLink.getExpiresAt().isAfter(LocalDateTime.now())) {
+        if (joinLink.getExpiresAt() != null && !joinLink.getExpiresAt().isAfter(Instant.now())) {
             throw new BadRequestException("Join link has expired");
         }
         ensureActive(joinLink.getGroup());

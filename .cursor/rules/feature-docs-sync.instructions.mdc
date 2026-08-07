@@ -21,6 +21,8 @@ alwaysApply: false
 
 # Format of the documentation
 
+Note: `optional` means that the section is not mandatory, and can be skipped if not applicable.
+
 ## 1. Brand-new feature docs
 
 Use following format:
@@ -115,6 +117,8 @@ Use following format:
 ## Implementation details
 
 (Implementation summary for each phase, or the selected solution. After implementing, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+
+## Lesson (look back here)
 
 ## Future Higher-Scale Path
 

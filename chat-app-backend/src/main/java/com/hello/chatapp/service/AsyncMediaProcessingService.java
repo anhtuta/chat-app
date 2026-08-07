@@ -1,6 +1,5 @@
 package com.hello.chatapp.service;
 
-import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.dto.MessageResponse;
@@ -12,7 +11,6 @@ import com.hello.chatapp.repository.MessageMediaRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -27,20 +25,17 @@ public class AsyncMediaProcessingService implements MediaProcessingService {
     private final MessageRepository messageRepository;
     private final MessageMediaRepository messageMediaRepository;
     private final MessageResponseMapper messageResponseMapper;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
 
     public AsyncMediaProcessingService(
             MessageRepository messageRepository,
             MessageMediaRepository messageMediaRepository,
             MessageResponseMapper messageResponseMapper,
-            SimpMessagingTemplate messagingTemplate,
-            CustomRabbitMQBrokerHandler rabbitMQBrokerHandler) {
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService) {
         this.messageRepository = messageRepository;
         this.messageMediaRepository = messageMediaRepository;
         this.messageResponseMapper = messageResponseMapper;
-        this.messagingTemplate = messagingTemplate;
-        this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
     }
 
     @Override
@@ -132,10 +127,10 @@ public class AsyncMediaProcessingService implements MediaProcessingService {
     private void publishUpdatedMessage(Long messageId) {
         Message message = loadMessageWithMedia(messageId);
         MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
-        String destination = message.getGroup() == null
-                ? "/topic/public"
-                : "/topic/group." + Objects.requireNonNull(message.getGroup().getId());
-        messagingTemplate.convertAndSend(destination, response);
-        rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
+        if (message.getGroup() == null) {
+            realtimeMessageDeliveryService.publishToPublic(response);
+        } else {
+            realtimeMessageDeliveryService.publishToGroup(Objects.requireNonNull(message.getGroup().getId()), response);
+        }
     }
 }

@@ -14,6 +14,17 @@ describe("joinLinks", () => {
       expect(getSafeInternalPath("https://evil.example")).toBeNull();
       expect(getSafeInternalPath("group/public")).toBeNull();
     });
+
+    it("rejects backslash and control-character open-redirect bypasses", () => {
+      expect(getSafeInternalPath("/\\evil.example")).toBeNull();
+      expect(getSafeInternalPath("/\\\tevil.example")).toBeNull();
+      expect(getSafeInternalPath("/\t/evil.example")).toBeNull();
+      expect(getSafeInternalPath("/\n/evil.example")).toBeNull();
+    });
+
+    it("normalizes harmless backslashes inside an otherwise safe path", () => {
+      expect(getSafeInternalPath("/join\\abc")).toBe("/join/abc");
+    });
   });
 
   describe("buildJoinLinkUrl", () => {

@@ -126,10 +126,34 @@ function ChatPage({
   useEffect(() => {
     setGroupUpdatesHandler((groupSummaryUpdate) => {
       const updatedGroupId = Number(groupSummaryUpdate.groupId);
+
+      if (groupSummaryUpdate.removed) {
+        setGroups((prev) => prev.filter((group) => Number(group.id) !== updatedGroupId));
+        if (currentChatIdRef.current === updatedGroupId) {
+          navigate("/group/public");
+        }
+        return;
+      }
+
       setGroups((prev) => {
         const groupIndex = prev.findIndex((group) => Number(group.id) === updatedGroupId);
         if (groupIndex === -1) {
-          return prev;
+          // New membership (add/join) may arrive before the joiner has this group locally.
+          if (!groupSummaryUpdate.name && !groupSummaryUpdate.latestMessage) {
+            return prev;
+          }
+          const insertedGroup: ChatGroup = {
+            id: updatedGroupId,
+            name: groupSummaryUpdate.name || `Group ${updatedGroupId}`,
+            description: groupSummaryUpdate.description ?? null,
+            latestMessage: groupSummaryUpdate.latestMessage,
+            latestMessageSender: groupSummaryUpdate.latestMessageSender,
+            latestMessageAt: groupSummaryUpdate.latestMessageAt,
+            unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : 1,
+            currentUserRole: groupSummaryUpdate.currentUserRole ?? null,
+            currentUserPermissions: groupSummaryUpdate.currentUserPermissions,
+          };
+          return [insertedGroup, ...prev];
         }
 
         const currentGroup = prev[groupIndex];
@@ -143,6 +167,8 @@ function ChatPage({
 
         const updatedGroup: ChatGroup = {
           ...currentGroup,
+          name: groupSummaryUpdate.name || currentGroup.name,
+          description: groupSummaryUpdate.description ?? currentGroup.description,
           latestMessage: groupSummaryUpdate.latestMessage,
           latestMessageSender: groupSummaryUpdate.latestMessageSender,
           latestMessageAt: groupSummaryUpdate.latestMessageAt,
@@ -158,7 +184,7 @@ function ChatPage({
     });
 
     return () => setGroupUpdatesHandler(null);
-  }, [setGroupUpdatesHandler]);
+  }, [navigate, setGroupUpdatesHandler]);
 
   // For group chats (not public): when messages settle, mark the group as read
   // on the server up to the latest visible message. Guards against duplicates.

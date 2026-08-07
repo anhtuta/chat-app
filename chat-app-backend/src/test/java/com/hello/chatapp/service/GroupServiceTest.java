@@ -162,6 +162,7 @@ class GroupServiceTest {
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenReturn(group);
         when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(groupRepository.findByIdWithCreator(100L)).thenReturn(Optional.of(group));
 
         GroupResponse response = groupService.updateGroupDetails(member, 100L, "  API Team  ", "   ");
 
@@ -169,11 +170,13 @@ class GroupServiceTest {
         assertThat(group.getDescription()).isNull();
         assertThat(response.getName()).isEqualTo("API Team");
         assertThat(response.getDescription()).isNull();
+        assertThat(response.getCreatedByUsername()).isEqualTo("alice");
         assertThat(response.getCurrentUserRole()).isNull();
         assertThat(response.getCurrentUserPermissions()).isEmpty();
         assertThat(response.getUnreadCount()).isZero();
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED);
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_DESCRIPTION_UPDATED);
+        verify(groupRepository).findByIdWithCreator(100L);
     }
 
     @Test

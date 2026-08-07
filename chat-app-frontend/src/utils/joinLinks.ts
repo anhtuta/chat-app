@@ -1,15 +1,24 @@
 /**
  * Returns an internal app path suitable for post-login redirects, or null if unsafe.
+ *
+ * Normalizes before safety checks so browser URL quirks cannot bypass them:
+ * - ASCII control characters are stripped (parsers may drop them, e.g. "/\\t/x" → "//x")
+ * - Backslashes become slashes (browsers treat "\\" like "/" in URLs)
  */
 export function getSafeInternalPath(value: string | null | undefined): string | null {
   if (!value) {
     return null;
   }
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.includes("://")) {
+
+  const normalized = value
+    .trim()
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\\/g, "/");
+
+  if (!normalized.startsWith("/") || normalized.startsWith("//") || normalized.includes("://")) {
     return null;
   }
-  return trimmed;
+  return normalized;
 }
 
 /**
