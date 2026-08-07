@@ -2,15 +2,18 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.config.MediaStorageProperties;
 import com.hello.chatapp.constant.ChatScope;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
+import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.MediaUpload;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.repository.MediaUploadRepository;
 import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
@@ -31,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -155,9 +159,54 @@ class MediaUploadSessionServiceTest {
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
     }
 
+    @Test
+    void completeUploadSession_groupMessage_rechecksSendMessagesBeforePersist() {
+        Group group = new Group();
+        group.setId(100L);
+        MessageResponse response = stubSuccessfulGroupCompletion(MessageType.IMAGE, group);
+
+        mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                completionRequest(ATTACHMENT_ID));
+
+        verify(groupAuthorizationService).requireActivePermission(user, 100L, GroupPermission.SEND_MESSAGES);
+        verify(messageService).saveGroupMediaMessage(eq(group), eq(user), eq(MessageType.IMAGE), anyList());
+
+        triggerAfterCommit();
+
+        verify(realtimeMessageDeliveryService).publishToGroup(100L, response);
+    }
+
+    @Test
+    void completeUploadSession_groupMessage_rejectsWhenSendMessagesRevoked() {
+        Group group = new Group();
+        group.setId(100L);
+        MediaUpload upload = buildUpload(MessageType.IMAGE, ChatScope.GROUP, group);
+
+        when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
+                .thenReturn(List.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.objectExists(anyString())).thenReturn(true);
+        when(groupAuthorizationService.requireActivePermission(user, 100L, GroupPermission.SEND_MESSAGES))
+                .thenThrow(new ForbiddenException("You do not have permission to send messages in this group"));
+
+        assertThatThrownBy(() -> mediaUploadSessionService.completeUploadSession(
+                        user,
+                        UPLOAD_SESSION_ID,
+                        completionRequest(ATTACHMENT_ID)))
+                .isInstanceOf(ForbiddenException.class);
+
+        verify(messageService, never()).saveGroupMediaMessage(any(), any(), any(), anyList());
+        verify(realtimeMessageDeliveryService, never()).publishToGroup(anyLong(), any());
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+    }
+
     private MessageResponse stubSuccessfulCompletion(MessageType messageType) {
-        MediaUpload upload = buildUpload(messageType);
-        Message savedMessage = buildMessage(messageType);
+        MediaUpload upload = buildUpload(messageType, ChatScope.PUBLIC, null);
+        Message savedMessage = buildMessage(messageType, null);
         MessageResponse response = MessageResponse.builder().id(MESSAGE_ID).build();
 
         when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
@@ -172,13 +221,32 @@ class MediaUploadSessionServiceTest {
         return response;
     }
 
-    private MediaUpload buildUpload(MessageType messageType) {
+    private MessageResponse stubSuccessfulGroupCompletion(MessageType messageType, Group group) {
+        MediaUpload upload = buildUpload(messageType, ChatScope.GROUP, group);
+        Message savedMessage = buildMessage(messageType, group);
+        MessageResponse response = MessageResponse.builder().id(MESSAGE_ID).build();
+
+        when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
+                .thenReturn(List.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.objectExists(anyString())).thenReturn(true);
+        when(groupAuthorizationService.requireActivePermission(user, group.getId(), GroupPermission.SEND_MESSAGES))
+                .thenReturn(group);
+        when(messageService.saveGroupMediaMessage(eq(group), eq(user), eq(messageType), anyList()))
+                .thenReturn(savedMessage);
+        when(messageResponseMapper.toResponse(savedMessage)).thenReturn(response);
+        return response;
+    }
+
+    private MediaUpload buildUpload(MessageType messageType, ChatScope chatScope, Group group) {
         MediaUpload upload = new MediaUpload();
         upload.setId(1L);
         upload.setUploadId(ATTACHMENT_ID);
         upload.setUser(user);
-        upload.setChatScope(ChatScope.PUBLIC);
-        upload.setGroup(null);
+        upload.setChatScope(chatScope);
+        upload.setGroup(group);
         upload.setUploadSessionId(UPLOAD_SESSION_ID);
         upload.setRequestedMessageType(messageType);
         upload.setRequestedFilename("photo.jpg");
@@ -192,11 +260,11 @@ class MediaUploadSessionServiceTest {
         return upload;
     }
 
-    private Message buildMessage(MessageType messageType) {
+    private Message buildMessage(MessageType messageType, Group group) {
         Message message = new Message();
         message.setId(MESSAGE_ID);
         message.setUser(user);
-        message.setGroup(null);
+        message.setGroup(group);
         message.setMessageType(messageType);
         message.setTimestamp(LocalDateTime.now());
         return message;

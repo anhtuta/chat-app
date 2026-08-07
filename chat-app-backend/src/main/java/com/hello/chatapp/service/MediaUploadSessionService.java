@@ -196,6 +196,12 @@ public class MediaUploadSessionService {
             upload.setStatus(UploadSessionStatus.UPLOAD_COMPLETED);
         }
 
+        // Re-check SEND_MESSAGES at complete time: prepare can succeed, then kick/ban before finalize.
+        Long preparedGroupId = firstUpload.getGroup() == null
+                ? null
+                : Objects.requireNonNull(firstUpload.getGroup().getId());
+        validateScopeAndMembership(user, firstUpload.getChatScope(), preparedGroupId);
+
         Message message = persistFinalMessage(user, uploads);
         uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
 
