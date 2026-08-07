@@ -245,6 +245,43 @@ Processing job guidance:
 - workers must be idempotent because jobs may be retried or redelivered
 - if retry/history requirements outgrow RabbitMQ alone, add a durable `media_processing_jobs` table as the source of truth and use RabbitMQ only as the wake-up signal
 
+### Planned `chat-app-backend` / `media-processing-service` / RabbitMQ communication
+
+Current state:
+
+- Phase 5 still keeps media processing in-process inside `chat-app-backend`.
+- The diagram below is the **target communication plan**, not the current implementation.
+
+Recommended communication plan:
+
+- `chat-app-backend` publishes a post-commit processing job to a **dedicated** RabbitMQ processing exchange/queue.
+- `media-processing-service` consumes that job, reads/writes media in object storage, and computes derived metadata.
+- `media-processing-service` reports completion/failure back to a **narrow internal API** in `chat-app-backend`.
+- `chat-app-backend` remains the only service that republishes updated `MessageResponse` payloads to clients through the existing real-time RabbitMQ flow.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Backend as chat-app-backend
+    participant Jobs as RabbitMQ media-processing queue
+    participant Worker as media-processing-service
+    participant Storage as Object Storage
+    participant Realtime as RabbitMQ realtime exchange
+    participant OtherBackends as other chat-app-backend instances
+
+    Client->>Backend: complete upload
+    Backend->>Backend: persist final message + media rows\nstatus=PROCESSING_PENDING
+    Backend->>Jobs: publish MediaProcessingJobMessage after commit
+    Jobs-->>Worker: deliver job
+    Worker->>Storage: read original object
+    Worker->>Storage: write thumbnails / transcodes / metadata outputs
+    Worker->>Backend: POST internal media-processing callback\nstatus + derivative keys + metadata
+    Backend->>Backend: update message/media state
+    Backend->>Realtime: publish updated MessageResponse
+    Realtime-->>OtherBackends: deliver chat event
+    OtherBackends-->>Client: push refreshed media message
+```
+
 ### Cross-instance media delivery
 
 When a media message is delivered across instances:

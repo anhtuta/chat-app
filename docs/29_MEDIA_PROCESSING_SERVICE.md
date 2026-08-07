@@ -211,6 +211,35 @@ flowchart LR
     A -->|republish MessageResponse| K[Connected Chat Clients]
 ```
 
+### Planned Backend / Worker Communication
+
+Recommended communication split:
+
+- Keep **processing jobs** on a dedicated RabbitMQ processing exchange/queue.
+- Keep **real-time chat delivery** on the existing RabbitMQ real-time exchange.
+- Let `media-processing-service` report completion/failure back through a narrow internal API in `chat-app-backend` rather than publishing directly to clients.
+- Keep `chat-app-backend` as the only service that transforms processing results into updated `MessageResponse` payloads.
+
+```mermaid
+sequenceDiagram
+    participant Backend as chat-app-backend
+    participant Jobs as RabbitMQ media-processing queue
+    participant Worker as media-processing-service
+    participant Storage as Object Storage
+    participant Realtime as RabbitMQ realtime exchange
+    participant Clients as Connected chat clients
+
+    Backend->>Backend: persist final message + media rows
+    Backend->>Jobs: publish MediaProcessingJobMessage after commit
+    Jobs-->>Worker: deliver job
+    Worker->>Storage: read original object
+    Worker->>Storage: write derivatives + extracted metadata
+    Worker->>Backend: POST internal media-processing callback\nstatus + derivative keys + metadata
+    Backend->>Backend: update media rows / message view
+    Backend->>Realtime: publish updated MessageResponse
+    Realtime->>Clients: deliver refreshed media state
+```
+
 ### Core Entities/Models
 
 - `MediaProcessingJob`
@@ -437,9 +466,10 @@ Recommended path:
 ### Phase 7 - Chat-backend integration contract
 
 - Define how `media-processing-service` reports completed outputs back to the chat system.
-- Decide whether the worker:
-  - writes directly to the shared database
-  - or calls a narrow internal API in `chat-app-backend`
+- Recommended first integration path:
+  - `media-processing-service` calls a narrow internal API in `chat-app-backend`
+  - `chat-app-backend` remains responsible for final DB updates that affect client-facing message payloads
+  - avoid direct database writes from `media-processing-service` in the first rollout
 - Update the shared contract so `chat-app-backend` can republish message updates after video processing finishes.
 - Ensure the backend can expose these fields to the frontend:
   - poster thumbnail URL
