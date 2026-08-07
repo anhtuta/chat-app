@@ -61,6 +61,8 @@ server:
   port: 9010
   servlet:
     session:
+      cookie:
+        name: ${CHAT_SESSION_COOKIE_NAME:CHATAPP_SESSION}
       # Set the sliding window idle timeout, if a duration suffix is not specified, seconds is used (e.g. 30m, 3600).
       timeout: 12h
 

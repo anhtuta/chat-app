@@ -23,7 +23,6 @@ Related: [`16_AUTH_FLOW.md`](./16_AUTH_FLOW.md).
 | HTTP logout does **not** close active WebSocket sessions on the server                                                   | After “logout”, an already-open socket can still SEND/SUBSCRIBE until disconnect |
 | Frontend `disconnectWebSocket()` runs mainly on `WebSocketProvider` **unmount**, not reliably on every logout navigation | SPA can stay mounted; socket may remain open with pre-logout `user`              |
 | Redis HTTP session expiry does **not** tear down an existing WebSocket                                                   | Idle timeout stops REST; live WS may continue with the snapshot principal        |
-| Logout cookie cleanup deletes `JSESSIONID`, while Spring Session Redis typically uses `SESSION`                          | Browser may keep a stale session cookie name mismatch after logout               |
 | No server-side map from HTTP session id → WebSocket session ids                                                          | Cannot force-close sockets belonging to a logged-out session                     |
 
 ### Threat / abuse sketch
@@ -40,7 +39,7 @@ Same class of issue if the HTTP session expires in Redis while the tab keeps a l
 2. After logout, no STOMP SEND/SUBSCRIBE succeeds with the previous principal.
 3. Frontend always disconnects (and does not auto-reconnect as the old user) when auth becomes logged-out.
 4. Optionally: when Redis/HTTP session expires, associated WebSockets are closed (or fail the next frame after re-validation).
-5. Logout clears the real session cookie name used in this app (`SESSION`).
+5. Logout clears the real session cookie name used in this app (`CHATAPP_SESSION`).
 
 ## Non-Functional Requirements
 
@@ -90,12 +89,12 @@ Same class of issue if the HTTP session expires in Redis while the tab keeps a l
 
 ### 2. Cookie name on logout
 
-#### 2.1. Delete `SESSION` (and keep `JSESSIONID` for safety)
+#### 2.1. Keep controller-owned logout and explicit app cookie name
 
-- How it works: Align `SecurityConfig` / logout response with Spring Session’s cookie name.
-- Pros: Trivial; avoids leftover cookie confusion.
+- How it works: `AuthController.logout()` invalidates the HTTP session, and Spring Session expires the configured `CHATAPP_SESSION` cookie automatically.
+- Pros: One clear logout owner; cookie name is app-specific and avoids cross-app confusion on shared hosts like `localhost`.
 - Cons: None meaningful.
-- Recommendation for our problem: **Yes**.
+- Recommendation for our problem: **Already implemented**.
 
 ## High level Architecture/Design
 
@@ -104,7 +103,7 @@ Same class of issue if the HTTP session expires in Redis while the tab keeps a l
 ```mermaid
 sequenceDiagram
     participant FE as Frontend
-    participant Auth as AuthController / Security logout
+    participant Auth as AuthController
     participant Redis as Redis HTTP session
     participant Reg as WS session registry (TBD)
     participant WS as WebSocket sessions
@@ -113,7 +112,7 @@ sequenceDiagram
     Auth->>Redis: invalidate HTTP session
     Auth->>Reg: find WS sessions for this HTTP session / user
     Reg->>WS: close sessions (server)
-    Auth-->>FE: 200 + clear SESSION cookie
+    Auth-->>FE: 200 + expire CHATAPP_SESSION cookie
     FE->>FE: disconnectWebSocket(), disable reconnect, clear auth state
 ```
 
@@ -125,7 +124,7 @@ sequenceDiagram
 ## Recommendation
 
 1. **Phase A (FE):** On logout / auth→logged-out, fully disconnect STOMP/SockJS and do not reconnect until a successful login.
-2. **Phase B (BE):** On logout, server-side close of WebSocket sessions for that user/HTTP session; fix cookie delete name to `SESSION`.
+2. **Phase B (BE):** On logout, server-side close of WebSocket sessions for that user/HTTP session.
 3. **Phase C (optional):** Session-expiry → close WS (session events or periodic re-check); multi-tab / multi-instance fan-out.
 4. Keep sliding inactivity timeout; do **not** treat TTL renewal as a bug. Absolute max session age remains a separate optional hardening item.
 

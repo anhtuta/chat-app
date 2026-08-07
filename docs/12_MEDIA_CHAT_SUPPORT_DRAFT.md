@@ -992,10 +992,11 @@ Implemented in `chat-app-backend`:
   - load all uploads for a session
   - verify ownership and expiry
   - validate completion metadata for single-part vs multipart uploads
+  - re-check active `SEND_MESSAGES` for group sessions **before** persisting the final message (prepare alone is not enough after kick/ban)
   - mark upload rows completed
   - create the final `Message`
   - create linked `MessageMedia` rows
-  - publish the final message to:
+  - snapshot the `MessageResponse` (+ group id) and publish to STOMP/RabbitMQ **after commit** via `AfterCommit` (so a rolled-back persist never reaches clients):
     - `/topic/public`, or
     - `/topic/group.{groupId}`
 - Added a temporary `MalwareScanService` abstraction
@@ -1008,13 +1009,14 @@ Implemented in `chat-app-backend`:
 Phase-4 behavior currently covers:
 
 - complete a prepared upload session
+- reject group completion when the uploader is no longer an active member with `SEND_MESSAGES`
 - turn prepared `media_uploads` rows into a persisted final chat message
 - persist attachment metadata into `message_media`
 - set initial media states:
   - `IMAGE` / `VIDEO` -> `PROCESSING_PENDING`
   - `AUDIO` / `FILE` -> `MEDIA_READY`
 - mark upload-session rows as `UPLOAD_SESSION_COMPLETED`
-- publish the created media message through the existing real-time topic path
+- publish the created media message through the existing real-time topic path **after the completion transaction commits**
 
 #### Call order for Single-part (≤ 5 MB default)
 

@@ -23,6 +23,7 @@ import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.UserRepository;
 import com.hello.chatapp.util.PageableUtil;
 import com.hello.chatapp.util.StringUtil;
+import jakarta.persistence.EntityManager;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class GroupMembershipService {
     private final SystemMessageService systemMessageService;
     private final GroupMembershipRealtimePublisher membershipRealtimePublisher;
     private final UserRepository userRepository;
+    private final EntityManager entityManager;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public GroupMembershipService(
@@ -67,7 +69,8 @@ public class GroupMembershipService {
             GroupRepository groupRepository,
             SystemMessageService systemMessageService,
             GroupMembershipRealtimePublisher membershipRealtimePublisher,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            EntityManager entityManager) {
         this.groupAuthorizationService = groupAuthorizationService;
         this.groupParticipantRepository = groupParticipantRepository;
         this.groupBanRepository = groupBanRepository;
@@ -76,6 +79,7 @@ public class GroupMembershipService {
         this.systemMessageService = systemMessageService;
         this.membershipRealtimePublisher = membershipRealtimePublisher;
         this.userRepository = userRepository;
+        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -115,13 +119,11 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
+        // Lock before auth so a concurrent demotion cannot leave a former leader authorized to add.
+        Group group = lockActiveGroup(groupId);
         groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
         User target = loadUser(userId);
         groupAuthorizationService.requireNotBanned(target, groupId);
-
-        // Re-lock + re-check archived under the same lock as leaveGroup's last-member archive.
-        Group group = lockGroupForLifecycleUpdate(groupId);
-        ensureActive(group);
 
         if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already a member of this group");
@@ -146,7 +148,8 @@ public class GroupMembershipService {
 
     @Transactional
     public GroupJoinLinkResponse createJoinLink(User actor, Long groupId, Instant expiresAt) {
-        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
+        Group group = lockActiveGroup(groupId);
+        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
         if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new BadRequestException("expiresAt must be in the future");
         }
@@ -168,14 +171,24 @@ public class GroupMembershipService {
 
         GroupJoinLink joinLink = groupJoinLinkRepository.findByTokenHashWithGroup(hashToken(token))
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
+
+        // 1. First validate: optional optimization, the first check is only a fail-fast pre-check.
         validateJoinLink(joinLink);
 
         Long groupId = Objects.requireNonNull(joinLink.getGroup().getId());
-        groupAuthorizationService.requireNotBanned(user, groupId);
 
-        // Same lifecycle lock as addMember/leaveGroup: reject join if a concurrent last-member leave archived us.
-        Group group = lockGroupForLifecycleUpdate(groupId);
-        ensureActive(group);
+        // 2. Then the code waits for the group lock.
+        // While waiting, another transaction can revoke the link or archive the group.
+        // Same group lock as other membership mutations (archive + auth serialization).
+        Group group = lockActiveGroup(groupId);
+
+        // 3. Reloads the latest DB state.
+        entityManager.refresh(joinLink);
+
+        // 4. Validate again. This second validate is required.
+        validateJoinLink(joinLink);
+
+        groupAuthorizationService.requireNotBanned(user, groupId);
 
         // If they're already a participant, no new row is saved and no USER_JOINED system message is recorded
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
@@ -191,6 +204,7 @@ public class GroupMembershipService {
 
     @Transactional
     public void revokeJoinLink(User actor, Long groupId, Long joinLinkId) {
+        lockActiveGroup(groupId);
         groupAuthorizationService.requirePermission(actor, groupId, GroupPermission.CREATE_JOIN_LINK);
         GroupJoinLink joinLink = groupJoinLinkRepository.findByIdAndGroupId(joinLinkId, groupId)
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
@@ -202,11 +216,11 @@ public class GroupMembershipService {
 
     @Transactional
     public void kickMember(User actor, Long groupId, Long userId) {
-        groupAuthorizationService.requireCanManageTarget(actor, groupId, loadUser(userId), GroupPermission.KICK_MEMBERS);
+        Group group = lockActiveGroup(groupId);
+        User target = loadUser(userId);
+        groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.KICK_MEMBERS);
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
-        ensureActive(targetParticipant.getGroup());
         User targetUser = targetParticipant.getUser();
-        Group group = targetParticipant.getGroup();
         String removedUsername = targetUser.getUsername();
         groupParticipantRepository.delete(targetParticipant);
         publishMembershipEvent(group, targetUser, actor, SystemEventType.USER_KICKED, removedUsername);
@@ -224,7 +238,8 @@ public class GroupMembershipService {
 
     @Transactional
     public void banMember(User actor, Long groupId, Long userId, String reason) {
-        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.BAN_MEMBERS);
+        Group group = lockActiveGroup(groupId);
+        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.BAN_MEMBERS);
         User target = loadUser(userId);
         if (Objects.equals(actor.getId(), target.getId())) {
             throw new ForbiddenException("You cannot perform this action on yourself");
@@ -254,7 +269,8 @@ public class GroupMembershipService {
 
     @Transactional
     public void unbanMember(User actor, Long groupId, Long userId) {
-        Group group = groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.UNBAN_MEMBERS);
+        Group group = lockActiveGroup(groupId);
+        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.UNBAN_MEMBERS);
         GroupBan ban = groupBanRepository.findByGroupIdAndUserId(groupId, userId)
                 .orElseThrow(() -> new NotFoundException("Ban not found"));
         groupBanRepository.delete(Objects.requireNonNull(ban));
@@ -270,10 +286,10 @@ public class GroupMembershipService {
             throw new BadRequestException("Use leadership transfer to assign LEADER");
         }
 
+        Group group = lockActiveGroup(groupId);
         User target = loadUser(userId);
         groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.MANAGE_ROLES);
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
-        ensureActive(targetParticipant.getGroup());
         GroupRole previousRole = targetParticipant.getRole() == null ? GroupRole.MEMBER : targetParticipant.getRole();
         targetParticipant.setRole(role);
         GroupParticipant savedParticipant = groupParticipantRepository.save(targetParticipant);
@@ -281,15 +297,15 @@ public class GroupMembershipService {
             SystemEventType eventType = role.getRank() < previousRole.getRank()
                     ? SystemEventType.USER_PROMOTED
                     : SystemEventType.USER_DEMOTED;
-            systemMessageService.recordGroupEvent(targetParticipant.getGroup(), target, actor, eventType);
+            systemMessageService.recordGroupEvent(group, target, actor, eventType);
         }
         return GroupMemberResponse.fromParticipant(savedParticipant);
     }
 
     @Transactional
     public void transferLeadership(User actor, Long groupId, Long newLeaderUserId) {
+        Group group = lockActiveGroup(groupId);
         GroupParticipant currentLeader = groupAuthorizationService.requireMember(actor, groupId);
-        ensureActive(currentLeader.getGroup());
         if (currentLeader.getRole() != GroupRole.LEADER) {
             throw new ForbiddenException("Only the leader can transfer leadership");
         }
@@ -303,18 +319,15 @@ public class GroupMembershipService {
 
         newLeader.setRole(GroupRole.LEADER);
         groupParticipantRepository.save(newLeader);
-        systemMessageService.recordGroupEvent(currentLeader.getGroup(), newLeader.getUser(), actor,
+        systemMessageService.recordGroupEvent(group, newLeader.getUser(), actor,
                 SystemEventType.LEADERSHIP_TRANSFERRED);
     }
 
     @Transactional
     public void leaveGroup(User actor, Long groupId) {
+        // Lock before membership/auth reads so concurrent role/archive mutations serialize on this row.
+        Group group = lockActiveGroup(groupId);
         GroupParticipant participant = groupAuthorizationService.requireMember(actor, groupId);
-
-        // Lock the group row before counting/archiving so a concurrent addMember/joinByToken
-        // cannot pass its active check and insert a participant into a group we are archiving.
-        Group group = lockGroupForLifecycleUpdate(groupId);
-        ensureActive(group);
 
         // Count under the lock so "last member" is decided against the same serialized membership set.
         long memberCount = groupParticipantRepository.countByGroupId(groupId);
@@ -341,12 +354,13 @@ public class GroupMembershipService {
      * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
      * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
      *
-     * <p>Realtime effects:
+     * <p>
+     * Realtime effects:
      * <ul>
-     *   <li>push the system message to {@code /topic/group.{groupId}}</li>
-     *   <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
-     *   <li>when {@code removedUsername} is set, immediately notify that user with
-     *       {@code removed=true} so their sidebar drops the group</li>
+     * <li>push the system message to {@code /topic/group.{groupId}}</li>
+     * <li>fan out a sidebar {@code GroupSummaryUpdate} to remaining members</li>
+     * <li>when {@code removedUsername} is set, immediately notify that user with
+     * {@code removed=true} so their sidebar drops the group</li>
      * </ul>
      *
      * @param group the group where the membership event occurred
@@ -378,9 +392,20 @@ public class GroupMembershipService {
     }
 
     /**
+     * Acquires a pessimistic write lock on the group lifecycle row and ensures the group is active.
+     * <p>
+     * All membership/role mutations must call this <em>before</em> authorization so concurrent
+     * demotion/kick/archive cannot invalidate a permission check that already passed.
+     * Also serializes last-member leave vs add/join (see docs/21 and docs/24).
+     */
+    private Group lockActiveGroup(Long groupId) {
+        Group group = lockGroupForLifecycleUpdate(groupId);
+        ensureActive(group);
+        return group;
+    }
+
+    /**
      * Acquires a pessimistic write lock on the group lifecycle row.
-     * Callers that mutate membership against archived-state (leave/archive, add, self-join)
-     * must hold this lock around the active check and the membership write.
      */
     private Group lockGroupForLifecycleUpdate(Long groupId) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");

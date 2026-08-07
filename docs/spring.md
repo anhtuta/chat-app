@@ -380,6 +380,8 @@ Before that phase, update returned the still-managed group and lazy load worked.
 
 Same pattern as `createGroup`: re-fetch with `findByIdWithCreator` before building the response.
 
+The same clear also hits `MessageModerationService` after `refreshGroupLatestMessage` (edit/delete of the latest group message). Mapping `savedMessage` *after* that call can `LazyInitializationException` on lazy `user` / `updatedBy` / `deletedBy` / `group` / `attachments`. Fix there: build `MessageResponse` **before** calling `refreshGroupLatestMessage`.
+
 ## The difference between Throttle/Buffering vs. Debounce
 
 Suppose `window_time` = 1.5 seconds.
@@ -543,15 +545,18 @@ Sample code:
 ```java
 @Transactional
 public MessageResponse completeUploadSession() {
-   // Lệnh này sẽ lưu object message xuống DB, nhưng chưa commit
-   publishFinalMessage(response, message);
+   // Persist message + upload rows (not committed yet)
+   MessageResponse response = mapper.toResponse(message);
 
-   // Enqueue bên trong transaction, processor sẽ fetch object message từ DB và ko thấy (do chưa commit) --> bị race condition
-   enqueueAsyncProcessingIfNeeded(message);
+   // BAD if called here: STOMP/RabbitMQ clients can see a message that later rolls back
+   // publishFinalMessage(response, message);
+
+   // BAD if enqueue runs before commit: async worker may not see the new row under READ COMMITTED
+   // enqueueAsyncProcessingIfNeeded(message);
 }
 ```
 
-**Fix used in this project:** Register a `TransactionSynchronization` callback and enqueue in `afterCommit()` — see `MediaUploadSessionService.scheduleAsyncProcessingAfterCommit()`.
+**Fix used in this project:** Snapshot the response (and group id) and register `AfterCommit` callbacks for both realtime publish and media-processing enqueue — see `MediaUploadSessionService.schedulePublishFinalMessageAfterCommit()` and `scheduleAsyncProcessingAfterCommit()`.
 
 **Other options:** `@TransactionalEventListener(phase = AFTER_COMMIT)` with an application event; split persist into a `REQUIRES_NEW` transaction so commit happens first; retry `NotFoundException` in the worker as a safety net only.
 

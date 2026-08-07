@@ -31,7 +31,7 @@ Always lock the **same** group row in every path that pairs “is this group sti
 ## Implementation details
 
 - Added `GroupRepository.findByIdForUpdate`.
-- `leaveGroup`, `addMember`, and `joinByToken` call `lockGroupForLifecycleUpdate` before active re-check + membership mutation.
+- Membership/role mutations use `lockActiveGroup` **before** authorization (see [24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md](./24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md)), which also covers last-member leave vs add/join.
 - Docs note in Feature 15 Phase 3.
 
 ## Lesson (look back here)

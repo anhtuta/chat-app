@@ -2,13 +2,14 @@
 
 ## Intro
 
-Auth in this app is **server-side HTTP sessions** backed by **Redis** (Spring Session), not JWT. The browser holds only an **opaque session cookie**; Spring Security restores the principal from that session on each HTTP request.
+Auth in this app is **server-side HTTP sessions** backed by **Redis** (Spring Session), not JWT. The browser holds only an **opaque session cookie** (`CHATAPP_SESSION` by default in this app); Spring Security restores the principal from that session on each HTTP request.
 
 This doc covers **login auth** for HTTP APIs and WebSocket/STOMP. It does **not** cover group roles/permissions in depth (see [`15_GROUP_ROLES_AND_PERMISSIONS.md`](./15_GROUP_ROLES_AND_PERMISSIONS.md)).
 
 ## Summary
 
 - Opaque session cookie (not JWT); session data in Redis via Spring Session
+- Cookie name is configured as `CHATAPP_SESSION` in `application.yaml`
 - Login sets `SecurityContext` + session attrs (`SPRING_SECURITY_CONTEXT`, `user`)
 - FE sends the cookie (`credentials: "include"`); Spring Security restores auth and requires `.authenticated()` on `/api/**` and `/ws/**`
 - Single app role `ROLE_USER` is assigned but not checked with `hasRole`
@@ -32,7 +33,7 @@ sequenceDiagram
     AuthSvc-->>Auth: User entity
     Auth->>Auth: set SecurityContext + session attrs<br/>(SPRING_SECURITY_CONTEXT, user)
     Auth->>Redis: persist session
-    Auth-->>FE: 200 + Set-Cookie (opaque session id)
+    Auth-->>FE: 200 + Set-Cookie: CHATAPP_SESSION=...
 
     Note over FE,API: Authenticated API call
     FE->>Sec: GET/POST /api/... + Cookie
@@ -46,14 +47,14 @@ sequenceDiagram
     FE->>Auth: POST /api/auth/logout + Cookie
     Auth->>Auth: clear SecurityContext
     Auth->>Redis: invalidate session
-    Auth-->>FE: 200 + clear cookie
+    Auth-->>FE: 200 + expire CHATAPP_SESSION cookie
 ```
 
 ## What lives where
 
 | Location                | Contents                                                               |
 | ----------------------- | ---------------------------------------------------------------------- |
-| Browser cookie          | Opaque session id only (not JWT, no claims)                            |
+| Browser cookie          | `CHATAPP_SESSION` opaque session id only (not JWT, no claims)          |
 | Redis HTTP session      | `SPRING_SECURITY_CONTEXT`, `user`, other session attrs                 |
 | Request thread (HTTP)   | `SecurityContextHolder` (restored per request by Spring Security)      |
 | WebSocket session attrs | Copy of `user` taken at handshake (independent of Redis after connect) |
@@ -125,7 +126,7 @@ Note: the interceptor calls `validateAuthentication`: WebSocket session attribut
 
 1. Clears `SecurityContextHolder`
 2. `session.invalidate()` → Redis HTTP session gone
-3. Cookie cleared
+3. Spring Session expires the `CHATAPP_SESSION` cookie in the response
 
 It does **not**:
 
@@ -153,6 +154,7 @@ Practical implication: **HTTP logout ≠ WebSocket session clear**. To fully end
 | Piece                                 | Role                                                       |
 | ------------------------------------- | ---------------------------------------------------------- |
 | `SecurityConfig`                      | `/ws/**` → `.authenticated()` at HTTP handshake            |
+| `AuthController.logout()`             | Clears `SecurityContextHolder` and invalidates HTTP session |
 | `WebSocketConfig`                     | `/ws` + SockJS; registers handshake + channel interceptors |
 | `WebSocketHandshakeInterceptor`       | HTTP session `user` → WS session attrs                     |
 | `WebSocketSecurityChannelInterceptor` | Auth on inbound STOMP; subscription ACL                    |

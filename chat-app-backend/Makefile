@@ -64,7 +64,6 @@ help:
 	@echo "       make run.fe      - Terminal 2: Start Frontend (http://localhost:3000)"
 	@echo "  3.2. make run.local   - Start Backend with embedded frontend (http://localhost:9010)"
 	@echo "  4. Visit http://localhost:9010/login.html to login"
-	@echo "  5. After login, you'll be redirected to http://localhost:3000"
 
 start: start.all
 
@@ -120,7 +119,7 @@ test.be.ut:
 # Avoid `mvn verify` here so unit tests (Surefire) are not re-run — use test.be for both.
 test.be.it:
 	@echo "🚀 Running backend integration tests..."
-	./mvnw failsafe:integration-test failsafe:verify
+	./mvnw test-compile failsafe:integration-test failsafe:verify
 
 test.fe:
 	@echo "🚀 Running frontend tests..."

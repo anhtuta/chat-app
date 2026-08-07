@@ -475,7 +475,7 @@ Known enforcement points:
 - `MessageController.getGroupMessages`: require `READ_MESSAGES`.
 - `WebSocketController.sendGroupMessage`: require `SEND_MESSAGES`.
 - `WebSocketSecurityChannelInterceptor.validateSubscription`: require `READ_MESSAGES` for group topics.
-- `MediaUploadSessionService.validateScopeAndMembership`: require `SEND_MESSAGES`.
+- `MediaUploadSessionService.validateScopeAndMembership`: require `SEND_MESSAGES` on **prepare** and again on **complete** (so a kicked/banned user cannot finalize an unexpired session).
 - `GroupService.markGroupAsRead`: require membership/read access.
 - `GroupSummaryUpdatePublisher`: ensure removed or banned users stop receiving personal updates.
 - New join-link endpoints: require `CREATE_JOIN_LINK` for link creation and ban/archive checks for joining.
@@ -578,7 +578,7 @@ What changed:
   - `MessageController`
   - `WebSocketController`
   - `WebSocketSecurityChannelInterceptor`
-  - `MediaUploadSessionService`
+  - `MediaUploadSessionService` (prepare **and** complete re-check `SEND_MESSAGES` for group uploads)
   - `GroupService.markGroupAsRead`
 - Added unit tests for `GroupAuthorizationService`.
 
@@ -626,6 +626,7 @@ What changed:
 - Rejects membership changes for archived groups.
 - Archives a group when the last member leaves.
 - Serializes last-member leave/archive against concurrent `addMember` / `joinByToken` with a pessimistic lock on the group row (`findByIdForUpdate`) so a join cannot land in a group that is being archived.
+- Membership/role mutations acquire that same group lock **before** authorization so a concurrent demotion cannot leave a former privileged member authorized to mutate; join-by-token also revalidates the link under the lock so concurrent revocation cannot admit a member from stale token state (see [24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md](./24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md)).
 - Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
 - Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
 - Ensures kick, ban, promote, and demote checks compare actor and target role ranks.
@@ -1145,7 +1146,7 @@ What should change:
 - Test last-member leave archives the group and preserves messages.
 - Test structured system messages are returned in group history.
 - Test WebSocket subscribe/send checks.
-- Test media upload respects `SEND_MESSAGES`.
+- Test media upload respects `SEND_MESSAGES` on prepare and again on complete.
 - Add UI/E2E coverage for the new frontend phases:
   - group settings edit flow
   - member-list visibility by role
