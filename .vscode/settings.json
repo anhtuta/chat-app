@@ -15,6 +15,7 @@
         "Fanout",
         "mediaprocessing",
         "Previewable",
+        "Serdeable",
         "springframework",
         "startuml",
         "Tuzaku",

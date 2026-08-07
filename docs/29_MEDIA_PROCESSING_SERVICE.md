@@ -333,21 +333,39 @@ Recommended path:
   - `media-processing/src/main/java/com/hello/mediaprocessing/Application.java`
   - `media-processing/src/main/resources/application.properties`
   - `media-processing/README.md`
-- No processing workflow, queue/outbox consumer, object-storage integration, or video pipeline is implemented yet.
+- No object-storage integration or video pipeline is implemented yet.
 
 ### Phase 2 - Processing job contract and worker wiring
 
-- Define the processing job payload consumed by `media-processing-service`.
-- Decide the initial handoff mechanism:
-  - RabbitMQ queue
-  - durable job table
-  - or outbox + publisher
-- Define idempotency keys, retry policy, and failure/dead-letter behavior.
-- Add the first worker loop / consumer that can receive a job and move it through basic status transitions.
-- Add service configuration for:
-  - queue or job source
-  - worker concurrency
-  - feature flags for video processing steps
+- Initial handoff mechanism chosen: RabbitMQ.
+- Added job contract types for:
+  - message type
+  - processing targets
+  - handoff mode
+  - worker status
+  - processing job payload
+- Added worker configuration for:
+  - enabled/disabled worker mode
+  - handoff mode
+  - queue name
+  - consumer concurrency
+  - retry count
+  - feature flags for video/image processing steps
+- Added first worker-side handler flow with basic status transitions:
+  - `RECEIVED`
+  - `VALIDATED`
+  - `DISPATCHED`
+  - `SKIPPED_DUPLICATE`
+  - `DEFERRED_NO_ENABLED_TARGETS`
+  - `REJECTED_INVALID`
+- Added a RabbitMQ consumer bean for processing jobs.
+- Added an in-memory deduplication store as the first local idempotency layer.
+- Added focused tests for:
+  - valid job dispatch
+  - duplicate job skip
+  - disabled-target deferral
+- Worker consumer is disabled by default until queue/broker wiring is explicitly enabled in configuration.
+- No actual media processing work happens yet; this phase only establishes the contract and worker entrypoint for future phases.
 
 ### Phase 3 - Object storage and video source loading
 
