@@ -895,7 +895,12 @@ Recommendation path:
    - create a dedicated `media-processing-service`
    - enqueue jobs only after chat-backend transaction commit
    - move thumbnail/preview/transcode/metadata extraction out of `chat-app-backend`
+   - add media-derived text extraction for future search:
+     - image OCR
+     - video-frame OCR
+     - speech-to-text transcripts
    - keep processing jobs idempotent and retryable
+   - store extracted text in a DB-backed source of truth and emit search-indexing events
    - publish processing status updates for chat backend instances to deliver over the existing realtime path
 11. Phase 11: Add abuse protection and operational hardening
    - real malware scan integration
@@ -1431,6 +1436,10 @@ Acceptance target:
 
 ### Phase 10 - Micronaut media-processing service
 
+Detailed service design:
+
+- `docs/29_MEDIA_PROCESSING_SERVICE.md`
+
 Planned new service:
 
 - `media-processing-service`
@@ -1443,7 +1452,13 @@ Responsibilities:
 - process `IMAGE` and `VIDEO` attachments outside `chat-app-backend`
 - generate thumbnails, previews, optional compressed images, video poster thumbnails, and optional transcoded previews
 - extract detected MIME type, width, height, and duration metadata
+- extract searchable text from media:
+  - image OCR
+  - video-frame OCR
+  - speech-to-text transcript segments for video/audio
 - update media rows through a controlled persistence/API boundary
+- store extracted text in a DB model such as `media_extracted_text`
+- emit media-text-extracted events for the search pipeline described in `docs/27_SEARCH_FEATURE.md`
 - emit processing status updates so chat backend instances can republish media-state changes to users
 
 Initial integration shape:
@@ -1452,6 +1467,8 @@ Initial integration shape:
 - after commit, `chat-app-backend` publishes a processing job containing only `messageId` / `attachmentId` / storage metadata pointers
 - Micronaut worker loads original objects from storage with service credentials
 - Micronaut worker writes derivative objects back to storage
+- Micronaut worker writes OCR/transcript rows linked to `message_id` and `media_id`
+- Micronaut worker records or publishes a search-indexing event after extracted text changes
 - Micronaut worker marks attachments `PROCESSING_IN_PROGRESS`, `MEDIA_READY`, or `PROCESSING_FAILED`
 - `chat-app-backend` remains the owner of client-facing `MessageResponse` mapping and WebSocket/STOMP delivery
 
@@ -1461,12 +1478,14 @@ Why this phase should happen before real derivative generation becomes heavy:
 - allows independent worker concurrency limits
 - allows different deployment resources for FFmpeg/image tooling
 - avoids mixing chat-domain transactions with long-running binary processing
+- creates one processing boundary for both media rendering and media search enrichment
 
 Open design choices for Phase 10:
 
 - whether the Micronaut worker updates the chat database directly or calls a narrow internal backend API
 - whether RabbitMQ is enough for initial processing jobs or whether a dedicated durable job table should be the source of truth
 - where real ClamAV scanning should live after the first working split
+- which OCR/speech-to-text provider gives acceptable Vietnamese accuracy, privacy, and cost
 
 ### Phase 11 - Abuse protection and operational hardening
 

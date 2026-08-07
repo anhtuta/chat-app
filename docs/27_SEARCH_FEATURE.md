@@ -4,7 +4,7 @@
 
 This document designs message search for the chat app. The feature should let users search messages across every group they belong to, or search only inside one selected group.
 
-The first version should search text messages efficiently and support Vietnamese queries with or without diacritics, plus case-insensitive matching. Later versions should also search text extracted from images, video frames, and spoken audio in videos.
+The first version should search text messages efficiently and support Vietnamese queries with or without diacritics, plus case-insensitive matching. Later versions should also search text extracted by `media-processing-service` from images, video frames, and spoken audio in videos.
 
 Current state:
 
@@ -36,6 +36,7 @@ Current state:
   - OCR text extracted from images
   - transcript text extracted from video or audio speech
   - OCR text extracted from video frames
+- Media-derived text should be produced by the Micronaut `media-processing-service` described in `docs/29_MEDIA_PROCESSING_SERVICE.md`.
 - Searching text inside images and videos is not required for MVP.
 
 ## Non-Functional Requirements
@@ -77,15 +78,15 @@ Current state:
 
 4. User searches a word that appears in an image.
    - Not MVP.
-   - A future OCR pipeline extracts text from image attachments and stores/indexes it as searchable text linked to the original message.
+   - `media-processing-service` extracts text from image attachments and stores/indexes it as searchable text linked to the original message.
 
 5. User searches a phrase spoken in a video.
    - Not MVP.
-   - A future speech-to-text pipeline creates a transcript linked to the message.
+   - `media-processing-service` creates transcript segments linked to the message and media attachment.
 
 6. User searches text visible in a video frame.
    - Not MVP.
-   - A future video OCR pipeline samples frames, extracts visible text, and indexes it with timestamps if needed.
+   - `media-processing-service` samples frames, extracts visible text, and indexes it with timestamps if needed.
 
 ## Possible Solutions
 
@@ -542,7 +543,8 @@ flowchart LR
     B --> C[Transactional outbox]
     C --> D[Indexing worker]
     D --> E[(Search engine)]
-    F[OCR / speech workers] --> C
+    F[media-processing-service\nOCR / speech-to-text] --> M[(media_extracted_text)]
+    M --> C
     G[Search API] --> H[Load allowed group IDs]
     H --> E
     E --> I[Message IDs + highlights]
@@ -566,7 +568,7 @@ flowchart LR
   - Future OCR and speech-to-text output should link to media attachments and messages.
 
 - `MediaExtractedText`
-  - Future table for OCR and transcript results.
+  - Future table for OCR and transcript results produced by `media-processing-service`.
   - Suggested fields:
     - `id`
     - `message_id`
@@ -578,6 +580,8 @@ flowchart LR
     - `confidence`
     - `start_ms`
     - `end_ms`
+    - `processor_name`
+    - `processor_version`
     - `status`
     - `created_at`
     - `updated_at`
@@ -632,6 +636,7 @@ Possible query parameters:
 - `from`
 - `to`
 - `source`: `MESSAGE_CONTENT`, `IMAGE_OCR`, `VIDEO_OCR`, `SPEECH_TO_TEXT`
+- `mediaId` or attachment id when navigating directly to a media match
 
 ### Frontend UX Draft
 
@@ -663,7 +668,8 @@ Recommended phased path:
 4. Do not use Kafka for MVP.
 5. Do not create a new search service for MVP.
 6. Add a transactional outbox before introducing a dedicated search engine or media extraction pipeline.
-7. Move to Elasticsearch, OpenSearch, Meilisearch, or Typesense when search needs richer ranking, highlighting, typo tolerance, media-derived text, or database portability.
+7. Use `media-processing-service` as the owner of OCR/transcript generation; search should consume stored `media_extracted_text` rows or media-text-extracted events, not run OCR inside request handlers.
+8. Move to Elasticsearch, OpenSearch, Meilisearch, or Typesense when search needs richer ranking, highlighting, typo tolerance, media-derived text, or database portability.
 
 This path gives the app a practical first search feature without locking the domain model to PostgreSQL forever. The key is to keep normalization, search request handling, and authorization in backend code behind a search service abstraction so the storage/index implementation can change later.
 
@@ -671,6 +677,7 @@ This path gives the app a practical first search feature without locking the dom
 
 - Add a durable `SearchOutbox` table for message-created, message-edited, message-deleted, and media-text-extracted events.
 - Add a separate search indexer worker once the dedicated index exists.
+- Consume `MEDIA_TEXT_EXTRACTED` events from `media-processing-service` after OCR/transcript rows are committed.
 - Introduce RabbitMQ job queues if we need background processing before Kafka.
 - Introduce Kafka only when multiple consumers need replayable message events.
 - Move search reads to a dedicated search engine.
@@ -686,6 +693,7 @@ This path gives the app a practical first search feature without locking the dom
 - Add OCR for images.
 - Add speech-to-text for audio and videos.
 - Add video OCR using sampled frames or scene-change detection.
+- Include source type and media timestamps in search result snippets so users can jump to the right attachment or time range.
 - Add result highlighting.
 - Add typo tolerance.
 - Add advanced filters.
