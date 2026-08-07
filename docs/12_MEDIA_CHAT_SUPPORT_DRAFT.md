@@ -995,7 +995,7 @@ Implemented in `chat-app-backend`:
   - mark upload rows completed
   - create the final `Message`
   - create linked `MessageMedia` rows
-  - publish the final message to:
+  - snapshot the `MessageResponse` (+ group id) and publish to STOMP/RabbitMQ **after commit** via `AfterCommit` (so a rolled-back persist never reaches clients):
     - `/topic/public`, or
     - `/topic/group.{groupId}`
 - Added a temporary `MalwareScanService` abstraction
@@ -1014,7 +1014,7 @@ Phase-4 behavior currently covers:
   - `IMAGE` / `VIDEO` -> `PROCESSING_PENDING`
   - `AUDIO` / `FILE` -> `MEDIA_READY`
 - mark upload-session rows as `UPLOAD_SESSION_COMPLETED`
-- publish the created media message through the existing real-time topic path
+- publish the created media message through the existing real-time topic path **after the completion transaction commits**
 
 #### Call order for Single-part (≤ 5 MB default)
 

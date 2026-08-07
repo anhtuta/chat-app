@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -100,24 +101,27 @@ class MediaUploadSessionServiceTest {
 
     @ParameterizedTest
     @EnumSource(value = MessageType.class, names = {"IMAGE", "VIDEO"})
-    void completeUploadSession_mediaMessage_enqueuesProcessingOnlyAfterCommit(MessageType messageType) {
-        stubSuccessfulCompletion(messageType);
+    void completeUploadSession_mediaMessage_publishesAndEnqueuesOnlyAfterCommit(MessageType messageType) {
+        MessageResponse response = stubSuccessfulCompletion(messageType);
 
         mediaUploadSessionService.completeUploadSession(
                 user,
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
+        verify(realtimeMessageDeliveryService, never()).publishToPublic(any());
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        // publish + enqueue processing
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(2);
 
         triggerAfterCommit();
 
+        verify(realtimeMessageDeliveryService).publishToPublic(response);
         verify(mediaProcessingService).enqueueProcessing(MESSAGE_ID);
     }
 
     @Test
-    void completeUploadSession_imageMessage_doesNotEnqueueOnRollback() {
+    void completeUploadSession_imageMessage_doesNotPublishOrEnqueueOnRollback() {
         stubSuccessfulCompletion(MessageType.IMAGE);
 
         mediaUploadSessionService.completeUploadSession(
@@ -125,28 +129,36 @@ class MediaUploadSessionServiceTest {
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(2);
         triggerAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
 
+        verify(realtimeMessageDeliveryService, never()).publishToPublic(any());
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
     }
 
     @Test
-    void completeUploadSession_audioMessage_doesNotScheduleAsyncProcessing() {
-        stubSuccessfulCompletion(MessageType.AUDIO);
+    void completeUploadSession_audioMessage_publishesAfterCommitWithoutAsyncProcessing() {
+        MessageResponse response = stubSuccessfulCompletion(MessageType.AUDIO);
 
         mediaUploadSessionService.completeUploadSession(
                 user,
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        verify(realtimeMessageDeliveryService, never()).publishToPublic(any());
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
+
+        triggerAfterCommit();
+
+        verify(realtimeMessageDeliveryService).publishToPublic(response);
         verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
     }
 
-    private void stubSuccessfulCompletion(MessageType messageType) {
+    private MessageResponse stubSuccessfulCompletion(MessageType messageType) {
         MediaUpload upload = buildUpload(messageType);
         Message savedMessage = buildMessage(messageType);
+        MessageResponse response = MessageResponse.builder().id(MESSAGE_ID).build();
 
         when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
                 .thenReturn(List.of(upload));
@@ -156,7 +168,8 @@ class MediaUploadSessionServiceTest {
         when(objectStorageProvider.objectExists(anyString())).thenReturn(true);
         when(messageService.savePublicMediaMessage(eq(user), eq(messageType), anyList()))
                 .thenReturn(savedMessage);
-        when(messageResponseMapper.toResponse(savedMessage)).thenReturn(MessageResponse.builder().id(MESSAGE_ID).build());
+        when(messageResponseMapper.toResponse(savedMessage)).thenReturn(response);
+        return response;
     }
 
     private MediaUpload buildUpload(MessageType messageType) {

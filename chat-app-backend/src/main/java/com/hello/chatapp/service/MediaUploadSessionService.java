@@ -200,7 +200,11 @@ public class MediaUploadSessionService {
         uploads.forEach(upload -> upload.setStatus(UploadSessionStatus.UPLOAD_SESSION_COMPLETED));
 
         MessageResponse response = Objects.requireNonNull(messageResponseMapper.toResponse(message));
-        publishFinalMessage(response, message);
+        // Snapshot before deferring: do not publish STOMP/RabbitMQ while the tx can still roll back.
+        Long groupId = message.getGroup() == null
+                ? null
+                : Objects.requireNonNull(message.getGroup().getId());
+        schedulePublishFinalMessageAfterCommit(response, groupId);
         scheduleAsyncProcessingAfterCommit(message);
         return response;
     }
@@ -384,12 +388,18 @@ public class MediaUploadSessionService {
         };
     }
 
-    private void publishFinalMessage(MessageResponse response, Message message) {
-        MessageResponse nonNullResponse = Objects.requireNonNull(response);
-        if (message.getGroup() == null) {
-            realtimeMessageDeliveryService.publishToPublic(nonNullResponse);
+    private void schedulePublishFinalMessageAfterCommit(MessageResponse response, Long groupId) {
+        MessageResponse snapshot = Objects.requireNonNull(response);
+        AfterCommit.run(
+                () -> publishFinalMessage(snapshot, groupId),
+                "Failed to publish final media message after commit for messageId=" + snapshot.getId());
+    }
+
+    private void publishFinalMessage(MessageResponse response, Long groupId) {
+        if (groupId == null) {
+            realtimeMessageDeliveryService.publishToPublic(response);
         } else {
-            realtimeMessageDeliveryService.publishToGroup(Objects.requireNonNull(message.getGroup().getId()), nonNullResponse);
+            realtimeMessageDeliveryService.publishToGroup(groupId, response);
         }
     }
 
