@@ -13,6 +13,7 @@
         "colocating",
         "Configurer",
         "Fanout",
+        "ffprobe",
         "mediaprocessing",
         "Previewable",
         "Serdeable",
@@ -25,5 +26,13 @@
     "java.compile.nullAnalysis.mode": "automatic",
     "java.configuration.updateBuildConfiguration": "automatic",
     "java.import.maven.enabled": true,
-    "specstory.cloudSync.enabled": "never"
+    "specstory.cloudSync.enabled": "never",
+    "java.jdt.ls.java.home": "/Users/mac/Programs/jdk-25.0.1.jdk/Contents/Home",
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-25",
+            "path": "/Users/mac/Programs/jdk-25.0.1.jdk/Contents/Home",
+            "default": true
+        }
+    ]
 }
