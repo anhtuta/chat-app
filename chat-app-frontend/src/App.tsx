@@ -25,7 +25,7 @@ interface RequireAuthProps {
 
 interface LoginRouteProps {
   isAuth: boolean;
-  onLoginSuccess: (username: string) => void;
+  onLoginSuccess: (username: string, fullname?: string | null) => void;
 }
 
 function LoginRoute({ isAuth, onLoginSuccess }: LoginRouteProps) {
@@ -45,6 +45,7 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
     checking: true,
     isAuth: false,
     username: null,
+    fullname: null,
   });
 
   useEffect(() => {
@@ -52,21 +53,31 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
       try {
         const data = await checkAuth();
         if (data.authenticated) {
-          setAuthState({ checking: false, isAuth: true, username: data.username });
+          setAuthState({
+            checking: false,
+            isAuth: true,
+            username: data.username,
+            fullname: data.fullname ?? null,
+          });
         } else {
-          setAuthState({ checking: false, isAuth: false, username: null });
+          setAuthState({ checking: false, isAuth: false, username: null, fullname: null });
         }
       } catch (error) {
         console.error("Auth check failed:", error);
-        setAuthState({ checking: false, isAuth: false, username: null });
+        setAuthState({ checking: false, isAuth: false, username: null, fullname: null });
       }
     };
 
     fetchAuth();
   }, []);
 
-  const handleLoginSuccess = (username: string) => {
-    setAuthState({ checking: false, isAuth: true, username });
+  const handleLoginSuccess = (username: string, fullname?: string | null) => {
+    setAuthState({
+      checking: false,
+      isAuth: true,
+      username,
+      fullname: fullname ?? null,
+    });
   };
 
   const handleLogout = async () => {
@@ -75,7 +86,7 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
-      setAuthState({ checking: false, isAuth: false, username: null });
+      setAuthState({ checking: false, isAuth: false, username: null, fullname: null });
       navigate("/login", { replace: true });
     }
   };
@@ -130,6 +141,7 @@ function AppRoutes({ selectedThemeId, onThemeChange, resolvedTheme }: AppRoutesP
             <RequireAuth>
               <ChatPage
                 username={authState.username}
+                fullname={authState.fullname}
                 onLogout={handleLogout}
                 selectedThemeId={selectedThemeId}
                 onThemeChange={onThemeChange}

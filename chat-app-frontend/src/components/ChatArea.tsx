@@ -54,7 +54,6 @@ interface ChatAreaProps {
   onMessageModerated?: (message: ChatMessage) => void;
   onLoadOlderMessages?: () => Promise<boolean>;
   onOpenGroupDetails?: () => void;
-  onLogout: () => void | Promise<void>;
 }
 
 function ChatArea({
@@ -72,7 +71,6 @@ function ChatArea({
   onMessageModerated,
   onLoadOlderMessages,
   onOpenGroupDetails,
-  onLogout,
 }: ChatAreaProps) {
   const AUTO_FILL_MAX_BATCHES = 3;
   const [selectedMedia, setSelectedMedia] = useState<PendingChatAttachment[]>([]);
@@ -695,7 +693,6 @@ function ChatArea({
         <ChatAreaHeader
           chatName={chatName}
           isConnected={isConnected}
-          onLogout={onLogout}
           onOpenGroupDetails={onOpenGroupDetails}
           showGroupDetailsAction={chatId !== "public"}
         />

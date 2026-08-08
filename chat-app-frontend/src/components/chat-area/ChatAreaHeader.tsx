@@ -1,13 +1,11 @@
 import React from "react";
-import { AppBar, Toolbar, Typography, Box, Chip, Button, Stack, IconButton } from "@mui/material";
-import LogoutIcon from "@mui/icons-material/Logout";
+import { AppBar, Toolbar, Typography, Box, Chip, Stack, IconButton } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import "./ChatAreaHeader.css";
 
 interface ChatAreaHeaderProps {
   chatName: string;
   isConnected: boolean;
-  onLogout: () => void;
   onOpenGroupDetails?: () => void;
   showGroupDetailsAction?: boolean;
 }
@@ -15,7 +13,6 @@ interface ChatAreaHeaderProps {
 function ChatAreaHeader({
   chatName,
   isConnected,
-  onLogout,
   onOpenGroupDetails,
   showGroupDetailsAction,
 }: ChatAreaHeaderProps) {
@@ -23,7 +20,7 @@ function ChatAreaHeader({
     <div className="chat-area-header-wrapper">
       <AppBar position="static" className="chat-area-header-appbar">
         <Toolbar className="chat-area-header-toolbar">
-          <Stack direction="row" spacing={0.5} alignItems="center" className="chat-area-header-title-row">
+          <Stack direction="row" spacing={0.5} className="chat-area-header-title-row" sx={{ alignItems: "center" }}>
             <Typography variant="h6" className="chat-area-header-title">
               {chatName}
             </Typography>
@@ -39,16 +36,6 @@ function ChatAreaHeader({
                 <InfoOutlinedIcon fontSize="small" />
               </IconButton>
             ) : null}
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button
-              color="inherit"
-              startIcon={<LogoutIcon />}
-              onClick={onLogout}
-              className="chat-area-header-logout-button"
-            >
-              Logout
-            </Button>
           </Stack>
         </Toolbar>
       </AppBar>

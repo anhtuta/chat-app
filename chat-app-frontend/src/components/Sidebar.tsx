@@ -17,6 +17,7 @@ import AddIcon from "@mui/icons-material/Add";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
 import type { ChatGroup } from "../types/groups";
 import type { ThemeId, ThemeOption } from "../types/theme";
+import SidebarUserDetails from "./SidebarUserDetails";
 import "./Sidebar.css";
 import { useRef, useLayoutEffect } from "react";
 
@@ -32,6 +33,9 @@ interface SidebarProps {
   selectedThemeId: ThemeId;
   onThemeChange: (themeId: ThemeId) => void;
   themeOptions: ThemeOption[];
+  username?: string | null;
+  fullname?: string | null;
+  onLogout: () => void | Promise<void>;
 }
 
 function Sidebar({
@@ -44,6 +48,9 @@ function Sidebar({
   selectedThemeId,
   onThemeChange,
   themeOptions,
+  username,
+  fullname,
+  onLogout,
 }: SidebarProps) {
   const itemRefs = useRef(new Map<string, HTMLElement>());
   const prevPositions = useRef<Map<string, DOMRect> | null>(null);
@@ -221,6 +228,11 @@ function Sidebar({
             </ListItemButton>
           ))}
         </List>
+        <SidebarUserDetails
+          username={username}
+          fullname={fullname}
+          onLogout={onLogout}
+        />
       </Drawer>
     </div>
   );

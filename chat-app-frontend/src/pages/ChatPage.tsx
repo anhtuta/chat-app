@@ -27,6 +27,7 @@ interface ChatPageLocationState {
 
 interface ChatPageProps {
   username: string | null;
+  fullname?: string | null;
   onLogout: () => void | Promise<void>;
   selectedThemeId: ThemeId;
   onThemeChange: (themeId: ThemeId) => void;
@@ -35,6 +36,7 @@ interface ChatPageProps {
 
 function ChatPage({
   username,
+  fullname,
   onLogout,
   selectedThemeId,
   onThemeChange,
@@ -496,6 +498,9 @@ function ChatPage({
           selectedThemeId={selectedThemeId}
           onThemeChange={onThemeChange}
           themeOptions={themeOptions}
+          username={username}
+          fullname={fullname}
+          onLogout={onLogout}
         />
         <ChatArea
           chatId={currentChatId}
@@ -512,7 +517,6 @@ function ChatPage({
           onMessageModerated={handleMessageModerated}
           onLoadOlderMessages={loadOlderGroupMessages}
           onOpenGroupDetails={() => setShowGroupDetailsDialog(true)}
-          onLogout={onLogout}
         />
         {showGroupDetailsDialog && currentGroup ? (
           <GroupDetailsDialog
