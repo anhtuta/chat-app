@@ -176,13 +176,15 @@ function Sidebar({
             <ListItemText
               primary="Public Chat"
               secondary="Everyone"
-              primaryTypographyProps={{
-                variant: "body2",
-                className: "sidebar-group-item-primary-text",
-              }}
-              secondaryTypographyProps={{
-                variant: "caption",
-                className: "sidebar-group-item-secondary-text",
+              slotProps={{
+                primary: {
+                  variant: "body2",
+                  className: "sidebar-group-item-primary-text",
+                },
+                secondary: {
+                  variant: "caption",
+                  className: "sidebar-group-item-secondary-text",
+                },
               }}
             />
           </ListItemButton>
@@ -202,13 +204,15 @@ function Sidebar({
               <ListItemText
                 primary={group.name}
                 secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
-                primaryTypographyProps={{
-                  variant: "body2",
-                  className: "sidebar-group-item-primary-text",
-                }}
-                secondaryTypographyProps={{
-                  variant: "caption",
-                  className: "sidebar-group-item-secondary-text",
+                slotProps={{
+                  primary: {
+                    variant: "body2",
+                    className: "sidebar-group-item-primary-text",
+                  },
+                  secondary: {
+                    variant: "caption",
+                    className: "sidebar-group-item-secondary-text",
+                  },
                 }}
               />
               {group.unreadCount ? (
