@@ -15,8 +15,24 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import type { ChatGroup } from "../types/groups";
+import type { ThemeId, ThemeOption } from "../types/theme";
 import "./Sidebar.css";
 import { useRef, useLayoutEffect } from "react";
+
+type ChatRouteId = "public" | number;
+
+interface SidebarProps {
+  groups: ChatGroup[];
+  totalUnreadCount?: number | null;
+  currentChatId: ChatRouteId;
+  onChatSelect: (chatId: ChatRouteId) => void;
+  onCreateGroupClick: () => void;
+  onJoinGroupClick: () => void;
+  selectedThemeId: ThemeId;
+  onThemeChange: (themeId: ThemeId) => void;
+  themeOptions: ThemeOption[];
+}
 
 function Sidebar({
   groups,
@@ -28,9 +44,9 @@ function Sidebar({
   selectedThemeId,
   onThemeChange,
   themeOptions,
-}) {
-  const itemRefs = useRef(new Map());
-  const prevPositions = useRef(null);
+}: SidebarProps) {
+  const itemRefs = useRef(new Map<string, HTMLElement>());
+  const prevPositions = useRef<Map<string, DOMRect> | null>(null);
 
   // FLIP animation: measure previous and new positions and animate translateY
   useLayoutEffect(() => {
@@ -116,7 +132,7 @@ function Sidebar({
               labelId="theme-selector-label"
               value={selectedThemeId}
               label="Theme"
-              onChange={(event) => onThemeChange(event.target.value)}
+              onChange={(event) => onThemeChange(event.target.value as ThemeId)}
               className="theme-selector-select"
               MenuProps={{
                 sx: {

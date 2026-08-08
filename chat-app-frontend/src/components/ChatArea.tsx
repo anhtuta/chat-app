@@ -9,6 +9,7 @@ import {
   requestMultipartPartUrls,
   uploadBlobToPresignedUrl,
   uploadFileToPresignedUrl,
+  type UploadHandle,
 } from "../services/api";
 import {
   isPreviewableFile,
@@ -16,9 +17,45 @@ import {
   resolveMessageTypeFromFiles,
   validateSelectedFiles,
 } from "./chat-area/mediaUtils";
+import type {
+  ChatMessage,
+  CompletedMultipartPartInput,
+  CompleteMediaAttachmentInput,
+  MediaMessageType,
+  PendingChatAttachment,
+  PendingMediaMessage,
+  PreparedMediaAttachment,
+} from "../types/chat";
+import type { ChatGroup } from "../types/groups";
+import type { DisplayChatMessage } from "./chat-area/displayChatMessage";
 import "./ChatArea.css";
 
 const MULTIPART_PART_URL_BATCH_SIZE = 4;
+
+type ChatRouteId = "public" | number;
+
+interface MediaUploadTask {
+  canceled: boolean;
+  abort: (() => void) | null;
+}
+
+interface ChatAreaProps {
+  chatId: ChatRouteId;
+  chatName: string;
+  currentGroup?: ChatGroup | null;
+  messages: ChatMessage[];
+  isLoading: boolean;
+  isLoadingOlder: boolean;
+  hasMoreMessages: boolean;
+  isConnected: boolean;
+  username: string | null;
+  onSendMessage: (content: string) => void;
+  onMediaMessageDelivered?: (message: ChatMessage) => void;
+  onMessageModerated?: (message: ChatMessage) => void;
+  onLoadOlderMessages?: () => Promise<boolean>;
+  onOpenGroupDetails?: () => void;
+  onLogout: () => void | Promise<void>;
+}
 
 function ChatArea({
   chatId,
@@ -36,21 +73,21 @@ function ChatArea({
   onLoadOlderMessages,
   onOpenGroupDetails,
   onLogout,
-}) {
+}: ChatAreaProps) {
   const AUTO_FILL_MAX_BATCHES = 3;
-  const [selectedMedia, setSelectedMedia] = useState([]);
+  const [selectedMedia, setSelectedMedia] = useState<PendingChatAttachment[]>([]);
   const [mediaComposerError, setMediaComposerError] = useState("");
-  const [pendingMediaMessages, setPendingMediaMessages] = useState([]);
+  const [pendingMediaMessages, setPendingMediaMessages] = useState<PendingMediaMessage[]>([]);
   const [showLoadOlderFallback, setShowLoadOlderFallback] = useState(false);
-  const chatMessagesRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isPrependingRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
-  const prevMessagesRef = useRef([]);
+  const prevMessagesRef = useRef<DisplayChatMessage[]>([]);
   const forceScrollToBottomRef = useRef(true);
-  const pendingMediaMessagesRef = useRef([]);
-  const selectedMediaRef = useRef([]);
-  const uploadTasksRef = useRef(new Map());
+  const pendingMediaMessagesRef = useRef<PendingMediaMessage[]>([]);
+  const selectedMediaRef = useRef<PendingChatAttachment[]>([]);
+  const uploadTasksRef = useRef(new Map<string, MediaUploadTask>());
   const autoFillBatchCountRef = useRef(0);
   const isAutoFillingRef = useRef(false);
 
@@ -87,7 +124,7 @@ function ChatArea({
     [messages, visiblePendingMediaMessages],
   );
 
-  const scrollToBottom = useCallback((behavior = "smooth") => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
 
@@ -95,7 +132,7 @@ function ChatArea({
     const container = chatMessagesRef.current;
     const prevMessages = prevMessagesRef.current;
 
-    const getMessageKey = (message) => {
+    const getMessageKey = (message?: DisplayChatMessage | null) => {
       if (!message) return "";
       return `${message.id ?? "no-id"}-${message.timestamp ?? "no-time"}-${message.content ?? ""}`;
     };
@@ -133,7 +170,7 @@ function ChatArea({
     setShowLoadOlderFallback(false);
   }, [chatId]);
 
-  const isContainerScrollable = useCallback((container) => {
+  const isContainerScrollable = useCallback((container: HTMLDivElement | null) => {
     if (!container) {
       return false;
     }
@@ -141,7 +178,7 @@ function ChatArea({
     return container.scrollHeight > container.clientHeight + 1;
   }, []);
 
-  const loadOlderMessages = useCallback(async ({ preserveViewport }) => {
+  const loadOlderMessages = useCallback(async ({ preserveViewport }: { preserveViewport: boolean }) => {
     const container = chatMessagesRef.current;
     if (
       !container ||
@@ -183,7 +220,7 @@ function ChatArea({
     return true;
   }, [hasMoreMessages, isLoading, onLoadOlderMessages]);
 
-  const handleMessagesScroll = async (event) => {
+  const handleMessagesScroll = async (event: React.UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     if (
       container.scrollTop > 40 ||
@@ -274,7 +311,7 @@ function ChatArea({
     await loadOlderMessages({ preserveViewport: false });
   };
 
-  const handleFilesSelected = (files) => {
+  const handleFilesSelected = (files: FileList | null) => {
     const nextFiles = Array.from(files || []);
     if (!nextFiles.length) {
       return;
@@ -300,7 +337,7 @@ function ChatArea({
     });
   };
 
-  const handleRemoveSelectedMedia = (localId) => {
+  const handleRemoveSelectedMedia = (localId: string) => {
     setSelectedMedia((previousSelection) => {
       const nextSelection = previousSelection.filter((attachment) => attachment.localId !== localId);
       const removedAttachment = previousSelection.find((attachment) => attachment.localId === localId);
@@ -309,7 +346,7 @@ function ChatArea({
     });
   };
 
-  const clearSelectedMedia = ({ revoke = true } = {}) => {
+  const clearSelectedMedia = ({ revoke = true }: { revoke?: boolean } = {}) => {
     setSelectedMedia((previousSelection) => {
       if (revoke) {
         revokePreviewUrls(previousSelection);
@@ -318,13 +355,16 @@ function ChatArea({
     });
   };
 
-  const updatePendingMessage = (localId, updater) => {
+  const updatePendingMessage = (
+    localId: string,
+    updater: (message: PendingMediaMessage) => PendingMediaMessage,
+  ) => {
     setPendingMediaMessages((previousMessages) => previousMessages.map((message) => (
       message.localId === localId ? updater(message) : message
     )));
   };
 
-  const removePendingMessage = (localId) => {
+  const removePendingMessage = (localId: string) => {
     setPendingMediaMessages((previousMessages) => {
       const nextMessages = previousMessages.filter((message) => message.localId !== localId);
       const removedMessage = previousMessages.find((message) => message.localId === localId);
@@ -335,7 +375,10 @@ function ChatArea({
     });
   };
 
-  const buildPendingMessage = (attachments, messageType) => ({
+  const buildPendingMessage = (
+    attachments: PendingChatAttachment[],
+    messageType: MediaMessageType,
+  ): PendingMediaMessage => ({
     localId: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     chatKey: buildChatKey(chatId),
     groupId: chatId === "public" ? null : Number(chatId),
@@ -343,10 +386,11 @@ function ChatArea({
     content: null,
     timestamp: new Date().toISOString(),
     user: {
-      username,
+      username: username || "",
       fullname: username,
     },
     attachments: attachments.map((attachment, index) => ({
+      localId: attachment.localId,
       id: attachment.localId,
       attachmentOrder: index,
       originalFilename: attachment.originalFilename,
@@ -363,7 +407,7 @@ function ChatArea({
     },
   });
 
-  const updateUploadProgress = (localId, uploadedBytes, totalBytes) => {
+  const updateUploadProgress = (localId: string, uploadedBytes: number, totalBytes: number) => {
     const progressPercent = totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
     updatePendingMessage(localId, (currentMessage) => ({
       ...currentMessage,
@@ -384,7 +428,15 @@ function ChatArea({
     baseUploadedBytes,
     totalBytes,
     pendingMessageLocalId,
-  }) => {
+  }: {
+    uploadSessionId: string;
+    preparedAttachment: PreparedMediaAttachment;
+    file: File;
+    task: MediaUploadTask;
+    baseUploadedBytes: number;
+    totalBytes: number;
+    pendingMessageLocalId: string;
+  }): Promise<CompletedMultipartPartInput[]> => {
     const partSize = Number(preparedAttachment.recommendedPartSize);
     if (!Number.isFinite(partSize) || partSize <= 0) {
       throw new Error("The upload session did not include a valid multipart part size.");
@@ -394,9 +446,9 @@ function ChatArea({
       { length: Math.ceil(file.size / partSize) },
       (_, index) => index + 1,
     );
-    const loadedBytesByPart = new Map();
-    const activeUploadHandles = new Map();
-    const completedParts = [];
+    const loadedBytesByPart = new Map<number, number>();
+    const activeUploadHandles = new Map<number, UploadHandle>();
+    const completedParts: CompletedMultipartPartInput[] = [];
 
     const updateMultipartProgress = () => {
       const currentFileUploadedBytes = Array.from(loadedBytesByPart.values())
@@ -461,9 +513,9 @@ function ChatArea({
     return completedParts.sort((left, right) => left.partNumber - right.partNumber);
   };
 
-  const uploadPendingMessage = async (pendingMessage) => {
+  const uploadPendingMessage = async (pendingMessage: PendingMediaMessage) => {
     const files = pendingMessage.attachments.map((attachment) => attachment.file).filter(Boolean);
-    const task = {
+    const task: MediaUploadTask = {
       canceled: false,
       abort: null,
     };
@@ -491,7 +543,7 @@ function ChatArea({
 
       const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
       let uploadedBytesBeforeCurrentFile = 0;
-      const completionAttachments = [];
+      const completionAttachments: CompleteMediaAttachmentInput[] = [];
 
       for (let index = 0; index < files.length; index += 1) {
         const preparedAttachment = prepareResponse.attachments[index];
@@ -557,20 +609,21 @@ function ChatArea({
       onMediaMessageDelivered?.(completedMessage);
     } catch (error) {
       uploadTasksRef.current.delete(pendingMessage.localId);
-      const canceled = task.canceled || error?.name === "AbortError";
+      const err = error as { name?: string; message?: string } | null;
+      const canceled = task.canceled || err?.name === "AbortError";
       updatePendingMessage(pendingMessage.localId, (currentMessage) => ({
         ...currentMessage,
         localUploadState: {
           ...currentMessage.localUploadState,
           status: canceled ? LOCAL_UPLOAD_STATUSES.CANCELED : LOCAL_UPLOAD_STATUSES.UPLOAD_FAILED,
           progressPercent: currentMessage.localUploadState?.progressPercent || 0,
-          errorMessage: error?.message || "Upload failed",
+          errorMessage: err?.message || "Upload failed",
         },
       }));
     }
   };
 
-  const handleSendText = (content) => {
+  const handleSendText = (content: string) => {
     onSendMessage(content);
     setMediaComposerError("");
   };
@@ -591,7 +644,7 @@ function ChatArea({
     uploadPendingMessage(pendingMessage);
   };
 
-  const handleRetryPendingMedia = (localId) => {
+  const handleRetryPendingMedia = (localId: string) => {
     const pendingMessage = pendingMediaMessagesRef.current.find((message) => message.localId === localId);
     if (!pendingMessage || uploadTasksRef.current.has(localId)) {
       return;
@@ -610,7 +663,7 @@ function ChatArea({
     uploadPendingMessage(pendingMessage);
   };
 
-  const handleCancelPendingMedia = (localId) => {
+  const handleCancelPendingMedia = (localId: string) => {
     const task = uploadTasksRef.current.get(localId);
     if (!task) {
       updatePendingMessage(localId, (currentMessage) => ({
@@ -678,11 +731,11 @@ function ChatArea({
 
 export default ChatArea;
 
-function buildChatKey(chatId) {
+function buildChatKey(chatId: ChatRouteId): string {
   return chatId === "public" ? "public" : String(chatId);
 }
 
-function revokePreviewUrls(attachments) {
+function revokePreviewUrls(attachments?: any) {
   (attachments || []).forEach((attachment) => {
     if (attachment?.localPreviewUrl) {
       URL.revokeObjectURL(attachment.localPreviewUrl);

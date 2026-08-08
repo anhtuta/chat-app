@@ -4,7 +4,21 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import "./ChatAreaHeader.css";
 
-function ChatAreaHeader({ chatName, isConnected, onLogout, onOpenGroupDetails, showGroupDetailsAction }) {
+interface ChatAreaHeaderProps {
+  chatName: string;
+  isConnected: boolean;
+  onLogout: () => void;
+  onOpenGroupDetails?: () => void;
+  showGroupDetailsAction?: boolean;
+}
+
+function ChatAreaHeader({
+  chatName,
+  isConnected,
+  onLogout,
+  onOpenGroupDetails,
+  showGroupDetailsAction,
+}: ChatAreaHeaderProps) {
   return (
     <div className="chat-area-header-wrapper">
       <AppBar position="static" className="chat-area-header-appbar">
@@ -18,6 +32,7 @@ function ChatAreaHeader({ chatName, isConnected, onLogout, onOpenGroupDetails, s
                 color="inherit"
                 size="small"
                 onClick={onOpenGroupDetails}
+                title="Group details"
                 aria-label="Group details"
                 className="chat-area-header-details-button"
               >
