@@ -1,6 +1,6 @@
 ## Intro
 
-Group member limitation lets a group owner set an optional maximum number of active members in a group. When the limit is missing, `NULL`, or `0`, the group has no size cap. When the limit is greater than `0`, direct add and join-link flows must reject any new membership that would push the group above that limit.
+Group member limitation lets a group owner set an optional maximum number of active members in a group. When the limit is `NULL` or `0`, the group has no size cap. When the limit is greater than `0`, direct add and join-link flows must reject any **new** membership insert that would run while the current participant count is already at or above that limit.
 
 The important part is not the column itself; it is enforcing the limit under concurrency. If a group has `maxMembers = 100` and 200 users try to join through the same link at the same time, exactly enough requests should succeed to reach 100 active participants, and the rest should fail with a clear "group is full" response.
 
@@ -8,21 +8,21 @@ The important part is not the column itself; it is enforcing the limit under con
 
 - A group creator can optionally set `maxMembers` during group creation.
 - `LEADER` and `CO_LEADER` can update `maxMembers` through the group update API because they already have `MANAGE_GROUP_DETAILS`.
-- `NULL` and `0` mean "unlimited".
-- Positive values mean the maximum number of active rows in `group_participants` for that group.
+- Stored `NULL` and `0` mean "unlimited". Persist only after rejecting any value below `0`; do not normalize negatives into unlimited.
+- Positive values mean the configured capacity used by the **insertion rule** below.
 - The creator counts as a member.
 - Initial invited participants during group creation count toward the limit.
-- Direct add (`POST /api/groups/{groupId}/members`) must reject when the group is full.
-- Join by link (`POST /api/groups/join-links/{token}/join`) must reject when the group is full.
+- Direct add (`POST /api/groups/{groupId}/members`) must reject when the group is full under the insertion rule.
+- Join by link (`POST /api/groups/join-links/{token}/join`) must reject when the group is full under the insertion rule.
 - Existing members using a join link should remain idempotent: if they are already in the group, return their current membership and do not fail because the group is full.
-- Reducing the limit below the current member count is allowed only if product accepts an "over limit but no new members" state. Recommended behavior: allow it, and block only future adds/joins until member count drops below the limit.
+- Reducing the limit below the current member count is allowed. That creates a temporary **over-limit** state: existing members stay, and the group remains valid. Enforcement is an **insertion rule** only: a new `group_participants` row may commit only when `maxMembers` is unlimited, or when the current count is strictly below `maxMembers`. While over-limit, all new adds/joins fail until membership decreases enough that `count < maxMembers`.
 - Kicking, banning, leaving, or archiving a group does not need special member-limit behavior beyond reducing the active participant count.
 - Banned users are still rejected before a new membership insert.
 - Archived groups are still rejected before a new membership insert.
 
 ## Non-Functional Requirements
 
-- **Race safety:** concurrent direct adds and join-link joins must not exceed `maxMembers`.
+- **Race safety:** concurrent direct adds and join-link joins must obey the insertion rule so a new membership cannot commit when the current count is already at or above a positive `maxMembers`. After a limit is lowered below the current count, the over-limit state is allowed until membership decreases; the invariant is not "count always ≤ maxMembers".
 - **Database-backed correctness:** correctness must hold across multiple backend instances.
 - **Short critical section:** the lock should cover only validate/count/insert and existing membership side effects already in the transaction.
 - **Backward compatibility:** existing groups should default to unlimited.
@@ -35,12 +35,13 @@ The important part is not the column itself; it is enforcing the limit under con
 - Create a new group with `maxMembers = 100`.
 - Update a group from unlimited to `maxMembers = 100`.
 - Update a group from `maxMembers = 100` to unlimited by sending `null` or `0`.
-- Add one user directly while the group has room.
-- Reject direct add when the group is full.
+- PATCH omit `maxMembers` and leave the current limit unchanged.
+- Add one user directly while the group has room (`count < maxMembers`).
+- Reject direct add when the group is at or over the limit (`count >= maxMembers`).
 - Join by valid join link while the group has room.
-- Reject join by valid join link when the group is full.
+- Reject join by valid join link when the group is at or over the limit.
 - Let an existing member open/use a join link without producing a duplicate insert or "full" error.
-- Reduce `maxMembers` below the current member count and block new additions until the group is no longer over the limit.
+- Reduce `maxMembers` below the current member count (over-limit state), keep existing members, and block new additions until `count < maxMembers` again.
 
 ## Possible Solutions
 
@@ -48,7 +49,7 @@ The important part is not the column itself; it is enforcing the limit under con
 
 #### 1.1. Pessimistic Group Row Lock
 
-- How it works: every membership insert path first locks the `groups` row with `SELECT ... FOR UPDATE` through the existing `GroupRepository.findByIdForUpdate`. While holding that lock, the service checks active group state, validates permissions/link state, checks whether the target user is already a member, counts current participants, compares against `maxMembers`, and only then inserts the participant.
+- How it works: every membership insert path first locks the `groups` row with `SELECT ... FOR UPDATE` through the existing `GroupRepository.findByIdForUpdate`. While holding that lock, the service checks active group state, validates permissions/link state, checks whether the target user is already a member, counts current participants, applies the insertion rule against `maxMembers`, and only then inserts the participant.
 - Pros:
   - Fits the current architecture: membership mutations already serialize on the group row via `lockActiveGroup`.
   - Correct across multiple application instances because the lock is held by the database.
@@ -91,10 +92,10 @@ The important part is not the column itself; it is enforcing the limit under con
 
 #### 1.4. Atomic Counter On `groups`
 
-- How it works: add a denormalized `member_count` column and update it with a single conditional SQL statement such as `UPDATE groups SET member_count = member_count + 1 WHERE id = ? AND (max_members IS NULL OR max_members <= 0 OR member_count < max_members)`. Insert the participant only if the counter update succeeds.
+- How it works: add a denormalized `member_count` column and update it with a single conditional SQL statement such as `UPDATE groups SET member_count = member_count + 1 WHERE id = ? AND (max_members IS NULL OR max_members = 0 OR member_count < max_members)`. Insert the participant only if the counter update succeeds. Request validation still rejects values below `0` before any persistence; stored values are only `NULL`, `0`, or positive.
 - Pros:
   - Very efficient: no `COUNT(*)` on every add/join.
-  - Can enforce capacity with one atomic conditional update.
+  - Can enforce the insertion rule with one atomic conditional update.
   - Better long-term path for very large groups or very high join throughput.
 - Cons:
   - Requires keeping `member_count` correct across add, join, leave, kick, ban, archive, and any data repair.
@@ -137,7 +138,7 @@ sequenceDiagram
 - `Group`: add nullable `maxMembers` mapped to `groups.max_members`.
 - `GroupParticipant`: remains the source of truth for active membership. A row counts toward capacity.
 - `CreateGroupRequest`: add optional `maxMembers`.
-- `UpdateGroupRequest`: add optional `maxMembers`.
+- `UpdateGroupRequest` (or a PATCH wrapper around it): must distinguish **omitted** `maxMembers` from **explicitly set** `null`. A plain nullable `Integer maxMembers` is not enough for Jackson/JSON PATCH semantics, because omitted and `"maxMembers": null` both deserialize to `null`. Use a presence-aware field (for example `Optional<Integer>`, `JsonNullable<Integer>`, or a small wrapper with `isPresent` / `getValue`) so omission leaves the current limit unchanged while explicit `null`, `0`, and positive values keep their documented behavior.
 - `GroupResponse`: add `maxMembers` so clients can display and edit the current limit.
 - `GroupRepository`: reuse `findByIdForUpdate` for membership capacity enforcement.
 - `GroupParticipantRepository`: reuse `countByGroupId`; optionally add a method name/comment that clarifies it counts active participants because there is no soft-delete participant state today.
@@ -161,16 +162,17 @@ Request:
 
 Behavior:
 
-- `maxMembers` missing, `null`, or `0`: unlimited.
+- `maxMembers` missing, `null`, or `0`: unlimited. Only `null` and `0` normalize to unlimited; never treat negative values as unlimited.
 - `maxMembers > 0`: capacity limit.
-- `maxMembers < 0`: reject with validation error.
-- If initial members would exceed the positive limit, reject the creation request before inserting partial membership rows.
+- `maxMembers < 0`: reject with validation error **before persistence**.
+- `GroupService.createGroup` must accept and persist `maxMembers`, then validate the distinct set of `{creator} ∪ participantIds` against that limit **before** inserting any `group_participants` rows. If the distinct initial membership would exceed a positive limit, reject the whole create request (no partial membership inserts).
+- `GroupSeeder` remains setup-only and creates unlimited groups (`max_members` null). If seed data ever targets capped groups, apply the same distinct-membership capacity validation before inserting participants.
 
 #### Update Group Details
 
 `PATCH /api/groups/{groupId}`
 
-Request:
+Request examples:
 
 ```json
 {
@@ -180,13 +182,26 @@ Request:
 }
 ```
 
+```json
+{
+  "maxMembers": null
+}
+```
+
+```json
+{
+  "name": "Study Group"
+}
+```
+
 Behavior:
 
 - Only users with `MANAGE_GROUP_DETAILS` can update it.
-- `maxMembers` missing means "do not change current limit".
-- `maxMembers: null` or `maxMembers: 0` means unlimited.
-- `maxMembers < 0` is invalid.
-- Reducing below current member count is allowed, but new add/join operations fail until member count is below the limit.
+- The PATCH model must preserve whether `maxMembers` was omitted or explicitly set. Omission leaves the current limit unchanged.
+- Explicit `maxMembers: null` or `maxMembers: 0` means unlimited (normalize only those two cases).
+- Explicit `maxMembers > 0` sets the capacity limit.
+- Explicit `maxMembers < 0` is invalid and must be rejected before persistence.
+- Reducing below current member count is allowed and creates an over-limit state. Existing members remain. New add/join operations fail until `count < maxMembers`.
 
 #### Add Member
 
@@ -198,8 +213,8 @@ Behavior:
 - Authorize `ADD_MEMBERS`.
 - Reject banned target.
 - If target is already a member, keep existing "already a member" behavior.
-- Check capacity under the lock.
-- Insert member only when unlimited or current count is below `maxMembers`.
+- Check capacity under the lock using the insertion rule.
+- Insert member only when unlimited or current count is strictly below `maxMembers`.
 
 #### Join Link
 
@@ -212,19 +227,21 @@ Behavior:
 - Refresh and revalidate the join link under the lock.
 - Reject banned user.
 - If the user is already a member, return the existing membership without applying the capacity check.
-- Check capacity under the lock.
-- Insert member only when unlimited or current count is below `maxMembers`.
+- Check capacity under the lock using the insertion rule.
+- Insert member only when unlimited or current count is strictly below `maxMembers`.
 
 ## Recommendation
 
-Use a nullable `groups.max_members` column and enforce it inside the existing pessimistic group-row lock used by membership mutations.
+Use a nullable `groups.max_members` column and enforce capacity with an **insertion rule** inside the existing pessimistic group-row lock used by membership mutations.
 
 Recommended rules:
 
-- Normalize `null` and values `<= 0` to unlimited in service logic.
-- Validate request values so negative numbers are rejected at the API boundary.
+- Normalize only `null` and `0` to unlimited in service logic after successful validation.
+- Reject any value below `0` at the API/service boundary before persistence; do not coerce negatives to unlimited.
 - Reuse `lockActiveGroup` before any capacity decision in `addMember` and `joinByToken`.
-- Check existing membership before capacity in `joinByToken` so already-member retries stay idempotent even if the group is full.
+- Allow over-limit after lowering `maxMembers`; do not force member removal. Block only new inserts while `count >= maxMembers`.
+- Check existing membership before capacity in `joinByToken` so already-member retries stay idempotent even if the group is full or over-limit.
+- Make the PATCH DTO/wrapper presence-aware so omitted `maxMembers` is distinct from explicit `null`.
 - Keep Redis out of the correctness path for the first version.
 
 ## Implementation Plan
@@ -233,16 +250,18 @@ Recommended rules:
 
 - Add nullable `max_members` to `groups`.
 - Add `maxMembers` to `Group`.
-- Add optional `maxMembers` to `CreateGroupRequest`, `UpdateGroupRequest`, and `GroupResponse`.
-- Add validation: negative values are rejected; `null` and `0` mean unlimited.
+- Add optional `maxMembers` to `CreateGroupRequest` and `GroupResponse`.
+- Update `UpdateGroupRequest` (or a PATCH wrapper) to track field presence for `maxMembers` so omission, explicit `null`, `0`, and positive values are distinguishable.
+- Add validation: values below `0` are rejected before persistence; only `null` and `0` mean unlimited.
 - Backward compatibility: existing rows stay `NULL`, so all existing groups remain unlimited.
 
 ### Phase 2. Create And Update Behavior
 
-- `createGroup` accepts `maxMembers`.
-- Before inserting invited participants, compute the distinct initial participant set plus creator and reject if it exceeds a positive limit.
-- `updateGroupDetails` accepts `maxMembers` as a patchable field.
-- Allow lowering below current member count unless product decides otherwise.
+- Update `GroupService.createGroup` to accept and persist `maxMembers`.
+- Before inserting any participant rows, compute the distinct set of creator plus `participantIds` and reject the create if that set size exceeds a positive limit.
+- Keep `GroupSeeder` setup-only with unlimited groups, or apply the same capacity validation if it ever creates capped groups.
+- `updateGroupDetails` accepts presence-aware `maxMembers` as a patchable field.
+- Allow lowering below current member count (over-limit state); do not remove members.
 - Record a system event for limit changes only if the product wants visible audit history in chat. TODO: confirm whether max-member changes should create a system message like group name/description updates.
 
 ### Phase 3. Capacity Enforcement In Membership Writes
@@ -251,7 +270,7 @@ Recommended rules:
 - Call it in `addMember` after the duplicate-member check and before saving `GroupParticipant`.
 - Call it in `joinByToken` after existing-member idempotency check and before saving `GroupParticipant`.
 - The helper runs while the transaction holds `findByIdForUpdate` on the group row.
-- The helper uses `groupParticipantRepository.countByGroupId(group.getId())`.
+- The helper uses `groupParticipantRepository.countByGroupId(group.getId())` and applies the insertion rule: reject when `maxMembers > 0` and `currentCount >= maxMembers`.
 
 ### Phase 4. Error Contract And Frontend UX
 
@@ -263,24 +282,41 @@ Recommended rules:
 ### Phase 5. Tests
 
 - Unit or integration test: create group with `maxMembers = null` and `0` remains unlimited.
-- Integration test: create group rejects initial members above limit.
+- Unit or integration test: create/update rejects `maxMembers < 0` before persistence.
+- Integration test: create group rejects initial distinct membership above limit and inserts no partial participant rows.
 - Integration test: update limit as leader/co-leader succeeds; non-privileged member fails.
-- Integration test: direct add succeeds below limit and fails at limit.
-- Integration test: join by link succeeds below limit and fails at limit.
-- Idempotency test: existing member using join link succeeds even when group is full.
-- Concurrency test: many simultaneous join-link requests for a group with `maxMembers = N` never create more than `N` participants.
-- Concurrency test: mixed direct adds and join-link joins serialize correctly and never exceed `maxMembers`.
+- Integration / DTO tests for PATCH `maxMembers`:
+  - omitted → current limit unchanged
+  - explicit `null` → unlimited
+  - `0` → unlimited
+  - positive value → sets limit
+  - negative value → rejected
+- Integration test: lowering `maxMembers` below current count leaves existing members and blocks new inserts until `count < maxMembers`.
+- Integration test: direct add succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
+- Integration test: join by link succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
+- Idempotency test: existing member using join link succeeds even when group is full or over-limit.
+- Concurrency test: many simultaneous join-link requests for a group with `maxMembers = N` never create more than `N` participants when starting from below the limit.
+- Concurrency test: mixed direct adds and join-link joins serialize correctly and obey the insertion rule.
 
 ## Concurrency Notes
 
-The correct invariant is:
+The member-limit rule is an **insertion rule**, not a permanent `COUNT <= maxMembers` database invariant. After a leader/co-leader lowers `maxMembers` below the current participant count, the group may temporarily satisfy:
 
 ```text
-For every group with maxMembers > 0:
-COUNT(group_participants WHERE group_id = group.id) <= maxMembers
+maxMembers > 0 AND COUNT(group_participants WHERE group_id = group.id) > maxMembers
 ```
 
-For the first implementation, the invariant is protected by the same lock already used for membership lifecycle state:
+That over-limit state is allowed. Existing members stay. What must never happen is committing a **new** membership row while the group is already at or above a positive limit:
+
+```text
+When maxMembers > 0, a new group_participants insert may commit only if:
+COUNT(group_participants WHERE group_id = group.id) < maxMembers
+
+When maxMembers IS NULL or maxMembers = 0:
+inserts are not limited by capacity
+```
+
+For the first implementation, the insertion rule is protected by the same lock already used for membership lifecycle state:
 
 ```text
 transaction starts
@@ -296,13 +332,15 @@ transaction commits
 
 This works because all capacity-affecting insert paths wait on the same group row. If 200 users join concurrently and only 10 seats remain, the first 10 transactions that acquire the lock and insert will succeed. Every later transaction will re-count after those commits and fail.
 
+The same rule also covers over-limit groups: if `maxMembers` was lowered to 50 while 80 members remain, every new insert sees `currentCount >= maxMembers` and is rejected until enough members leave/are removed that `count < maxMembers`.
+
 The count must happen after acquiring the lock. An unlocked pre-count is only a hint and cannot be used for correctness.
 
 ## Future Higher-Scale Path
 
-If capacity checks become hot, add a denormalized `groups.member_count` column and enforce capacity with atomic conditional updates. The database can then accept or reject a new seat without scanning/counting participants every time.
+If capacity checks become hot, add a denormalized `groups.member_count` column and enforce the insertion rule with atomic conditional updates. The database can then accept or reject a new seat without scanning/counting participants every time.
 
-Possible future design:
+Possible future design (assumes request validation already rejected values below `0`, so stored `max_members` is only `NULL`, `0`, or positive):
 
 ```sql
 UPDATE groups
@@ -311,7 +349,7 @@ WHERE id = :groupId
   AND archived_at IS NULL
   AND (
     max_members IS NULL
-    OR max_members <= 0
+    OR max_members = 0
     OR member_count < max_members
   );
 ```
