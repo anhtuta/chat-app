@@ -257,7 +257,6 @@ public class MediaUploadSessionService {
                 .objectKey(objectKey)
                 .uploadStrategy(uploadStrategy)
                 .presignedUrl(uploadStrategy == UploadStrategy.SINGLE_PART ? provider.buildUploadUrl(objectKey) : null)
-                .multipartUploadId(mediaUpload.getMultipartUploadId())
                 .recommendedPartSize(uploadStrategy == UploadStrategy.MULTIPART
                         ? mediaStorageProperties.getMultipartThresholdBytes()
                         : null)

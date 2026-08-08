@@ -7,6 +7,10 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * One attachment plan returned by prepare-upload. For {@link UploadStrategy#MULTIPART},
+ * {@code multipartUploadId} is issued later by the parts endpoint, not here.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -16,7 +20,6 @@ public class PreparedMediaAttachmentResponse {
     private String objectKey;
     private UploadStrategy uploadStrategy;
     private String presignedUrl;
-    private String multipartUploadId;
     private Long recommendedPartSize;
     // TODO: rename to expiresAt?
     private LocalDateTime completeBy;
