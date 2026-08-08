@@ -1,5 +1,6 @@
 package com.hello.mediaprocessing.storage;
 
+import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import java.nio.file.Path;
 
 /**

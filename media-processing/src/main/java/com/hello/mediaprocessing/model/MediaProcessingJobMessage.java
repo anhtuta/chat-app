@@ -1,4 +1,7 @@
-package com.hello.mediaprocessing.job;
+package com.hello.mediaprocessing.model;
+
+import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ProcessingTarget;
 
 import io.micronaut.serde.annotation.Serdeable;
 import jakarta.validation.constraints.NotBlank;

@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.job;
+package com.hello.mediaprocessing.constant;
 
 /**
  * Enumerates the upstream delivery mechanisms that can feed work into the service.

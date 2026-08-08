@@ -1,6 +1,6 @@
 package com.hello.mediaprocessing.service;
 
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 
 /**
  * Resolves a processing job into a locally accessible media source file.

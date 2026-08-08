@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.job;
+package com.hello.mediaprocessing.constant;
 
 /**
  * Enumerates the concrete processing outputs that a worker may produce for a media object.

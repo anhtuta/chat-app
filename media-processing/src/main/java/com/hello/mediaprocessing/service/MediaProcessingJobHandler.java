@@ -1,19 +1,21 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkerProperties;
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
-import com.hello.mediaprocessing.job.MediaProcessingJobStatus;
-import com.hello.mediaprocessing.job.MediaProcessingMessageType;
-import com.hello.mediaprocessing.job.ProcessingTarget;
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
+import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.MediaProcessingResult;
+import com.hello.mediaprocessing.model.VideoMetadata;
 import jakarta.inject.Singleton;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Validates, deduplicates, and advances processing jobs through the initial worker lifecycle.
@@ -26,16 +28,22 @@ public class MediaProcessingJobHandler {
     private final MediaProcessingWorkerProperties workerProperties;
     private final MediaProcessingJobDeduplicationStore deduplicationStore;
     private final MediaProcessingSourceLoader sourceLoader;
+    private final VideoMetadataExtractor videoMetadataExtractor;
+    private final MediaProcessingResultSink resultSink;
     private final Validator validator;
 
     public MediaProcessingJobHandler(
             MediaProcessingWorkerProperties workerProperties,
             MediaProcessingJobDeduplicationStore deduplicationStore,
             MediaProcessingSourceLoader sourceLoader,
+            VideoMetadataExtractor videoMetadataExtractor,
+            MediaProcessingResultSink resultSink,
             Validator validator) {
         this.workerProperties = workerProperties;
         this.deduplicationStore = deduplicationStore;
         this.sourceLoader = sourceLoader;
+        this.videoMetadataExtractor = videoMetadataExtractor;
+        this.resultSink = resultSink;
         this.validator = validator;
     }
 
@@ -68,7 +76,6 @@ public class MediaProcessingJobHandler {
         }
 
         try (LoadedMediaSource source = sourceLoader.load(job)) {
-            // TODO: Fan out into actual processing executors once Phase 4 metadata extraction is implemented.
             logTransition(
                     MediaProcessingJobStatus.DISPATCHED,
                     job,
@@ -76,12 +83,41 @@ public class MediaProcessingJobHandler {
                             + ", localSource=" + source.getLocalFile()
                             + ", contentType=" + source.getContentType()
                             + ", bytes=" + source.getObjectSize());
-            return MediaProcessingJobStatus.DISPATCHED;
-        } catch (MediaProcessingSourceLoadException e) {
+
+            Set<ProcessingTarget> implementedTargets = EnumSet.of(ProcessingTarget.METADATA);
+            Set<ProcessingTarget> completedTargets = EnumSet.copyOf(enabledTargets);
+            completedTargets.retainAll(implementedTargets);
+            Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
+            pendingTargets.removeAll(completedTargets);
+
+            if (completedTargets.isEmpty()) {
+                return MediaProcessingJobStatus.DISPATCHED;
+            }
+
+            logTransition(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, job, "completedTargets=" + completedTargets);
+
+            VideoMetadata videoMetadata = extractVideoMetadata(job, source);
+            MediaProcessingJobStatus finalStatus = pendingTargets.isEmpty()
+                    ? MediaProcessingJobStatus.MEDIA_READY
+                    : MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
+            resultSink.accept(new MediaProcessingResult(
+                    job.jobId(),
+                    job.messageId(),
+                    job.mediaId(),
+                    finalStatus,
+                    videoMetadata,
+                    Set.copyOf(completedTargets),
+                    Set.copyOf(pendingTargets)));
+            logTransition(
+                    finalStatus,
+                    job,
+                    "videoMetadata extracted; pendingTargets=" + pendingTargets + ", mimeType=" + videoMetadata.detectedMimeType());
+            return finalStatus;
+        } catch (MediaProcessingSourceLoadException | VideoMetadataExtractionException e) {
             logTransition(
                     MediaProcessingJobStatus.PROCESSING_FAILED,
                     job,
-                    "failureReason=" + e.getFailureReason() + ", message=" + e.getMessage());
+                    "failureReason=" + resolveFailureReason(e) + ", message=" + e.getMessage());
             return MediaProcessingJobStatus.PROCESSING_FAILED;
         }
     }
@@ -147,5 +183,32 @@ public class MediaProcessingJobHandler {
                 job.messageId(),
                 status,
                 detail);
+    }
+
+    /**
+     * Extracts video metadata from a loaded local source file.
+     *
+     * @param job job currently being processed
+     * @param source local source file handle for the current job
+     * @return normalized video metadata for the source file
+     */
+    private VideoMetadata extractVideoMetadata(MediaProcessingJobMessage job, LoadedMediaSource source) {
+        if (job.messageType() != MediaProcessingMessageType.VIDEO) {
+            throw new VideoMetadataExtractionException("Video metadata extraction requires a VIDEO job");
+        }
+        return videoMetadataExtractor.extract(source.getLocalFile(), source.getContentType());
+    }
+
+    /**
+     * Maps worker exceptions to the normalized failure reason names used in logs and future result contracts.
+     *
+     * @param exception failure thrown during processing
+     * @return failure-reason name suitable for structured worker logs
+     */
+    private String resolveFailureReason(Exception exception) {
+        if (exception instanceof MediaProcessingSourceLoadException sourceLoadException) {
+            return sourceLoadException.getFailureReason().name();
+        }
+        return MediaProcessingFailureReason.METADATA_EXTRACTION_FAILED.name();
     }
 }

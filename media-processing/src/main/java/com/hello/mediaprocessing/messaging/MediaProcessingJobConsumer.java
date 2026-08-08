@@ -1,6 +1,6 @@
 package com.hello.mediaprocessing.messaging;
 
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.service.MediaProcessingJobHandler;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.rabbitmq.annotation.Queue;

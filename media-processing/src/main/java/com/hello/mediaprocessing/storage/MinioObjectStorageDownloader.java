@@ -1,7 +1,8 @@
 package com.hello.mediaprocessing.storage;
 
 import com.hello.mediaprocessing.config.MediaProcessingStorageProperties;
-import com.hello.mediaprocessing.service.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import io.micronaut.context.annotation.Requires;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
@@ -9,7 +10,6 @@ import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.errors.ErrorResponseException;
 import jakarta.inject.Singleton;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;

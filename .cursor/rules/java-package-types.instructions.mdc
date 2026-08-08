@@ -1,0 +1,22 @@
+---
+description: "Package placement for Java types: entity, dto, model, and constant (enums)."
+globs: **/*.java
+alwaysApply: false
+---
+
+# Java Package Types
+
+Place Java types by role:
+
+| Package | Use for |
+| --- | --- |
+| `entity` | Persistence mapping to a DB table (e.g. JPA `@Entity`) |
+| `dto` | Controller-layer API request and response objects |
+| `model` | Service-layer data objects (records/classes), not enums |
+| `constant` | All enums, plus other shared constants |
+
+Rules:
+
+- Do **not** put enums in `model`, `entity`, `dto`, or `service`.
+- Do **not** use a `domain` package for these roles.
+- Keep behavior (services, handlers, loaders) in `service` (or feature packages like `job` / `storage`); keep data shapes in `entity` / `dto` / `model` / `constant` as above.

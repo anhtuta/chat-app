@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.storage;
+package com.hello.mediaprocessing.model;
 
 /**
  * Reports the basic metadata observed while copying a source object to local disk.

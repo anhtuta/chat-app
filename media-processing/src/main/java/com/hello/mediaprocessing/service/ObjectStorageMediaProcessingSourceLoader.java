@@ -1,12 +1,11 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkspaceProperties;
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloadException;
-import com.hello.mediaprocessing.storage.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloader;
 import jakarta.inject.Singleton;
-
 import java.nio.file.Path;
 
 /**

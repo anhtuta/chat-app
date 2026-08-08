@@ -9,6 +9,8 @@ You must strictly adhere to the project architecture. Before modifying any files
   - `.cursor/rules/avoid-race-conditions.instructions.mdc`
   - `.cursor/rules/java-class-member-order.instructions.mdc`
   - `.cursor/rules/maven-test-split.instructions.mdc`
+  - `.cursor/rules/java-javadocs.instructions.mdc`
+  - `.cursor/rules/java-package-types.instructions.mdc`
 - IF modifying files in `chat-app-frontend/**/*` -> Read following rule files:
   - `.cursor/rules/react-component-wrapper.instructions.mdc`
   - `.cursor/rules/react-colocate-state.instructions.mdc`

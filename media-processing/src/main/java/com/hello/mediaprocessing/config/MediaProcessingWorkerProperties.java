@@ -1,6 +1,6 @@
 package com.hello.mediaprocessing.config;
 
-import com.hello.mediaprocessing.job.MediaProcessingHandoffMode;
+import com.hello.mediaprocessing.constant.MediaProcessingHandoffMode;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.core.annotation.Introspected;
 import jakarta.validation.Valid;
@@ -46,7 +46,7 @@ public class MediaProcessingWorkerProperties {
     public static class FeatureFlags {
         private boolean videoMetadata = true;
 
-        private boolean videoPoster = true;
+        private boolean videoPoster = false;
 
         private boolean videoTranscode = false;
 

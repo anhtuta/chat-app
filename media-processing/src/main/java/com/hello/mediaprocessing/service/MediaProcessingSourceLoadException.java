@@ -1,5 +1,7 @@
 package com.hello.mediaprocessing.service;
 
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+
 /**
  * Signals that the worker could not materialize a usable local source file for a job.
  */

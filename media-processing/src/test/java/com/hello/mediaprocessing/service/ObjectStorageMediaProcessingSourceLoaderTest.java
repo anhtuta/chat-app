@@ -1,20 +1,19 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkspaceProperties;
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
-import com.hello.mediaprocessing.job.MediaProcessingMessageType;
-import com.hello.mediaprocessing.job.ProcessingTarget;
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloadException;
-import com.hello.mediaprocessing.storage.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloader;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;

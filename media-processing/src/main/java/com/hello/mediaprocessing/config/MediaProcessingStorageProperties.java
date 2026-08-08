@@ -1,6 +1,6 @@
 package com.hello.mediaprocessing.config;
 
-import com.hello.mediaprocessing.storage.ObjectStorageProviderType;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import io.micronaut.context.annotation.ConfigurationProperties;
 import io.micronaut.core.annotation.Introspected;
 import jakarta.validation.Valid;

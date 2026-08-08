@@ -1,18 +1,19 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkerProperties;
-import com.hello.mediaprocessing.job.MediaProcessingJobMessage;
-import com.hello.mediaprocessing.job.MediaProcessingJobStatus;
-import com.hello.mediaprocessing.job.MediaProcessingMessageType;
-import com.hello.mediaprocessing.job.ProcessingTarget;
-import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
+import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
+import com.hello.mediaprocessing.model.MediaProcessingResult;
+import com.hello.mediaprocessing.model.VideoMetadata;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
-import org.junit.jupiter.api.Test;
-
 import java.nio.file.Path;
 import java.util.List;
-
+import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
+import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -35,11 +36,13 @@ class MediaProcessingJobHandlerTest {
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-1", List.of(ProcessingTarget.METADATA)));
 
-        assertEquals(MediaProcessingJobStatus.DISPATCHED, status);
+        assertEquals(MediaProcessingJobStatus.MEDIA_READY, status);
     }
 
     /**
@@ -51,10 +54,12 @@ class MediaProcessingJobHandlerTest {
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
                 validator);
 
         MediaProcessingJobMessage job = buildVideoJob("job-dup", List.of(ProcessingTarget.METADATA));
-        assertEquals(MediaProcessingJobStatus.DISPATCHED, handler.handle(job));
+        assertEquals(MediaProcessingJobStatus.MEDIA_READY, handler.handle(job));
         assertEquals(MediaProcessingJobStatus.SKIPPED_DUPLICATE, handler.handle(job));
     }
 
@@ -69,11 +74,34 @@ class MediaProcessingJobHandlerTest {
                 properties,
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-2", List.of(ProcessingTarget.TRANSCODE)));
 
         assertEquals(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS, status);
+    }
+
+    /**
+     * Verifies that metadata extraction can complete while later-phase targets remain pending.
+     */
+    @Test
+    void handle_metadataPlusThumbnail_staysInProgress() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoPoster(true);
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-partial", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL)));
+
+        assertEquals(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, status);
     }
 
     /**
@@ -85,6 +113,8 @@ class MediaProcessingJobHandlerTest {
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
@@ -136,6 +166,31 @@ class MediaProcessingJobHandlerTest {
     }
 
     /**
+     * Test double that returns a fixed metadata payload without invoking ffprobe.
+     */
+    private static final class SuccessfulVideoMetadataExtractor implements VideoMetadataExtractor {
+
+        /**
+         * Returns stable metadata for handler tests.
+         *
+         * @param localFile ignored by this test double
+         * @param fallbackMimeType MIME type that should flow into the metadata result
+         * @return synthetic metadata payload
+         */
+        @Override
+        public VideoMetadata extract(Path localFile, String fallbackMimeType) {
+            return new VideoMetadata(
+                    12_345L,
+                    1920,
+                    1080,
+                    fallbackMimeType,
+                    "mov,mp4,m4a,3gp,3g2,mj2",
+                    "h264",
+                    "aac");
+        }
+    }
+
+    /**
      * Test double that always raises a typed source-load failure.
      */
     private static final class FailingSourceLoader implements MediaProcessingSourceLoader {
@@ -174,6 +229,22 @@ class MediaProcessingJobHandlerTest {
          */
         @Override
         public void cleanupWorkspaceQuietly(Path workspaceDirectory) {
+            // No-op for unit tests.
+        }
+    }
+
+    /**
+     * Test sink that accepts worker results without persisting or publishing them.
+     */
+    private static final class NoopResultSink implements MediaProcessingResultSink {
+
+        /**
+         * Ignores worker results because handler tests only assert returned status values.
+         *
+         * @param result normalized worker output
+         */
+        @Override
+        public void accept(MediaProcessingResult result) {
             // No-op for unit tests.
         }
     }

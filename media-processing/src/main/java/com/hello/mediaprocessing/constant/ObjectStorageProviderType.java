@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.storage;
+package com.hello.mediaprocessing.constant;
 
 /**
  * Lists the object-storage providers that the media-processing service can target.

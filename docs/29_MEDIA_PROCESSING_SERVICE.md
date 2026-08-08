@@ -428,18 +428,38 @@ Recommended path:
 
 ### Phase 4 - Video metadata extraction
 
-- Extract video metadata from the original upload:
-  - duration
+- Added ffprobe-based video metadata extraction against the downloaded local source file.
+- Added configurable metadata-probe settings for:
+  - ffprobe binary path
+  - ffprobe timeout
+- Extracted and normalized these fields:
+  - duration in milliseconds
   - width
   - height
   - detected MIME type
-  - codec/container details if needed
-- Define where this metadata is written so `chat-app-backend` can include it in media DTOs later.
-- Define how processing status moves from:
-  - `PROCESSING_PENDING`
-  - `PROCESSING_IN_PROGRESS`
-  - `MEDIA_READY`
-  - `PROCESSING_FAILED`
+  - container format
+  - video codec
+  - audio codec
+- Added a normalized `MediaProcessingResult` payload so metadata now has a defined handoff shape for later backend integration.
+- Added a temporary logging result sink for Phase 4:
+  - metadata is assembled into the result payload now
+  - Phase 7 will replace the logging sink with a real callback/API integration back into `chat-app-backend`
+- Worker status flow is now defined and exercised in code:
+  - `PROCESSING_PENDING` still belongs to `chat-app-backend` before the worker starts
+  - worker transitions through `PROCESSING_IN_PROGRESS`
+  - metadata-only jobs can now reach `MEDIA_READY`
+  - source-load or metadata-extraction failures reach `PROCESSING_FAILED`
+- Partial progress is also represented cleanly:
+  - if `METADATA` finishes but later-phase targets like thumbnail/transcode remain pending, the worker stays in `PROCESSING_IN_PROGRESS`
+- Added focused tests for:
+  - ffprobe JSON mapping
+  - metadata-only ready state
+  - metadata-plus-pending-target partial progress
+  - failure propagation to `PROCESSING_FAILED`
+- Aligned Java package layout with `.cursor/rules/java-package-types.instructions.mdc`:
+  - enums moved to `constant`
+  - service-layer data records moved to `model` (`MediaProcessingJobMessage`, `MediaProcessingResult`, `VideoMetadata`, `ObjectStorageDownloadResult`)
+  - behavior stays in `service` / `storage` / `messaging` (`LoadedMediaSource` remains in `service` because it owns workspace cleanup)
 
 ### Phase 5 - Video poster thumbnail generation
 
