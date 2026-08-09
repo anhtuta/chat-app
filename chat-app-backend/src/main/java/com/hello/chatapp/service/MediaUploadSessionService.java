@@ -368,9 +368,11 @@ public class MediaUploadSessionService {
     }
 
     private void ensureMultipartUploadInitialized(MediaUpload mediaUpload, ObjectStorageProvider provider) {
-        if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
-            mediaUpload.setMultipartUploadId(provider.createMultipartUpload(mediaUpload.getObjectKey()));
-        }
+        // if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
+        // mediaUpload.setMultipartUploadId(provider.createMultipartUpload(mediaUpload.getObjectKey()));
+        // }
+        String multipartUploadId = provider.createMultipartUpload(mediaUpload.getObjectKey());
+        mediaUploadRepository.updateMultipartUploadIdIfNewer(mediaUpload.getObjectKey(), multipartUploadId);
     }
 
     private void validateMultipartParts(List<CompletedMultipartPartRequest> parts) {
