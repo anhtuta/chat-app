@@ -152,6 +152,8 @@ public class MediaUploadSessionService {
         ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(mediaUpload.getStorageProvider());
         ensureMultipartUploadInitialized(mediaUpload, provider);
         mediaUpload.setStatus(UploadSessionStatus.UPLOAD_IN_PROGRESS);
+        // claimMultipartUploadId clears the persistence context; persist status + synced multipart id explicitly.
+        mediaUploadRepository.save(mediaUpload);
 
         List<MultipartPartResponse> parts = uniquePartNumbers.stream()
                 .map(partNumber -> MultipartPartResponse.builder()
@@ -367,12 +369,48 @@ public class MediaUploadSessionService {
         }
     }
 
+    /**
+     * Ensures {@code mediaUpload} has a provider multipart upload id, using CAS so concurrent first
+     * {@code /parts} calls cannot persist different ids. Losers abort their provider create and reload
+     * the winner's id (no create/CAS retry loop). See {@code docs/31_MEDIA_MULTIPART_UPLOAD_ID_INIT_RACE.md}.
+     *
+     * @param mediaUpload prepared multipart attachment row (multipart id synced onto this instance)
+     * @param provider storage provider for create/abort
+     */
     private void ensureMultipartUploadInitialized(MediaUpload mediaUpload, ObjectStorageProvider provider) {
-        // if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
-        // mediaUpload.setMultipartUploadId(provider.createMultipartUpload(mediaUpload.getObjectKey()));
-        // }
-        String multipartUploadId = provider.createMultipartUpload(mediaUpload.getObjectKey());
-        mediaUploadRepository.updateMultipartUploadIdIfNewer(mediaUpload.getObjectKey(), multipartUploadId);
+        // Early return if the multipart upload id is already set.
+        if (mediaUpload.getMultipartUploadId() != null && !mediaUpload.getMultipartUploadId().isBlank()) {
+            return;
+        }
+
+        Long uploadRowId = Objects.requireNonNull(mediaUpload.getId(), "media upload id");
+        String candidateId = provider.createMultipartUpload(mediaUpload.getObjectKey());
+
+        // CAS: try to update multipartUploadId to the candidateId (multiple requests can do this concurrently).
+        int claimed = mediaUploadRepository.claimMultipartUploadId(
+                uploadRowId,
+                candidateId,
+                UploadSessionStatus.UPLOAD_INITIATED);
+
+        // Updated multipartUploadId successfully (won the CAS race), update the multipartUploadId on the entity.
+        if (claimed == 1) {
+            mediaUpload.setMultipartUploadId(candidateId);
+            return;
+        }
+
+        // Lost the CAS race (another request won the race and set the multipartUploadId), abort the provider multipart upload.
+        provider.abortMultipartUpload(mediaUpload.getObjectKey(), candidateId);
+
+        MediaUpload reloaded = mediaUploadRepository.findById(uploadRowId)
+                .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
+        String winningId = reloaded.getMultipartUploadId();
+
+        // This should never happen.
+        if (winningId == null || winningId.isBlank()) {
+            throw new IllegalStateException(
+                    "Multipart upload id missing after lost CAS for attachment " + mediaUpload.getUploadId());
+        }
+        mediaUpload.setMultipartUploadId(winningId);
     }
 
     private void validateMultipartParts(List<CompletedMultipartPartRequest> parts) {

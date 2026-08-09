@@ -39,6 +39,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -47,6 +48,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for {@link MediaUploadSessionService} upload-session complete and multipart part-url flows.
+ */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class MediaUploadSessionServiceTest {
@@ -189,10 +193,6 @@ class MediaUploadSessionServiceTest {
 
         when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
                 .thenReturn(List.of(upload));
-        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
-        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
-                .thenReturn(objectStorageProvider);
-        when(objectStorageProvider.objectExists(anyString())).thenReturn(true);
         when(groupAuthorizationService.requireActivePermission(user, 100L, GroupPermission.SEND_MESSAGES))
                 .thenThrow(new ForbiddenException("You do not have permission to send messages in this group"));
 
@@ -207,6 +207,9 @@ class MediaUploadSessionServiceTest {
         assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
     }
 
+    /**
+     * First {@code /parts} call wins CAS: creates provider upload, claims id, skips abort, returns part URLs.
+     */
     @Test
     void requestMultipartPartUrls_initializesProviderMultipartUploadId() {
         MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
@@ -219,6 +222,10 @@ class MediaUploadSessionServiceTest {
                 .thenReturn(objectStorageProvider);
         when(objectStorageProvider.createMultipartUpload(upload.getObjectKey()))
                 .thenReturn("provider-upload-id");
+        when(mediaUploadRepository.claimMultipartUploadId(
+                        upload.getId(), "provider-upload-id", UploadSessionStatus.UPLOAD_INITIATED))
+                .thenReturn(1);
+        when(mediaUploadRepository.save(upload)).thenReturn(upload);
         when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "provider-upload-id", 1))
                 .thenReturn("part-1-url");
         when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "provider-upload-id", 2))
@@ -235,6 +242,121 @@ class MediaUploadSessionServiceTest {
         assertThat(upload.getMultipartUploadId()).isEqualTo("provider-upload-id");
         assertThat(upload.getStatus()).isEqualTo(UploadSessionStatus.UPLOAD_IN_PROGRESS);
         verify(objectStorageProvider).createMultipartUpload(upload.getObjectKey());
+        verify(mediaUploadRepository).claimMultipartUploadId(
+                upload.getId(), "provider-upload-id", UploadSessionStatus.UPLOAD_INITIATED);
+        verify(objectStorageProvider, never()).abortMultipartUpload(anyString(), anyString());
+        verify(mediaUploadRepository).save(upload);
+    }
+
+    /**
+     * Later {@code /parts} batches reuse an existing multipart id and must not create or claim again.
+     */
+    @Test
+    void requestMultipartPartUrls_whenMultipartAlreadyInitialized_skipsCreateAndClaim() {
+        MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        upload.setRequestedSizeBytes(20L * 1024 * 1024);
+        upload.setMultipartUploadId("existing-upload-id");
+        upload.setStatus(UploadSessionStatus.UPLOAD_IN_PROGRESS);
+
+        when(mediaUploadRepository.findByUploadSessionIdAndUploadId(UPLOAD_SESSION_ID, ATTACHMENT_ID))
+                .thenReturn(java.util.Optional.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(mediaUploadRepository.save(upload)).thenReturn(upload);
+        when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "existing-upload-id", 5))
+                .thenReturn("part-5-url");
+
+        RequestMultipartPartUrlsResponse response = mediaUploadSessionService.requestMultipartPartUrls(
+                user,
+                UPLOAD_SESSION_ID,
+                ATTACHMENT_ID,
+                new RequestMultipartPartUrlsRequest(List.of(5)));
+
+        assertThat(response.getMultipartUploadId()).isEqualTo("existing-upload-id");
+        assertThat(response.getParts()).extracting("partNumber").containsExactly(5);
+        verify(objectStorageProvider, never()).createMultipartUpload(anyString());
+        verify(mediaUploadRepository, never()).claimMultipartUploadId(anyLong(), anyString(), any(UploadSessionStatus.class));
+        verify(objectStorageProvider, never()).abortMultipartUpload(anyString(), anyString());
+    }
+
+    /**
+     * Lost CAS aborts the orphaned provider upload and signs parts with the winner's id.
+     */
+    @Test
+    void requestMultipartPartUrls_whenCasLoses_abortsCandidateAndUsesWinningId() {
+        MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        upload.setRequestedSizeBytes(20L * 1024 * 1024);
+
+        MediaUpload reloaded = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        reloaded.setRequestedSizeBytes(20L * 1024 * 1024);
+        reloaded.setMultipartUploadId("winning-upload-id");
+        reloaded.setStatus(UploadSessionStatus.UPLOAD_IN_PROGRESS);
+
+        when(mediaUploadRepository.findByUploadSessionIdAndUploadId(UPLOAD_SESSION_ID, ATTACHMENT_ID))
+                .thenReturn(java.util.Optional.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.createMultipartUpload(upload.getObjectKey()))
+                .thenReturn("losing-upload-id");
+        when(mediaUploadRepository.claimMultipartUploadId(
+                        upload.getId(), "losing-upload-id", UploadSessionStatus.UPLOAD_INITIATED))
+                .thenReturn(0);
+        when(mediaUploadRepository.findById(upload.getId())).thenReturn(java.util.Optional.of(reloaded));
+        when(mediaUploadRepository.save(upload)).thenReturn(upload);
+        when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "winning-upload-id", 1))
+                .thenReturn("part-1-url");
+
+        RequestMultipartPartUrlsResponse response = mediaUploadSessionService.requestMultipartPartUrls(
+                user,
+                UPLOAD_SESSION_ID,
+                ATTACHMENT_ID,
+                new RequestMultipartPartUrlsRequest(List.of(1)));
+
+        assertThat(response.getMultipartUploadId()).isEqualTo("winning-upload-id");
+        assertThat(upload.getMultipartUploadId()).isEqualTo("winning-upload-id");
+        assertThat(response.getParts()).singleElement().extracting("presignedUrl").isEqualTo("part-1-url");
+        verify(objectStorageProvider).abortMultipartUpload(upload.getObjectKey(), "losing-upload-id");
+        verify(objectStorageProvider, never()).buildMultipartUploadPartUrl(
+                eq(upload.getObjectKey()), eq("losing-upload-id"), anyInt());
+        verify(mediaUploadRepository).save(upload);
+    }
+
+    /**
+     * Lost CAS with a missing winner id is an invariant failure after abort.
+     */
+    @Test
+    void requestMultipartPartUrls_whenCasLosesAndWinningIdMissing_failsFast() {
+        MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        upload.setRequestedSizeBytes(20L * 1024 * 1024);
+
+        MediaUpload reloaded = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        reloaded.setRequestedSizeBytes(20L * 1024 * 1024);
+        reloaded.setMultipartUploadId(null);
+
+        when(mediaUploadRepository.findByUploadSessionIdAndUploadId(UPLOAD_SESSION_ID, ATTACHMENT_ID))
+                .thenReturn(java.util.Optional.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.createMultipartUpload(upload.getObjectKey()))
+                .thenReturn("losing-upload-id");
+        when(mediaUploadRepository.claimMultipartUploadId(
+                        upload.getId(), "losing-upload-id", UploadSessionStatus.UPLOAD_INITIATED))
+                .thenReturn(0);
+        when(mediaUploadRepository.findById(upload.getId())).thenReturn(java.util.Optional.of(reloaded));
+
+        assertThatThrownBy(() -> mediaUploadSessionService.requestMultipartPartUrls(
+                        user,
+                        UPLOAD_SESSION_ID,
+                        ATTACHMENT_ID,
+                        new RequestMultipartPartUrlsRequest(List.of(1))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Multipart upload id missing after lost CAS");
+
+        verify(objectStorageProvider).abortMultipartUpload(upload.getObjectKey(), "losing-upload-id");
+        verify(mediaUploadRepository, never()).save(any());
     }
 
     @Test

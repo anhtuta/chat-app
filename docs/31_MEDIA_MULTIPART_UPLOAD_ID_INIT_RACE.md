@@ -119,7 +119,14 @@ Membership races (docs 21/24) use a group row lock as a **shared mutex for many 
 
 ## Implementation details
 
-(Planned — not implemented yet.)
+- Added `MediaUploadRepository.claimMultipartUploadId(id, multipartUploadId, expectedStatus)` — conditional JPQL update (`multipart_upload_id IS NULL` + `status = UPLOAD_INITIATED`).
+- Updated `ensureMultipartUploadInitialized` to: skip when already set → create provider upload → CAS claim → on win sync id onto the entity → on lose `abortMultipartUpload` + reload winner id (no create retry).
+- `requestMultipartPartUrls` saves the row after setting `UPLOAD_IN_PROGRESS` because the claim query uses `clearAutomatically = true`.
+- Unit tests in `MediaUploadSessionServiceTest`: CAS win, already-initialized skip, CAS lose abort+reload, CAS lose with missing winner id.
+
+Why it changed: close the concurrent first `/parts` TOCTOU without holding `FOR UPDATE` across MinIO RTT.
+
+Rollout / backward-compatibility: no schema change; existing in-flight uploads with an already-set `multipart_upload_id` take the early-return path.
 
 ## Lesson (look back here)
 
