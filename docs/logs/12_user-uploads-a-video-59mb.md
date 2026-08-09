@@ -73,6 +73,7 @@ As we can see, the response:
     "updated_at": "2026-08-08 16:40:29.542866"
   }
   ```
+- Note: that row above is copied after everything is completed. But at this point, `multipart_upload_id` is still `null`.
 
 FE handles the logic:
 

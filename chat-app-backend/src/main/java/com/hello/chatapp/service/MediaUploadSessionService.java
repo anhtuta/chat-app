@@ -34,6 +34,8 @@ import com.hello.chatapp.storage.ObjectStorageCompletedPart;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.util.AfterCommit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +50,8 @@ import java.util.UUID;
 
 @Service
 public class MediaUploadSessionService {
+
+    private static final Logger logger = LoggerFactory.getLogger(MediaUploadSessionService.class);
 
     private final MediaUploadRepository mediaUploadRepository;
     private final GroupAuthorizationService groupAuthorizationService;
@@ -82,6 +86,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public PrepareMediaMessageResponse prepareUploadSession(User user, PrepareMediaMessageRequest request) {
+        logger.info("Prepare upload session for user {} with groupId {}", user.getUsername(), request.getGroupId());
         Group group = validateScopeAndMembership(user, request.getChatScope(), request.getGroupId());
         validateMessageType(request.getMessageType());
         validateAttachmentCount(request.getMessageType(), request.getAttachments());
@@ -128,6 +133,8 @@ public class MediaUploadSessionService {
             String uploadSessionId,
             String attachmentId,
             RequestMultipartPartUrlsRequest request) {
+        logger.info("Request multipart part urls for user {} with uploadSessionId {} and attachmentId {}",
+                user.getUsername(), uploadSessionId, attachmentId);
         MediaUpload mediaUpload = mediaUploadRepository.findByUploadSessionIdAndUploadId(uploadSessionId, attachmentId)
                 .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
 
@@ -164,6 +171,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public MessageResponse completeUploadSession(User user, String uploadSessionId, CompleteMediaMessageRequest request) {
+        logger.info("Complete upload session for user {} with uploadSessionId {}", user.getUsername(), uploadSessionId);
         List<MediaUpload> uploads = mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(uploadSessionId);
         if (uploads.isEmpty()) {
             throw new NotFoundException("Upload session not found");
@@ -173,6 +181,8 @@ public class MediaUploadSessionService {
         MediaUpload firstUpload = uploads.getFirst();
         ensureNotExpired(firstUpload);
 
+        // Validate that the attachmentIds in the request are unique.
+        // This is to ensure that the same attachment is not uploaded multiple times.
         Map<String, CompleteMediaAttachmentRequest> requestByAttachmentId = new HashMap<>();
         for (CompleteMediaAttachmentRequest attachmentRequest : request.getAttachments()) {
             CompleteMediaAttachmentRequest previous =
@@ -182,6 +192,7 @@ public class MediaUploadSessionService {
             }
         }
 
+        // Validate that the number of attachments in the request matches the number of uploads.
         if (requestByAttachmentId.size() != uploads.size()) {
             throw new BadRequestException("Completion request must include every prepared attachment exactly once");
         }
