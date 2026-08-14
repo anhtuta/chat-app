@@ -202,6 +202,8 @@ public class MediaUploadSessionService {
         // Re-check SEND_MESSAGES at complete time: prepare can succeed, then kick/ban before finalize.
         // Intentionally no group FOR UPDATE here — membership mutations own that lock; media complete
         // only needs a fresh permission read (narrow residual race vs concurrent kick during this tx).
+        // Details: check SEND_MESSAGES on group_participants, then write the message later. Kick/ban can commit in between.
+        // Cái race condition này thực sự ko cần fix, nếu như user bị kick/ban khi đang complete thì cứ kệ thôi!
         Long preparedGroupId = firstUpload.getGroup() == null
                 ? null
                 : Objects.requireNonNull(firstUpload.getGroup().getId());
