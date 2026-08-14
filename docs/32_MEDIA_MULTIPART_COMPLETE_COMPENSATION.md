@@ -19,6 +19,8 @@ If anything after provider complete fails (scan, DB constraint, kick mid-flight,
 
 A client **retry** of `/complete` then reuses the invalid multipart upload id → hard failure, even though the bytes may already be in the bucket. Orphan object without a `Message` is also possible.
 
+Secondary smell in the same method: `malwareScanService.assertClean` also runs inside that long `@Transactional` boundary. Once real ClamAV I/O exists, holding a DB transaction open across download/scan is undesirable. That does **not** require a background scan job by itself (Feature 12 still treats malware as the synchronous publish gate); it does mean scan should run **outside** the long complete TX once we restructure finalize → checkpoint → persist. See [Malware scan placement](#malware-scan-placement-related) below.
+
 Single-part is milder: the object was already PUT before `/complete`, so retry mainly re-verifies existence. Multipart **complete** is the dangerous step. Details:
 
 - Single-part
@@ -54,9 +56,10 @@ Same family as “irreversible side effect inside a DB transaction” in `.curso
 
 - How it works:
   1. On `/complete`, if the attachment is already marked finalized (new status or flag), **skip** `completeMultipartUpload`; only `objectExists` (and later scan/persist).
-  2. Otherwise call `completeMultipartUpload`, then **commit a durable marker** that the object was finalized (must be visible even if the outer complete TX later rolls back).
-  3. Continue scan → persist message → `UPLOAD_SESSION_COMPLETED` in the main TX.
-  4. Retry of `/complete` sees the marker → resume without reusing the multipart upload id.
+  2. Otherwise call `completeMultipartUpload`, then **commit a durable marker** that the object was finalized (must be visible even if later steps fail).
+  3. Run `assertClean` **outside** any long-lived DB TX (still synchronous in the request — publish gate).
+  4. Short TX: persist message → `UPLOAD_SESSION_COMPLETED`.
+  5. Retry of `/complete` sees the marker → resume without reusing the multipart upload id.
 - How to make the marker survive outer rollback (pick one when implementing):
   - **A.** `REQUIRES_NEW` (or separate committed TX) right after successful provider complete: update status / flag, commit, then continue outer work.
   - **B.** Split API phases (finalize-storage vs publish-message) — heavier API change; not needed if A is enough.
@@ -130,13 +133,26 @@ flowchart TD
   B -->|no| D[completeMultipartUpload]
   D --> E[Commit durable OBJECT_FINALIZED marker]
   E --> C
-  C --> F[objectExists + assertClean]
-  F --> G[Persist Message + SESSION_COMPLETED]
-  G --> H{Outer TX OK?}
+  C --> F[objectExists]
+  F --> S[assertClean outside long DB TX]
+  S --> G[Short TX: persist Message + SESSION_COMPLETED]
+  G --> H{Persist TX OK?}
   H -->|yes| I[Done]
-  H -->|no| J[DB rolls back message/status after marker]
-  J --> K[Retry: marker still set → resume from C]
+  H -->|no| J[Marker still committed]
+  J --> K[Retry: marker set → resume from C]
 ```
+
+### Malware scan placement (related)
+
+`assertClean` is a **later step after finalize**, not the multipart-id bug itself. Still fold its placement into this complete-flow redesign:
+
+| Approach                                                                                                                 | Verdict                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keep real ClamAV inside one big `@Transactional completeUploadSession`                                                   | **No** — holds DB locks/connection across slow I/O; amplifies failure window after irreversible finalize                                                       |
+| Run scan **synchronously** in `/complete`, but **outside** the long TX (after finalized marker, before short persist TX) | **Yes** for v1 — matches Feature 12 “malware is publish gate”                                                                                                  |
+| Move scan to a **background job** and return success before scan finishes                                                | **Not required** for this issue — needs a visibility model (`SCAN_PENDING`, hide from recipients until pass). Defer to Feature 12 / media-processing scale-out |
+
+So: “out of the transaction” ≠ “background job.” Doc 32 owns the former as part of complete restructuring. Persist-early + background scan is a separate product decision — see [33_MEDIA_SCAN_AND_COMPLETE_TX.md](./33_MEDIA_SCAN_AND_COMPLETE_TX.md).
 
 ### Multi-attachment sessions
 
@@ -156,9 +172,9 @@ One `/complete` may finalize several attachments. Each attachment should carry i
 
 ## Recommendation
 
-1. Add a durable per-attachment “object finalized” marker (new `UploadSessionStatus` and/or column) that survives failure of the outer complete transaction (`REQUIRES_NEW` or equivalent after successful `completeMultipartUpload`).
+1. Add a durable per-attachment “object finalized” marker (new `UploadSessionStatus` and/or column) that survives failure of later complete steps (`REQUIRES_NEW` or equivalent after successful `completeMultipartUpload`).
 2. Make `finalizeAndVerifyUploadedObject` idempotent: if marker set (or equivalently: multipart already consumed and object exists + marker), skip `completeMultipartUpload`.
-3. Keep scan + message persistence in the main complete TX; retries resume from verification onward.
+3. Restructure `/complete` roughly as: finalize (+ checkpoint) → `assertClean` outside long TX → short TX for message persistence. Retries resume from verification/scan/persist without reusing a consumed multipart id.
 4. For malware block (and similar hard fails), prefer delete/quarantine compensation rather than leaving a readable orphan.
 5. Add tests: provider complete succeeds then persist throws → retry skips complete and succeeds; already-finalized attachment never calls `completeMultipartUpload` again.
 6. **Do not implement yet** — this doc is for design review. Update **Implementation details** after coding; do not rewrite **Recommendation**.
@@ -169,6 +185,7 @@ Open points for review:
 - Marker TX: `REQUIRES_NEW` on a small helper vs explicit `TransactionTemplate`?
 - Should single-part also set the same marker for a uniform resume path?
 - Interaction with future orphan-cleanup jobs (Feature 12 hardening).
+- Confirm v1 keeps synchronous scan-as-publish-gate (out of TX only); defer background scan unless product wants `SCAN_PENDING` visibility.
 
 ## Implementation details
 
@@ -176,7 +193,7 @@ Open points for review:
 
 ## Lesson (look back here)
 
-Provider multipart complete is not covered by DB rollback. Anything after it must either **compensate** (delete) or **checkpoint** (durable finalized marker) so retries never reuse a consumed `multipartUploadId`. Setting `UPLOAD_COMPLETED` only in the same TX as finalize is not a recoverable checkpoint.
+Provider multipart complete is not covered by DB rollback. Anything after it must either **compensate** (delete) or **checkpoint** (durable finalized marker) so retries never reuse a consumed `multipartUploadId`. Setting `UPLOAD_COMPLETED` only in the same TX as finalize is not a recoverable checkpoint. Slow work such as malware scan should not sit inside that same long TX either — but moving it out of the TX is not the same as making it a background job.
 
 ## Future Higher-Scale Path
 
