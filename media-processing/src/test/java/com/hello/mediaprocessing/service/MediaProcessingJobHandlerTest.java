@@ -134,6 +134,77 @@ class MediaProcessingJobHandlerTest {
     }
 
     /**
+     * Verifies that deferred jobs are not permanently deduplicated and can be retried later.
+     */
+    @Test
+    void handle_deferredJob_allowsRetry() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoTranscode(false);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-deferred", List.of(ProcessingTarget.TRANSCODE));
+
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
+    }
+
+    /**
+     * Verifies that source-load failures release the in-progress claim so the job can be retried.
+     */
+    @Test
+    void handle_sourceLoadFailure_allowsRetry() {
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler failingHandler = new MediaProcessingJobHandler(
+                new MediaProcessingWorkerProperties(),
+                deduplicationStore,
+                new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+        MediaProcessingJobHandler successfulHandler = new MediaProcessingJobHandler(
+                new MediaProcessingWorkerProperties(),
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-retry-failure", List.of(ProcessingTarget.METADATA));
+
+        assertThat(failingHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(successfulHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+    }
+
+    /**
+     * Verifies that partial progress releases the in-progress claim so later phases can resume.
+     */
+    @Test
+    void handle_partialProgress_allowsRetryUntilMediaReady() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoPoster(true);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL));
+
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+    }
+
+    /**
      * Verifies that source-loading failures are translated into a processing-failed status.
      */
     @Test
