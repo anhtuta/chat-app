@@ -48,9 +48,9 @@ public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessing
 
         ObjectStorageDownloader objectStorageDownloader = downloaderRegistry.getDownloader(job.storageProvider());
         Path workspaceDirectory = workspaceManager.createWorkspace(job.jobId());
-        Path localSourcePath = workspaceManager.resolveLocalSourcePath(workspaceDirectory, job.objectKey());
 
         try {
+            Path localSourcePath = workspaceManager.resolveLocalSourcePath(workspaceDirectory, job.objectKey());
             ObjectStorageDownloadResult downloadResult = objectStorageDownloader.download(
                     job.bucket(),
                     job.objectKey(),
