@@ -3,7 +3,7 @@ package com.hello.mediaprocessing.service;
 import com.hello.mediaprocessing.config.MediaProcessingVideoMetadataProperties;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Verifies ffprobe JSON mapping for the Phase 4 metadata extractor.
@@ -41,12 +41,12 @@ class FfprobeVideoMetadataExtractorTest {
                 """,
                 "video/mp4");
 
-        assertEquals(12_345L, metadata.durationMillis());
-        assertEquals(1920, metadata.width());
-        assertEquals(1080, metadata.height());
-        assertEquals("video/mp4", metadata.detectedMimeType());
-        assertEquals("mov,mp4,m4a,3gp,3g2,mj2", metadata.containerFormat());
-        assertEquals("h264", metadata.videoCodec());
-        assertEquals("aac", metadata.audioCodec());
+        assertThat(metadata.durationMillis()).isEqualTo(12_345L);
+        assertThat(metadata.width()).isEqualTo(1920);
+        assertThat(metadata.height()).isEqualTo(1080);
+        assertThat(metadata.detectedMimeType()).isEqualTo("video/mp4");
+        assertThat(metadata.containerFormat()).isEqualTo("mov,mp4,m4a,3gp,3g2,mj2");
+        assertThat(metadata.videoCodec()).isEqualTo("h264");
+        assertThat(metadata.audioCodec()).isEqualTo("aac");
     }
 }

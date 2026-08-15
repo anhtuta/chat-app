@@ -6,9 +6,8 @@ import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers downloader registration and provider-based lookup for object-storage routing.
@@ -28,8 +27,8 @@ class ObjectStorageDownloaderRegistryTest {
         ObjectStorageDownloaderRegistry registry =
                 new ObjectStorageDownloaderRegistry(List.of(minioDownloader, s3Downloader), storageProperties);
 
-        assertSame(s3Downloader, registry.getConfiguredDownloader());
-        assertSame(minioDownloader, registry.getDownloader(ObjectStorageProviderType.MINIO));
+        assertThat(registry.getConfiguredDownloader()).isSameAs(s3Downloader);
+        assertThat(registry.getDownloader(ObjectStorageProviderType.MINIO)).isSameAs(minioDownloader);
     }
 
     /**
@@ -40,12 +39,10 @@ class ObjectStorageDownloaderRegistryTest {
         MediaProcessingStorageProperties storageProperties = new MediaProcessingStorageProperties();
         storageProperties.setProvider(ObjectStorageProviderType.S3);
 
-        IllegalStateException exception = assertThrows(
-                IllegalStateException.class,
-                () -> new ObjectStorageDownloaderRegistry(
-                        List.of(new StubDownloader(ObjectStorageProviderType.MINIO)), storageProperties));
-
-        assertTrue(exception.getMessage().contains("S3"));
+        assertThatThrownBy(() -> new ObjectStorageDownloaderRegistry(
+                        List.of(new StubDownloader(ObjectStorageProviderType.MINIO)), storageProperties))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("S3");
     }
 
     /**

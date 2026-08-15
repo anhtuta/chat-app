@@ -15,7 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Covers the initial worker state machine added in the implemented phases.
@@ -43,7 +43,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-1", List.of(ProcessingTarget.METADATA)));
 
-        assertEquals(MediaProcessingJobStatus.MEDIA_READY, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
     }
 
     /**
@@ -60,8 +60,8 @@ class MediaProcessingJobHandlerTest {
                 validator);
 
         MediaProcessingJobMessage job = buildVideoJob("job-dup", List.of(ProcessingTarget.METADATA));
-        assertEquals(MediaProcessingJobStatus.MEDIA_READY, handler.handle(job));
-        assertEquals(MediaProcessingJobStatus.SKIPPED_DUPLICATE, handler.handle(job));
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.SKIPPED_DUPLICATE);
     }
 
     /**
@@ -81,7 +81,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-2", List.of(ProcessingTarget.TRANSCODE)));
 
-        assertEquals(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
     }
 
     /**
@@ -102,7 +102,7 @@ class MediaProcessingJobHandlerTest {
         MediaProcessingJobStatus status = handler.handle(
                 buildVideoJob("job-partial", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL)));
 
-        assertEquals(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
     }
 
     /**
@@ -120,7 +120,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
 
-        assertEquals(MediaProcessingJobStatus.PROCESSING_FAILED, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
     }
 
     /**

@@ -18,11 +18,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Covers workspace creation, provider routing, cleanup, and typed failure handling for source loading.
@@ -43,13 +40,13 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
 
         LoadedMediaSource source = sourceLoader.load(buildJob("job-success", ObjectStorageProviderType.MINIO));
 
-        assertTrue(Files.exists(source.getLocalFile()));
-        assertEquals("video/mp4", source.getContentType());
+        assertThat(Files.exists(source.getLocalFile())).isTrue();
+        assertThat(source.getContentType()).isEqualTo("video/mp4");
         Path workspaceDirectory = source.getWorkspaceDirectory();
 
         source.close();
 
-        assertFalse(Files.exists(workspaceDirectory));
+        assertThat(Files.exists(workspaceDirectory)).isFalse();
     }
 
     /**
@@ -61,12 +58,12 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
                 ObjectStorageProviderType.MINIO,
                 new MissingSourceDownloader(ObjectStorageProviderType.MINIO));
 
-        MediaProcessingSourceLoadException exception = assertThrows(
-                MediaProcessingSourceLoadException.class,
-                () -> sourceLoader.load(buildJob("job-missing", ObjectStorageProviderType.MINIO)));
+        assertThatThrownBy(() -> sourceLoader.load(buildJob("job-missing", ObjectStorageProviderType.MINIO)))
+                .isInstanceOf(MediaProcessingSourceLoadException.class)
+                .satisfies(exception -> assertThat(((MediaProcessingSourceLoadException) exception).getFailureReason())
+                        .isEqualTo(MediaProcessingFailureReason.SOURCE_MISSING));
 
-        assertEquals(MediaProcessingFailureReason.SOURCE_MISSING, exception.getFailureReason());
-        assertTrue(isWorkspaceBaseEmpty());
+        assertThat(isWorkspaceBaseEmpty()).isTrue();
     }
 
     /**
@@ -80,13 +77,13 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
                 new TrackingDownloader(ObjectStorageProviderType.MINIO, downloadedBucket),
                 new TrackingDownloader(ObjectStorageProviderType.S3, downloadedBucket));
 
-        MediaProcessingSourceLoadException exception = assertThrows(
-                MediaProcessingSourceLoadException.class,
-                () -> sourceLoader.load(buildJob("job-mismatch", ObjectStorageProviderType.S3)));
+        assertThatThrownBy(() -> sourceLoader.load(buildJob("job-mismatch", ObjectStorageProviderType.S3)))
+                .isInstanceOf(MediaProcessingSourceLoadException.class)
+                .satisfies(exception -> assertThat(((MediaProcessingSourceLoadException) exception).getFailureReason())
+                        .isEqualTo(MediaProcessingFailureReason.STORAGE_PROVIDER_MISMATCH));
 
-        assertEquals(MediaProcessingFailureReason.STORAGE_PROVIDER_MISMATCH, exception.getFailureReason());
-        assertNull(downloadedBucket.get());
-        assertTrue(isWorkspaceBaseEmpty());
+        assertThat(downloadedBucket).hasNullValue();
+        assertThat(isWorkspaceBaseEmpty()).isTrue();
     }
 
     /**
@@ -101,8 +98,8 @@ class ObjectStorageMediaProcessingSourceLoaderTest {
                 new RoutingDownloader(ObjectStorageProviderType.S3, routedProvider));
 
         try (LoadedMediaSource source = sourceLoader.load(buildJob("job-s3", ObjectStorageProviderType.S3))) {
-            assertEquals(ObjectStorageProviderType.S3, routedProvider.get());
-            assertTrue(Files.exists(source.getLocalFile()));
+            assertThat(routedProvider).hasValue(ObjectStorageProviderType.S3);
+            assertThat(Files.exists(source.getLocalFile())).isTrue();
         }
     }
 
