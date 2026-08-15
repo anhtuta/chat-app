@@ -200,12 +200,28 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
      *
      * @param durationString duration value reported by ffprobe
      * @return duration in milliseconds
+     * @throws VideoMetadataExtractionException when the duration is missing, unparsable, non-finite, or negative
      */
     private long parseDurationMillis(String durationString) {
         if (durationString == null || durationString.isBlank()) {
-            return 0L;
+            throw new VideoMetadataExtractionException("ffprobe returned a missing or blank duration");
         }
-        double seconds = Double.parseDouble(durationString);
+
+        String normalizedDuration = durationString.trim();
+        final double seconds;
+        try {
+            seconds = Double.parseDouble(normalizedDuration);
+        } catch (NumberFormatException e) {
+            throw new VideoMetadataExtractionException(
+                    "ffprobe returned an invalid duration value: " + normalizedDuration,
+                    e);
+        }
+
+        if (!Double.isFinite(seconds) || seconds < 0) {
+            throw new VideoMetadataExtractionException(
+                    "ffprobe returned an invalid duration value: " + normalizedDuration);
+        }
+
         return Duration.ofMillis(Math.round(seconds * 1000)).toMillis();
     }
 
