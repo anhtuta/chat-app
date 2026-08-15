@@ -24,7 +24,11 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
+/**
+ * Chat message row ({@code messages}): text, media, and system events.
+ */
 @Entity
 @Table(name = "messages")
 @Getter
@@ -39,9 +43,9 @@ public class Message {
     /**
      * Primary user on the message row ({@code messages.user_id}).
      * <ul>
-     *   <li>{@link MessageType#TEXT} / media: the author who sent the message</li>
-     *   <li>{@link MessageType#SYSTEM}: the <em>subject</em> of the event (who joined, was kicked,
-     *       was promoted, etc.), not necessarily who performed the action</li>
+     * <li>{@link MessageType#TEXT} / media: the author who sent the message</li>
+     * <li>{@link MessageType#SYSTEM}: the <em>subject</em> of the event (who joined, was kicked,
+     * was promoted, etc.), not necessarily who performed the action</li>
      * </ul>
      */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -67,12 +71,12 @@ public class Message {
     /**
      * Second user reference ({@code messages.updated_by}). Meaning depends on message type:
      * <ul>
-     *   <li>{@link MessageType#TEXT}: who last edited the message content (with {@code updatedAt});
-     *       null until the first edit</li>
-     *   <li>{@link MessageType#SYSTEM}: the <em>actor</em> who performed the event (exposed to clients
-     *       as {@code systemEventActor}); may equal {@link #user} for self-actions such as leave
-     *       or self-join</li>
-     *   <li>media: typically unused for content edits (media is not editable)</li>
+     * <li>{@link MessageType#TEXT}: who last edited the message content (with {@code updatedAt});
+     * null until the first edit</li>
+     * <li>{@link MessageType#SYSTEM}: the <em>actor</em> who performed the event (exposed to clients
+     * as {@code systemEventActor}); may equal {@link #user} for self-actions such as leave
+     * or self-join</li>
+     * <li>media: typically unused for content edits (media is not editable)</li>
      * </ul>
      */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -93,6 +97,17 @@ public class Message {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    /**
+     * Optimistic lock counter ({@code messages.version}). Hibernate includes it in
+     * {@code UPDATE … WHERE version = ?} and increments on a successful flush.
+     * Concurrent edit/delete of a stale snapshot fails with 409 instead of last-write-wins.
+     * Leave {@code null} on new transient instances so Hibernate treats them as unsaved.
+     * Distinct from {@link #updatedAt}, which is business “last content edit” time.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
 
     @OneToMany(mappedBy = "message", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("attachmentOrder ASC, id ASC")

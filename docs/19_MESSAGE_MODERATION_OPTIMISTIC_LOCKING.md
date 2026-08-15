@@ -1,5 +1,7 @@
 # Message Moderation Optimistic Locking
 
+Severity: 🟠 Major
+
 ## Current Problem
 
 `MessageModerationService.editMessage` / `deleteMessage` load a message with `findWithMediaById` (no lock) and then `save` it. `Message` has no `@Version` field.
@@ -67,7 +69,7 @@ These are lost updates on `messages`: **time of check** = unlocked load + in-mem
 
 ### 1. Dedicated `@Version` column (optimistic locking)
 
-- How it works: Add `messages.version BIGINT NOT NULL DEFAULT 0` and `@Version` on `Message`. Hibernate includes `version` in `UPDATE … WHERE id=? AND version=?` and increments on successful flush. Map `OptimisticLockException` / `ObjectOptimisticLockingFailureException` to HTTP 409; client refreshes and retries.
+- How it works: Add `messages.version INTEGER NOT NULL DEFAULT 0` and `@Version` on `Message`. Hibernate includes `version` in `UPDATE … WHERE id=? AND version=?` and increments on successful flush. Map `OptimisticLockException` / `ObjectOptimisticLockingFailureException` to HTTP 409; client refreshes and retries.
 - Pros: Standard JPA approach; protects edit and delete; keeps edit-history chain consistent under conflict (loser fails instead of writing stale `oldContent`); no row lock held for the whole TX.
 - Cons: Requires a migration and API/error-contract handling; FE must handle 409.
 - Recommendation for our problem: **Yes** (preferred when we fix this).
@@ -119,13 +121,29 @@ These are lost updates on `messages`: **time of check** = unlocked load + in-mem
 
 ## Implementation details
 
-(Planned — not implemented yet.)
+- Added Flyway `V10__add_messages_version.sql`: `messages.version INTEGER NOT NULL DEFAULT 0` (existing rows backfill to 0). Java type is `Integer` (nullable on new transient instances).
+- Added JPA `@Version` on `Message.version`. Left new in-memory instances `null` so Hibernate treats them as transient. `updated_at` stays business edit time.
+  - Tức là KHÔNG init giá trị cho cột version = 0 (để nó = `null`), nếu không khi insert, Hibernate sẽ tưởng đây là đang update.
+- `GlobalExceptionHandler` maps `OptimisticLockingFailureException` to HTTP **409** with a stable string (no Hibernate details). The losing TX rolls back, including any `message_edit_history` insert.
+- `MessageModerationService` is unchanged: `save` still flushes the versioned row; conflict surfaces at flush/commit.
+- Tests: `GlobalExceptionHandlerTest` (409 body), `MessageModerationServiceTest` (edit/delete propagate lock failure).
+- FE: no If-Match/`version` field yet. Existing `handleErrorResponse` shows the 409 body; reload-and-retry is still optional.
 
-When implementing, record here:
+Why it changed: concurrent edit/delete on the same row was last-write-wins and could skip history versions.
 
-- What changed (migration, entity, exception handling, tests, FE if any)
-- Why it changed
-- Rollout / migration / backward-compatibility notes (`DEFAULT 0` backfill, old clients ignoring 409, etc.)
+Rollout / backward-compatibility: `DEFAULT 0` backfill; old clients that ignore 409 still get a failed request instead of a silent overwrite. Re-run Flyway on each environment before deploying the entity change.
+
+Test: when editing a message, here is the generated SQL:
+
+```sql
+UPDATE messages
+SET content=?,deleted_at=?,deleted_by=?,group_id=?,message_type=?,timestamp=?,updated_at=?,updated_by=?,user_id=?,version=?
+WHERE id=? AND version=?
+```
+
+## Lesson (look back here)
+
+Same-row concurrent `save` without `@Version` is last-write-wins. A dedicated version column (not `updated_at`) makes the loser fail with 409 and rolls back edit history. Membership races (doc 23) still need a different lock.
 
 ## Future Higher-Scale Path
 

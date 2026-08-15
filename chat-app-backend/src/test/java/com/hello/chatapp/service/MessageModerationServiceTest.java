@@ -14,14 +14,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for {@link MessageModerationService} edit/delete persistence and optimistic-lock propagation.
+ */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class MessageModerationServiceTest {
@@ -65,6 +70,9 @@ class MessageModerationServiceTest {
         message.setTimestamp(LocalDateTime.now().minusMinutes(1));
     }
 
+    /**
+     * Saves history and content, then refreshes the group latest-message preview when needed.
+     */
     @Test
     void editMessage_savesHistoryAndRefreshesGroupSummary() {
         MessageResponse response = MessageResponse.builder().id(10L).content("updated").build();
@@ -89,6 +97,36 @@ class MessageModerationServiceTest {
         assertThat(result).isSameAs(response);
     }
 
+    /**
+     * Stale {@code @Version} on save must propagate so {@link com.hello.chatapp.exception.GlobalExceptionHandler}
+     * can map it to HTTP 409 (the whole TX including edit history rolls back).
+     */
+    @Test
+    void editMessage_propagatesOptimisticLockFailure() {
+        when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
+        when(messageRepository.save(message))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Message.class, 10L));
+
+        assertThatThrownBy(() -> messageModerationService.editMessage(actor, 10L, "updated"))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    /**
+     * Concurrent delete of a stale snapshot must fail the same way as a stale edit.
+     */
+    @Test
+    void deleteMessage_propagatesOptimisticLockFailure() {
+        when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
+        when(messageRepository.save(message))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Message.class, 10L));
+
+        assertThatThrownBy(() -> messageModerationService.deleteMessage(actor, 10L))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    /**
+     * Soft-delete sets deleted metadata and refreshes the group preview.
+     */
     @Test
     void deleteMessage_setsDeletedMetadataAndRefreshesGroupSummary() {
         MessageResponse response = MessageResponse.builder().id(10L).deletedAt(LocalDateTime.now()).build();
