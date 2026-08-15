@@ -1,4 +1,4 @@
-.PHONY: help start start.all upd upbd upbd.instance-2
+.PHONY: help start start.all upd upd.full upbd upbd.instance-2
 .PHONY: build.fe run.local run.be debug.prepare run.fe run.bot
 .PHONY: stop restart restart.be2 logs clean status check.env check.env.local
 .PHONY: db.migrate db.info db.clean db.repair
@@ -75,14 +75,21 @@ start.all: check.env
 	docker-compose --profile multi-instance up -d --build
 	@echo "✅ Services started!"
 
+# Minimal infrastructure services
 upd: check.env
 	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
+	@echo "Bringing up infrastructure containers without chat instances..."
+	docker-compose up -d postgres redis rabbitmq minio
+	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
+
+upd.full: check.env
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, Minio) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
 	docker-compose up -d postgres redis rabbitmq prometheus grafana minio instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 upbd: check.env
-	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, Minio) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
 	docker-compose up -d --build postgres redis rabbitmq prometheus grafana minio instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
