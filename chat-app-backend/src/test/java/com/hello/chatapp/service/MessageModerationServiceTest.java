@@ -3,8 +3,10 @@ package com.hello.chatapp.service;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.Group;
+import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.repository.MessageEditHistoryRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,7 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link MessageModerationService} edit/delete, group lock-before-auth, and optimistic-lock propagation.
+ * Unit tests for {@link MessageModerationService} edit/delete, participant lock-before-auth, and optimistic-lock propagation.
  */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
@@ -76,7 +78,8 @@ class MessageModerationServiceTest {
         message.setContent("hello");
         message.setTimestamp(LocalDateTime.now().minusMinutes(1));
 
-        lenient().when(groupMembershipService.lockActiveGroup(100L)).thenReturn(group);
+        lenient().when(groupMembershipService.lockActorParticipantForModeration(100L, 1L))
+                .thenReturn(new GroupParticipant());
     }
 
     /**
@@ -105,7 +108,7 @@ class MessageModerationServiceTest {
         verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
         var inOrder = inOrder(groupMembershipService, groupAuthorizationService);
-        inOrder.verify(groupMembershipService).lockActiveGroup(100L);
+        inOrder.verify(groupMembershipService).lockActorParticipantForModeration(100L, 1L);
         inOrder.verify(groupAuthorizationService).requireCanEditMessage(actor, message);
     }
 
@@ -154,12 +157,12 @@ class MessageModerationServiceTest {
         verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
         var inOrder = inOrder(groupMembershipService, groupAuthorizationService);
-        inOrder.verify(groupMembershipService).lockActiveGroup(100L);
+        inOrder.verify(groupMembershipService).lockActorParticipantForModeration(100L, 1L);
         inOrder.verify(groupAuthorizationService).requireCanDeleteMessage(actor, message);
     }
 
     /**
-     * Public messages have no group row — do not take the membership lifecycle lock.
+     * Public messages have no participant row — do not take a membership lock.
      */
     @Test
     void editMessage_publicMessage_skipsGroupLock() {
@@ -172,7 +175,22 @@ class MessageModerationServiceTest {
 
         messageModerationService.editMessage(actor, 10L, "updated");
 
-        verify(groupMembershipService, never()).lockActiveGroup(anyLong());
+        verify(groupMembershipService, never()).lockActorParticipantForModeration(anyLong(), anyLong());
         verify(groupAuthorizationService).requireCanEditMessage(actor, message);
+    }
+
+    /**
+     * Missing membership must fail before {@code requireCanEditMessage} (kicked user has no row to lock).
+     */
+    @Test
+    void editMessage_missingParticipant_skipsAuth() {
+        when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
+        when(groupMembershipService.lockActorParticipantForModeration(100L, 1L))
+                .thenThrow(new ForbiddenException("You are not a member of this group"));
+
+        assertThatThrownBy(() -> messageModerationService.editMessage(actor, 10L, "updated"))
+                .isInstanceOf(ForbiddenException.class);
+        verify(groupAuthorizationService, never()).requireCanEditMessage(actor, message);
+        verify(messageRepository, never()).save(message);
     }
 }

@@ -351,6 +351,28 @@ public class GroupMembershipService {
     }
 
     /**
+     * Locks the actor’s {@code group_participants} row for group message edit/delete (doc 23).
+     * <p>
+     * Kick/ban/leave {@code DELETE} and demote {@code UPDATE} that same row wait on this lock,
+     * so membership cannot change between {@code requireCan*} and the message save. Other members’
+     * participant rows are independent — concurrent unrelated edits are not serialized.
+     * Must run inside the caller’s write transaction (no {@code REQUIRES_NEW}).
+     *
+     * @param groupId group the message belongs to
+     * @param userId actor whose membership/role is being authorized
+     * @return the locked participant
+     */
+    public GroupParticipant lockActorParticipantForModeration(Long groupId, Long userId) {
+        Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
+        Long safeUserId = Objects.requireNonNull(userId, "userId must not be null");
+        GroupParticipant participant = groupParticipantRepository
+                .findByGroupIdAndUserIdForUpdate(safeGroupId, safeUserId)
+                .orElseThrow(() -> new ForbiddenException("You are not a member of this group"));
+        ensureActive(participant.getGroup());
+        return participant;
+    }
+
+    /**
      * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
      * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
      *
@@ -396,13 +418,12 @@ public class GroupMembershipService {
      * <p>
      * Call this from an existing write transaction <em>before</em> authorization so concurrent
      * kick/ban/demote/leave/archive cannot invalidate a permission check that already passed.
-     * Shared mutex for membership mutations (docs 21/24) and group message edit/delete (doc 23).
-     * Public messages have no group row — skip this lock.
+     * Shared mutex for membership mutations (docs 21/24).
      *
      * @param groupId group to lock
      * @return the locked active group
      */
-    public Group lockActiveGroup(Long groupId) {
+    private Group lockActiveGroup(Long groupId) {
         Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
         return group;

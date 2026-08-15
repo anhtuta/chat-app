@@ -3,9 +3,11 @@ package com.hello.chatapp.repository;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -93,6 +95,19 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             WHERE gp.group.id = :groupId AND gp.user.id = :userId
             """)
     Optional<GroupParticipant> findByGroupIdAndUserId(
+            @Param("groupId") Long groupId,
+            @Param("userId") Long userId);
+
+    /**
+     * Locks the actor’s membership row ({@code SELECT … FOR UPDATE}) without joining {@code groups},
+     * so concurrent edits by different members do not serialize on the group row.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            WHERE gp.group.id = :groupId AND gp.user.id = :userId
+            """)
+    Optional<GroupParticipant> findByGroupIdAndUserIdForUpdate(
             @Param("groupId") Long groupId,
             @Param("userId") Long userId);
 

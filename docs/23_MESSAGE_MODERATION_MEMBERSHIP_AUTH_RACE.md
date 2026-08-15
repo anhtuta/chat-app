@@ -93,15 +93,23 @@ These are TOCTOU:
 
 ### After the fix
 
-Group edit/delete take `lockActiveGroup` before auth, then save under that lock.
+~~Group edit/delete take `lockActiveGroup` before auth, then save under that lock.~~
 
-| Example                            | What happens after the fix                                                                                                                       |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Kick vs own edit                | Kick and edit queue on the group row. If kick commits first, Alice’s `requireMember` fails. If edit commits first, kick proceeds after the edit. |
-| 2. Ban vs own delete               | Same serialization; ban cannot land between auth and save.                                                                                       |
-| 3. Demote vs edit others           | Demote and edit serialize; after demote, `EDIT_ANY_TEXT_MESSAGE` fails.                                                                          |
-| 4. Kick co-leader vs delete others | After kick, `DELETE_ANY_MESSAGE` / membership check fails.                                                                                       |
-| 5. Leave vs own edit               | Leave and edit serialize; after leave, `requireMember` fails.                                                                                    |
+Group edit/delete take `SELECT … FOR UPDATE` on the **actor’s** `group_participants` row before auth, then save under that lock. Kick/ban/leave `DELETE` and demote `UPDATE` that same row wait; unrelated members editing other messages do not share that lock.
+
+| Example                            | What happens after the fix                                                                                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Kick vs own edit                | Kick’s delete of Alice’s participant waits on Alice’s row lock (or Alice’s lock fails if kick already deleted it). Auth and save cannot split around kick. |
+| 2. Ban vs own delete               | Same serialization on Alice’s participant row.                                                                                                             |
+| 3. Demote vs edit others           | Demote’s role `UPDATE` waits on Alice’s participant lock; after demote, `EDIT_ANY_TEXT_MESSAGE` fails.                                                     |
+| 4. Kick co-leader vs delete others | After kick, Alice has no row to lock / `requireMember` fails.                                                                                              |
+| 5. Leave vs own edit               | Leave’s delete waits on the same participant row; after leave, `requireMember` fails.                                                                      |
+
+Tại sao KHÔNG dùng `lockActiveGroup`?
+
+- Cách này không sai, nhưng ko tối ưu.
+- Nếu 1 group có rất nhiều member, và nhiều người cùng edit message 1 lúc, thì khi lock group, mọi lượt edit sẽ bị tuần tự hoá (serialized).
+- Alice editing her message and Charlie editing his do not share auth state, so they should not wait on each other.
 
 ## Not the same as doc 19
 
@@ -140,13 +148,13 @@ Treat as a **separate** follow-up from message `@Version` (doc 19). Prefer locki
 
 ## Implementation details
 
-- Reused `GroupMembershipService.lockActiveGroup` (`SELECT … FOR UPDATE` on `groups` + `ensureActive`) instead of a new participant-row lock. Same mutex as kick/ban/leave/demote (doc 24), so those TXs serialize with group edit/delete. No extra lock-order risk.
-- `MessageModerationService` calls `lockActiveGroup` **before** `requireCanEditMessage` / `requireCanDeleteMessage` for group messages. Public messages skip the lock (no group row).
-- Made `lockActiveGroup` public so moderation can share it. Still must run inside the caller’s write transaction (no `REQUIRES_NEW`).
-- Unit tests: lock-before-auth order on group edit/delete; public edit never locks.
-- Archived groups now fail group moderation via `ensureActive` (same as other membership mutations).
+- Group edit/delete call `GroupMembershipService.lockActorParticipantForModeration` (`SELECT … FOR UPDATE` on the actor’s `group_participants` row, no join-lock on `groups`) **before** `requireCanEditMessage` / `requireCanDeleteMessage`. Public messages skip the lock.
+- Kick/ban/leave/demote still lock `groups` first (docs 21/24). They serialize with moderation because they `DELETE`/`UPDATE` the same participant row the edit holds — no extra `FOR UPDATE` on that row is required.
+- Group-summary refresh (`refreshGroupLatestMessage` updates `groups`) runs in `AfterCommit` so the moderation TX does not `UPDATE groups` while holding the participant lock (that order deadlocks with kick: group lock then participant delete).
+- `ensureActive` still runs after the participant lock (lazy load of `group`); archived groups reject moderation.
+- Unit tests: participant lock-before-auth; public edit never locks; missing participant never reaches auth.
 
-Why it changed: unlocked auth then message save allowed a concurrent kick/ban/demote to revoke rights before commit.
+Why it changed: a `groups` row lock was correct for kick vs edit but serialized every concurrent edit in a large group. The planned mutex is the actor’s membership row.
 
 ## Lesson (look back here)
 
