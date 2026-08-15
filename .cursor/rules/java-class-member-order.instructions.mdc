@@ -1,12 +1,12 @@
 ---
 description: "Order fields, constructors, and methods in Java classes by visibility and annotations."
-globs: "**/*.java"
+globs: **/*.java
 alwaysApply: false
 ---
 
 # Java Class Member Order
 
-When adding or rearranging members in a Java class, follow this order top to bottom.
+When adding members in a Java class, follow this order top to bottom.
 
 ## Within each visibility tier
 
@@ -38,8 +38,7 @@ Apply the same sub-order for **fields**, **constructors**, and **methods**:
 
 - Put **fields before constructors**, and **constructors before methods**, when visibility and annotation order are the same.
 - Put **nested types** (inner classes, enums, interfaces, records) at the **end** of the outer class, using the same visibility/annotation ordering inside each nested type.
-- When editing existing classes, reorder only the members you touch unless the user asks for a full-class cleanup.
-- Do not change member order just to satisfy this rule when the change is unrelated to the task.
+- When editing existing classes, DO NOT reorder the members you touch unless the user asks for a full-class cleanup.
 
 ## Example
 

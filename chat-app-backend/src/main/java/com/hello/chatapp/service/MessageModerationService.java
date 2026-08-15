@@ -15,12 +15,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
+/**
+ * Edit and soft-delete for chat messages. Group mutations take the membership lifecycle lock
+ * before auth so kick/ban/demote cannot race the write (see {@code docs/23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md}).
+ */
 @Service
 public class MessageModerationService {
 
     private final MessageRepository messageRepository;
     private final MessageEditHistoryRepository messageEditHistoryRepository;
     private final GroupAuthorizationService groupAuthorizationService;
+    private final GroupMembershipService groupMembershipService;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageService messageService;
 
@@ -28,11 +33,13 @@ public class MessageModerationService {
             MessageRepository messageRepository,
             MessageEditHistoryRepository messageEditHistoryRepository,
             GroupAuthorizationService groupAuthorizationService,
+            GroupMembershipService groupMembershipService,
             MessageResponseMapper messageResponseMapper,
             MessageService messageService) {
         this.messageRepository = messageRepository;
         this.messageEditHistoryRepository = messageEditHistoryRepository;
         this.groupAuthorizationService = groupAuthorizationService;
+        this.groupMembershipService = groupMembershipService;
         this.messageResponseMapper = messageResponseMapper;
         this.messageService = messageService;
     }
@@ -40,6 +47,7 @@ public class MessageModerationService {
     @Transactional
     public MessageResponse editMessage(User actor, Long messageId, String content) {
         Message message = loadMessage(messageId);
+        lockGroupMembershipIfNeeded(message);
         groupAuthorizationService.requireCanEditMessage(actor, message);
         if (message.getDeletedAt() != null) {
             throw new BadRequestException("Deleted messages cannot be edited");
@@ -71,6 +79,7 @@ public class MessageModerationService {
     @Transactional
     public MessageResponse deleteMessage(User actor, Long messageId) {
         Message message = loadMessage(messageId);
+        lockGroupMembershipIfNeeded(message);
         groupAuthorizationService.requireCanDeleteMessage(actor, message);
         if (message.getDeletedAt() != null) {
             throw new BadRequestException("Message is already deleted");
@@ -89,6 +98,17 @@ public class MessageModerationService {
         Long safeMessageId = Objects.requireNonNull(messageId, "messageId must not be null");
         return messageRepository.findWithMediaById(safeMessageId)
                 .orElseThrow(() -> new NotFoundException("Message with id " + safeMessageId + " not found"));
+    }
+
+    /**
+     * Serializes group message edit/delete with kick/ban/leave on the same {@code groups} row.
+     * Public messages have no group — skip.
+     */
+    private void lockGroupMembershipIfNeeded(Message message) {
+        if (message.getGroup() == null || message.getGroup().getId() == null) {
+            return;
+        }
+        groupMembershipService.lockActiveGroup(message.getGroup().getId());
     }
 
     private String normalizeContent(String content) {

@@ -394,11 +394,15 @@ public class GroupMembershipService {
     /**
      * Acquires a pessimistic write lock on the group lifecycle row and ensures the group is active.
      * <p>
-     * All membership/role mutations must call this <em>before</em> authorization so concurrent
-     * demotion/kick/archive cannot invalidate a permission check that already passed.
-     * Also serializes last-member leave vs add/join (see docs/21 and docs/24).
+     * Call this from an existing write transaction <em>before</em> authorization so concurrent
+     * kick/ban/demote/leave/archive cannot invalidate a permission check that already passed.
+     * Shared mutex for membership mutations (docs 21/24) and group message edit/delete (doc 23).
+     * Public messages have no group row — skip this lock.
+     *
+     * @param groupId group to lock
+     * @return the locked active group
      */
-    private Group lockActiveGroup(Long groupId) {
+    public Group lockActiveGroup(Long groupId) {
         Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
         return group;

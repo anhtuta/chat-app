@@ -21,11 +21,15 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for {@link MessageModerationService} edit/delete persistence and optimistic-lock propagation.
+ * Unit tests for {@link MessageModerationService} edit/delete, group lock-before-auth, and optimistic-lock propagation.
  */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
@@ -39,6 +43,9 @@ class MessageModerationServiceTest {
 
     @Mock
     private GroupAuthorizationService groupAuthorizationService;
+
+    @Mock
+    private GroupMembershipService groupMembershipService;
 
     @Mock
     private MessageResponseMapper messageResponseMapper;
@@ -68,6 +75,8 @@ class MessageModerationServiceTest {
         message.setGroup(group);
         message.setContent("hello");
         message.setTimestamp(LocalDateTime.now().minusMinutes(1));
+
+        lenient().when(groupMembershipService.lockActiveGroup(100L)).thenReturn(group);
     }
 
     /**
@@ -95,6 +104,9 @@ class MessageModerationServiceTest {
         assertThat(message.getUpdatedAt()).isNotNull();
         verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
+        var inOrder = inOrder(groupMembershipService, groupAuthorizationService);
+        inOrder.verify(groupMembershipService).lockActiveGroup(100L);
+        inOrder.verify(groupAuthorizationService).requireCanEditMessage(actor, message);
     }
 
     /**
@@ -141,5 +153,26 @@ class MessageModerationServiceTest {
         assertThat(message.getDeletedAt()).isNotNull();
         verify(messageService).refreshGroupLatestMessage(100L, 10L);
         assertThat(result).isSameAs(response);
+        var inOrder = inOrder(groupMembershipService, groupAuthorizationService);
+        inOrder.verify(groupMembershipService).lockActiveGroup(100L);
+        inOrder.verify(groupAuthorizationService).requireCanDeleteMessage(actor, message);
+    }
+
+    /**
+     * Public messages have no group row — do not take the membership lifecycle lock.
+     */
+    @Test
+    void editMessage_publicMessage_skipsGroupLock() {
+        message.setGroup(null);
+        MessageResponse response = MessageResponse.builder().id(10L).content("updated").build();
+
+        when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
+        when(messageRepository.save(message)).thenReturn(message);
+        when(messageResponseMapper.toResponse(message)).thenReturn(response);
+
+        messageModerationService.editMessage(actor, 10L, "updated");
+
+        verify(groupMembershipService, never()).lockActiveGroup(anyLong());
+        verify(groupAuthorizationService).requireCanEditMessage(actor, message);
     }
 }

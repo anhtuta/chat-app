@@ -30,7 +30,7 @@ Thực ra cái lỗi này cũng ko nghiêm trọng lắm, nếu xảy ra cũng k
 
 Role rules from [15_GROUP_ROLES_AND_PERMISSIONS.md](./15_GROUP_ROLES_AND_PERMISSIONS.md): nobody can kick/ban the `LEADER` via manage-target APIs. Own-message races use a `MEMBER`; moderate-anyone races use `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`). Public messages are owner-only and have **no** `group_participants` row — this race does not apply there.
 
-`editMessage` / `deleteMessage` today: load message (no lock) → `requireCanEditMessage` / `requireCanDeleteMessage` (unlocked membership/role read) → mutate + `save`. Kick/ban/leave/demote take the group lifecycle lock (doc 24) but **moderation does not share that lock**, so the two TXs interleave.
+`editMessage` / `deleteMessage` today: load message (no lock) → `requireCanEditMessage` / `requireCanDeleteMessage` (unlocked membership/role read) → mutate + `save`. Kick/ban/leave/demote take the group lifecycle lock (doc 24) but **moderation did not share that lock**, so the two TXs interleave.
 
 #### 1. Kick member, they still edit their own text
 
@@ -91,6 +91,18 @@ These are TOCTOU:
 - **time of check** = unlocked `requireCanEditMessage` / `requireCanDeleteMessage`
 - **time of use** = `messageRepository.save` after membership/role on another table already changed.
 
+### After the fix
+
+Group edit/delete take `lockActiveGroup` before auth, then save under that lock.
+
+| Example                            | What happens after the fix                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1. Kick vs own edit                | Kick and edit queue on the group row. If kick commits first, Alice’s `requireMember` fails. If edit commits first, kick proceeds after the edit. |
+| 2. Ban vs own delete               | Same serialization; ban cannot land between auth and save.                                                                                       |
+| 3. Demote vs edit others           | Demote and edit serialize; after demote, `EDIT_ANY_TEXT_MESSAGE` fails.                                                                          |
+| 4. Kick co-leader vs delete others | After kick, `DELETE_ANY_MESSAGE` / membership check fails.                                                                                       |
+| 5. Leave vs own edit               | Leave and edit serialize; after leave, `requireMember` fails.                                                                                    |
+
 ## Not the same as doc 19
 
 | Doc                                                                                          | Race                                                             | Resource                               | Typical fix                                            |
@@ -128,7 +140,13 @@ Treat as a **separate** follow-up from message `@Version` (doc 19). Prefer locki
 
 ## Implementation details
 
-(Planned — not implemented yet.)
+- Reused `GroupMembershipService.lockActiveGroup` (`SELECT … FOR UPDATE` on `groups` + `ensureActive`) instead of a new participant-row lock. Same mutex as kick/ban/leave/demote (doc 24), so those TXs serialize with group edit/delete. No extra lock-order risk.
+- `MessageModerationService` calls `lockActiveGroup` **before** `requireCanEditMessage` / `requireCanDeleteMessage` for group messages. Public messages skip the lock (no group row).
+- Made `lockActiveGroup` public so moderation can share it. Still must run inside the caller’s write transaction (no `REQUIRES_NEW`).
+- Unit tests: lock-before-auth order on group edit/delete; public edit never locks.
+- Archived groups now fail group moderation via `ensureActive` (same as other membership mutations).
+
+Why it changed: unlocked auth then message save allowed a concurrent kick/ban/demote to revoke rights before commit.
 
 ## Lesson (look back here)
 
