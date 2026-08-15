@@ -196,40 +196,91 @@ flowchart LR
     B -->|5. Persist message + media metadata| E[(Chat Database)]
     B -->|6. Publish cross-instance chat event| G[(RabbitMQ)]
     G -->|event only: message id + metadata| H[Other chat-app-backend instances]
-    B -->|7. Async image/video processing| D
-    B -->|8. Update status / derivatives metadata| E
+    B -->|7. Enqueue image/video processing job| I[media-processing-service\nMicronaut]
+    I -->|8. Read originals / write derivatives| D
+    I -->|9. Update status / derivatives metadata| E
+    I -->|10. Publish processing status event| G
 ```
 
 ### Component placement
 
 Recommendation for this feature:
 
-- implement upload orchestration, malware-scan coordination, and media-processing logic inside the existing `chat-app-backend`
-- do not create two new Spring Boot applications in the first rollout
-- treat malware scanning and media processing as backend modules / jobs, not separate deployable services yet
+- keep upload orchestration, auth/membership checks, upload-session ownership, message persistence, and realtime chat delivery in `chat-app-backend`
+- extract heavy media work into a separate `media-processing-service` built with Micronaut
+- the separate service should own thumbnail generation, metadata extraction, image compression, video poster generation, video transcode, retry/backoff, and worker scaling
+- keep malware scanning as the synchronous publish gate initially, but design the scanner integration so it can move behind the media service later if scan cost becomes high
 
-Future extraction path:
+Why Micronaut is a good fit here:
 
-- if scan/processing load becomes heavy, or if we need stronger isolation and independent scaling, extract those modules into separate worker services later
+- media processing is CPU / I/O heavy and has different scaling needs from chat APIs and WebSocket delivery
+- Micronaut has fast startup, low memory overhead, and a good worker-service profile
+- the service can be independently deployed, tuned, and scaled without risking realtime chat responsiveness
+- the chat backend stays focused on product/domain workflow instead of FFmpeg/image-library execution
+
+Boundary rule:
+
+- do not move chat authorization, group permissions, upload-session finalization, or message creation into the Micronaut service
+- do not send media bytes through RabbitMQ; send only job identifiers and storage metadata pointers
+- make processing jobs idempotent because RabbitMQ/job retries can deliver the same job more than once
 
 ### RabbitMQ role
 
 Recommended role for RabbitMQ:
 
-- use RabbitMQ for cross-instance real-time message delivery only
+- use RabbitMQ for cross-instance real-time message delivery
+- use RabbitMQ or a durable job table as the initial handoff mechanism for Micronaut media-processing jobs
 - do not send media bytes through RabbitMQ
-- do not make RabbitMQ the first background-job queue for scan or media processing
+- keep realtime fan-out events and media-processing job messages on separate exchanges/queues
 
 Why:
 
 - this codebase already uses RabbitMQ for cross-instance fan-out, so media messages should reuse that path
 - file processing is a different workload from real-time chat fan-out
-- the first rollout already keeps scan/processing logic inside `chat-app-backend`, so adding a second RabbitMQ job topology immediately would add operational complexity before it is necessary
+- separating event types prevents slow processing consumers from interfering with chat delivery
 
-Future option:
+Processing job guidance:
 
-- if async processing load grows, RabbitMQ can later be introduced as a lightweight job queue
-- if that happens, queue messages should carry only job identifiers and metadata pointers, never binary file content
+- queue messages should carry only job identifiers and metadata pointers, never binary file content
+- workers must be idempotent because jobs may be retried or redelivered
+- if retry/history requirements outgrow RabbitMQ alone, add a durable `media_processing_jobs` table as the source of truth and use RabbitMQ only as the wake-up signal
+
+### Planned `chat-app-backend` / `media-processing-service` / RabbitMQ communication
+
+Current state:
+
+- Phase 5 still keeps media processing in-process inside `chat-app-backend`.
+- The diagram below is the **target communication plan**, not the current implementation.
+
+Recommended communication plan:
+
+- `chat-app-backend` publishes a post-commit processing job to a **dedicated** RabbitMQ processing exchange/queue.
+- `media-processing-service` consumes that job, reads/writes media in object storage, and computes derived metadata.
+- `media-processing-service` reports completion/failure back to a **narrow internal API** in `chat-app-backend`.
+- `chat-app-backend` remains the only service that republishes updated `MessageResponse` payloads to clients through the existing real-time RabbitMQ flow.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Backend as chat-app-backend
+    participant Jobs as RabbitMQ media-processing queue
+    participant Worker as media-processing-service
+    participant Storage as Object Storage
+    participant Realtime as RabbitMQ realtime exchange
+    participant OtherBackends as other chat-app-backend instances
+
+    Client->>Backend: complete upload
+    Backend->>Backend: persist final message + media rows\nstatus=PROCESSING_PENDING
+    Backend->>Jobs: publish MediaProcessingJobMessage after commit
+    Jobs-->>Worker: deliver job
+    Worker->>Storage: read original object
+    Worker->>Storage: write thumbnails / transcodes / metadata outputs
+    Worker->>Backend: POST internal media-processing callback\nstatus + derivative keys + metadata
+    Backend->>Backend: update message/media state
+    Backend->>Realtime: publish updated MessageResponse
+    Realtime-->>OtherBackends: deliver chat event
+    OtherBackends-->>Client: push refreshed media message
+```
 
 ### Cross-instance media delivery
 
@@ -277,8 +328,8 @@ Suggested backend flow:
 Why this is a good fit:
 
 - simple and well-known first step
-- works without introducing another Spring Boot application
-- keeps the malware engine separate from application code, while still letting the main backend own workflow orchestration
+- keeps the malware engine separate from application code
+- lets the main backend keep first-version publish-gate ownership while leaving a clean path to move scan orchestration behind the Micronaut service later
 
 ### Proposed Domain Model
 
@@ -669,9 +720,19 @@ Suggested Redis keys:
 Recommendation:
 
 - Keep malware scan synchronous as the publish gate
-- Keep image/video compression asynchronous so users can continue chatting while processing finishes
+- Keep image/video compression asynchronous in `media-processing-service` so users can continue chatting while processing finishes
 - Update media status as async processing progresses and finishes
 - Do not expand phase 1 into advanced streaming/transcoding beyond what is necessary for inline playback
+
+Micronaut processing-service responsibilities:
+
+- consume processing jobs created after the chat backend commits the final media message
+- load the original object from MinIO/S3 using a service credential, not user-facing signed URLs
+- generate image thumbnails/previews and optional compressed copies
+- generate video poster thumbnails, extract duration/width/height, and optionally write a transcoded preview
+- update `message_media` status and derivative object keys through a narrow persistence/API contract
+- publish a processing-status event so chat backend instances can republish updated `MessageResponse` payloads to connected clients
+- apply retries with backoff and mark stuck jobs as `PROCESSING_FAILED` rather than leaving media indefinitely pending
 
 ### Frontend UX
 
@@ -740,6 +801,65 @@ For local development:
   - `chat.media.multipart-threshold-bytes`
 - Mirror relevant media settings in `chat-app-backend/.env.example` when they are environment-backed
 
+### Current Multipart Gap Review
+
+As of the current implementation, multipart upload is only partially implemented.
+
+What exists today:
+
+- `chat-app-backend` prepares upload sessions and returns `uploadStrategy` as either `SINGLE_PART` or `MULTIPART`
+- `chat-app-backend` exposes `POST /api/media/messages/upload-sessions/{uploadSessionId}/attachments/{attachmentId}/parts`
+- `MediaUploadSessionService` validates multipart completion metadata shape
+- MinIO-backed single-part uploads have real presigned `PUT` URLs and object-existence verification
+- `ChatArea` can upload only `SINGLE_PART` attachments through `uploadFileToPresignedUrl(...)`
+
+What is still missing:
+
+- `chat-app-frontend/src/services/api.ts` has no client helper for requesting multipart part URLs
+- `chat-app-frontend/src/types/chat.ts` does not model `multipartUploadId`, `recommendedPartSize`, or completed part metadata yet
+- `ChatArea` intentionally throws when `preparedAttachment.uploadStrategy !== "SINGLE_PART"`
+- the browser does not slice large files, upload each part, collect per-part ETags, or submit multipart completion metadata
+- backend multipart completion is not wired to a real MinIO/S3 multipart-complete API yet
+- backend multipart object verification is still placeholder-level compared with the single-part MinIO `objectExists` check
+
+Why a 7 MB video can fail in the UI:
+
+- default config currently uses `chat.media.multipart-threshold-bytes = 10485760` (`10 MB`), so a 7 MB video should stay `SINGLE_PART` when that default is active
+- if local env/config lowers `CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES` below 7 MB, the backend returns `MULTIPART`
+- the current frontend then hits the temporary guard and shows: `This file is too large for the current UI upload flow. Try a smaller file for now.`
+- this is a frontend/product gap, not a video max-size rejection; the configured video max is `200 MB`
+
+Multipart implementation plan:
+
+1. Backend storage provider contract
+   - add real multipart operations to `ObjectStorageProvider`: create multipart upload, sign part upload, complete multipart upload, abort multipart upload, and verify finalized object metadata
+   - implement those operations for MinIO first, then S3
+   - persist provider `multipartUploadId` from the provider instead of using a local UUID placeholder
+2. Backend completion flow
+   - require completed part metadata for multipart attachments
+   - call provider multipart-complete before creating the final message
+   - verify final object existence, size, and content metadata after multipart complete
+   - abort multipart uploads when completion fails after provider initialization, when users cancel, or when sessions expire
+3. Frontend API/types
+   - add `requestMultipartPartUrls(...)`
+   - extend prepared attachment types with `multipartUploadId`, `recommendedPartSize`, and `completeBy`
+   - extend completion attachment input with `parts: [{ partNumber, etag }]`
+4. Browser multipart uploader
+   - slice files by `recommendedPartSize`
+   - request part URLs in small batches instead of all at once
+   - upload parts with bounded concurrency
+   - aggregate progress across parts and attachments
+   - support cancel by aborting in-flight XHR/fetch uploads
+   - retry failed parts with a small retry limit before failing the local placeholder
+5. UI states and recovery
+   - keep the sender-side placeholder during multipart upload
+   - show retry/cancel using the same local upload actions as single-part uploads
+   - treat upload-session expiry as a clear non-retryable message that starts a new session
+6. Tests / verification
+   - unit-test part-number calculation and progress aggregation
+   - backend-test multipart completion validation and provider calls
+   - integration-test a payload above `CHAT_MEDIA_MULTIPART_THRESHOLD_BYTES` against local MinIO
+
 ### Backward Compatibility and Rollout Notes
 
 - Existing text messages remain valid with `messageType = TEXT`
@@ -769,17 +889,17 @@ Recommendation path:
    - create upload-session preparation endpoint
    - support batch upload preparation for multi-image messages
    - support single-attachment preparation for video/audio/file
-   - add multipart support for large uploads
+   - add multipart API scaffolding for large uploads
 4. Phase 4: Add upload completion and final message creation
    - verify uploaded objects exist and belong to the caller
    - run malware scan gate
    - create the final message only after all required checks pass
    - publish image/video messages with processing metadata when async processing is still ongoing
-5. Phase 5: Add async media processing inside `chat-app-backend`
-   - implement malware-scan orchestration and media-processing workers/modules inside the existing backend first
-   - generate thumbnails and compressed derivatives asynchronously for image/video
+5. Phase 5: Add temporary async media processing inside `chat-app-backend`
+   - keep this as an interim implementation only
+   - generate placeholder derivative metadata asynchronously for image/video
    - update message media status as processing progresses
-   - do not introduce separate Spring Boot apps in the first rollout
+   - replace this in a later phase with the Micronaut `media-processing-service`
 6. Phase 6: Add history and delivery contract updates
    - return media-aware message payloads from public and group message APIs
    - update latest-message preview behavior for non-text messages
@@ -803,7 +923,32 @@ Recommendation path:
    - file download/open UI
    - sender-side placeholder and retry/cancel behavior before publish
    - visible processing indicator for image/video messages after publish
-9. Phase 9: Add abuse protection and operational hardening
+9. Phase 9: Add real multipart upload end-to-end
+   - implement provider-backed multipart create/sign/complete/abort in MinIO first
+   - add frontend multipart uploader with chunking, bounded concurrency, retry, cancel, and progress aggregation
+   - verify files larger than `chat.media.multipart-threshold-bytes` through local MinIO
+   - remove the temporary frontend guard that rejects `MULTIPART` upload plans
+10. Phase 10: Move media processing planning to `docs/29_MEDIA_PROCESSING_SERVICE.md`
+   - keep detailed Micronaut service design in `docs/29_MEDIA_PROCESSING_SERVICE.md`
+   - prioritize video processing first in that document:
+     - poster thumbnail
+     - video metadata extraction
+     - normalized/transcoded playback asset
+     - later adaptive/mobile-friendly video outputs
+11. Phase 11: Build the video player after video processing outputs exist
+   - do not treat the current inline native HTML `<video controls>` player as the long-term UX
+   - wait until `media-processing-service` can produce:
+     - poster thumbnail
+     - metadata such as duration, width, and height
+     - normalized/transcoded playback asset
+     - later, optional adaptive streaming outputs
+   - then update the frontend video experience in this order:
+     - show a poster-based video card in the chat bubble instead of raw native controls
+     - show filename, duration, and size before playback starts
+     - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
+     - play `transcodedUrl` first and keep `contentUrl` as fallback/download
+     - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
+12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration
    - Redis-based rate limiting
    - orphan upload cleanup
@@ -812,7 +957,7 @@ Recommendation path:
      - Focus on orphan cleanup first. That’s where real waste is (DB rows + MinIO objects nobody will ever complete)
      - Add optional purge of old `UPLOAD_SESSION_COMPLETED` rows if the table grows or you need GDPR-style retention
    - failure observability and alerts
-10. Phase 10: Add optional optimizations after v1 works end-to-end
+13. Phase 13: Add optional optimizations after v1 works end-to-end
     - better thumbnails and previews
     - asynchronous secondary derivatives
     - CDN-backed delivery for clean media
@@ -830,7 +975,8 @@ Status:
 - Phase 6 completed
 - Phase 7 completed
 - Phase 8 completed
-- Phases 9-10 not implemented yet
+- Phase 9 completed
+- Phases 10-13 not implemented yet
 
 Use **direct client upload to object storage via backend-issued upload intents**. Keep message persistence in the chat backend, but keep large binary transfer out of the app servers.
 
@@ -992,7 +1138,7 @@ Implemented in `chat-app-backend`:
   - load all uploads for a session
   - verify ownership and expiry
   - validate completion metadata for single-part vs multipart uploads
-  - re-check active `SEND_MESSAGES` for group sessions **before** persisting the final message (prepare alone is not enough after kick/ban)
+  - re-check active `SEND_MESSAGES` for group sessions **before** persisting the final message (prepare alone is not enough after kick/ban; no group lifecycle lock on complete)
   - mark upload rows completed
   - create the final `Message`
   - create linked `MessageMedia` rows
@@ -1018,7 +1164,7 @@ Phase-4 behavior currently covers:
 - mark upload-session rows as `UPLOAD_SESSION_COMPLETED`
 - publish the created media message through the existing real-time topic path **after the completion transaction commits**
 
-#### Call order for Single-part (≤ 5 MB default)
+#### Call order for Single-part (≤ 10 MB default)
 
 ```
 prepareUploadSession
@@ -1028,7 +1174,7 @@ prepareUploadSession
 
 `requestMultipartPartUrls` is **not** used.
 
-#### Call order for Multipart (> 5 MB default)
+#### Call order for Multipart (> 10 MB default)
 
 ```
 prepareUploadSession
@@ -1085,7 +1231,7 @@ Phase-4 implementation note:
 
 - the backend can now prepare uploads, accept completion metadata, persist final media messages, and publish them, but the storage-verification and malware-scan steps are still placeholders until the next phases replace them with real provider/scanner integrations
 
-### Phase 5 - Async media processing inside `chat-app-backend`
+### Phase 5 - Temporary async media processing inside `chat-app-backend`
 
 Implemented in `chat-app-backend`:
 
@@ -1135,7 +1281,7 @@ What Phase 5 intentionally does **not** implement yet:
 
 Phase-5 implementation note:
 
-- the backend now has a working in-process async media-processing worker and status lifecycle for image/video messages, but the actual binary derivative generation is still placeholder logic until real object-storage integration is added
+- the backend now has a working in-process async media-processing worker and status lifecycle for image/video messages, but this is an interim implementation; actual binary derivative generation should move to the Micronaut `media-processing-service`
 
 ### Phase 6 - History and delivery contract updates
 
@@ -1303,9 +1449,85 @@ Phase-8 implementation note:
 
 - the frontend now matches the backend media message contract closely enough to exercise the usable UI slice end to end, while still keeping the known multipart gap explicit until the backend storage flow is finished
 
+### Phase 9 - Real multipart upload end-to-end
+
+Implemented in `chat-app-backend`:
+
+- Extended `ObjectStorageProvider` with multipart lifecycle operations:
+  - create multipart upload
+  - build/sign part upload URL
+  - complete multipart upload with ordered part ETags
+  - abort multipart upload
+  - verify finalized object metadata
+- Added provider-neutral `ObjectStorageCompletedPart`
+- Updated `MinioObjectStorageProvider` to use MinIO multipart create/complete/abort APIs
+- Replaced the temporary local UUID `multipartUploadId` with the provider-issued multipart upload id
+- Updated `MediaUploadSessionService` to:
+  - initialize multipart uploads when the first part URL batch is requested
+  - validate multipart completion part metadata
+  - complete the provider multipart upload before final message creation
+  - verify the finalized object exists after provider completion
+  - re-check group `SEND_MESSAGES` before provider-side multipart completion
+- Added focused backend unit coverage for:
+  - provider multipart upload id initialization
+  - provider multipart completion before message persistence
+
+Implemented in `chat-app-frontend`:
+
+- Added `requestMultipartPartUrls(...)` to `src/services/api.ts`
+- Extended media upload types with multipart fields and completed part metadata
+- Replaced the `ChatArea` guard for `MULTIPART` plans with a browser multipart uploader
+- Slices files by backend `recommendedPartSize`
+- Requests part URLs in batches
+- Uploads parts with bounded concurrency
+- Collects ETags per part and calls `completeMediaMessage(...)` with `parts`
+- Aggregates progress across all parts and selected attachments
+- Preserves existing cancel/retry/dismiss behavior for multipart placeholders
+
+Phase-9 behavior currently covers:
+
+- A file larger than `chat.media.multipart-threshold-bytes` can be uploaded through local MinIO, completed by the backend, persisted as a media message, and rendered by the sender/recipient without the current frontend "too large" error.
+
+Current Phase-9 limitations:
+
+- S3 multipart remains fail-fast / not implemented because the current S3 provider is still placeholder-level compared with MinIO
+- provider-side abort exists in the storage contract, but there is not yet a user-facing cancel endpoint or scheduled expired multipart cleanup job
+- backend verification confirms object existence after multipart complete; deeper finalized size/content-type validation is still future hardening
+
+Phase-9 implementation note:
+
+- Phase 9 makes MinIO multipart usable end to end and removes the frontend hard stop on `MULTIPART` upload plans, but operational cleanup and S3 production parity still belong to later hardening work
+
+### Phase 10 - Media-processing-service design moved
+
+Detailed Phase 10 planning now lives in:
+
+- `docs/29_MEDIA_PROCESSING_SERVICE.md`
+
+### Phase 12 - Abuse protection and operational hardening
+
+Planned:
+
+- real malware scan integration
+- Redis-based upload intent and byte-rate limits
+- orphan upload cleanup
+- multipart abort cleanup for expired provider-side sessions
+- audit logging for upload, scan, processing, and deletion events
+- scheduled hard-delete of expired files and related metadata cleanup
+- failure observability and alerts
+
+### Phase 13 - Optional optimizations after v1 works end-to-end
+
+Planned:
+
+- CDN-backed delivery for clean media
+- adaptive video streaming derivatives if in-app playback becomes important
+- richer lightbox/gallery UX
+- stronger moderation/reporting workflows
+
 ## Future Higher-Scale Path
 
-- Move derivative generation and scanning to dedicated worker queues
+- Keep derivative generation and scanning on dedicated worker queues/services
 - Add CDN in front of clean-media delivery
 - Add adaptive video streaming derivatives if in-app playback becomes important
 - Add deduplication by checksum for repeated uploads

@@ -266,6 +266,20 @@ The root cause of the observed **5 GB** memory usage is most likely **leaked Doc
   - This prevents future random node-name drift when the container is recreated.
   - Existing persisted state may still need one-time cleanup in dev/staging if it already contains broken or stale node-specific Mnesia data from old container hostnames.
 
+### Phase 4 - Authenticated readiness probe (AmqpAdmin-safe)
+
+- What changed:
+  - Replaced the Phase 2 socket+unauthenticated management spider with an **authenticated** management aliveness probe:
+    - `wget -qO- "http://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@127.0.0.1:15672/api/aliveness-test/%2F" | grep -q '"status":"ok"'`
+  - Kept the Phase 2 timing: `interval: 30s`, `timeout: 5s`, `retries: 5`, `start_period: 20s`.
+- Why it changed:
+  - Open AMQP/management ports (and an unauthenticated UI spider) can succeed before the broker accepts authenticated AMQP work that Spring `AmqpAdmin` needs at app startup.
+  - The aliveness API performs a real publish/consume on vhost `/`, which is a stronger readiness signal than “listeners are open”.
+  - Still avoids `rabbitmq-diagnostics` so we do not regress the Phase 2 memory-leak fix.
+- Rollout, migration, or backward-compatibility notes:
+  - Recreate or restart the RabbitMQ container for Compose to pick up the new healthcheck.
+  - Passwords with reserved URL characters (`@`, `:`, `/`, etc.) need percent-encoding in this probe form.
+
 ## Lesson (look back here)
 
 - High container memory does not automatically mean high RabbitMQ broker memory.

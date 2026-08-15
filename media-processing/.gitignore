@@ -1,0 +1,18 @@
+Thumbs.db
+.DS_Store
+.gradle
+build/
+target/
+out/
+.micronaut/
+.idea
+*.iml
+*.ipr
+*.iws
+.project
+.settings
+.classpath
+.factorypath
+
+# Not sure if we should commit this file?
+.mvn/wrapper/maven-wrapper.jar

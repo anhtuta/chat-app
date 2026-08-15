@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Box } from "@mui/material";
 import ChatAreaHeader from "./chat-area/ChatAreaHeader";
 import ChatMessageList from "./chat-area/ChatMessageList";
 import ChatMessageComposer from "./chat-area/ChatMessageComposer";
-import { completeMediaMessage, prepareMediaMessage, uploadFileToPresignedUrl } from "../services/api";
+import {
+  completeMediaMessage,
+  prepareMediaMessage,
+  requestMultipartPartUrls,
+  uploadBlobToPresignedUrl,
+  uploadFileToPresignedUrl,
+} from "../services/api";
 import {
   isPreviewableFile,
   LOCAL_UPLOAD_STATUSES,
@@ -11,6 +17,8 @@ import {
   validateSelectedFiles,
 } from "./chat-area/mediaUtils";
 import "./ChatArea.css";
+
+const MULTIPART_PART_URL_BATCH_SIZE = 4;
 
 function ChatArea({
   chatId,
@@ -29,9 +37,11 @@ function ChatArea({
   onOpenGroupDetails,
   onLogout,
 }) {
+  const AUTO_FILL_MAX_BATCHES = 3;
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [mediaComposerError, setMediaComposerError] = useState("");
   const [pendingMediaMessages, setPendingMediaMessages] = useState([]);
+  const [showLoadOlderFallback, setShowLoadOlderFallback] = useState(false);
   const chatMessagesRef = useRef(null);
   const messagesEndRef = useRef(null);
   const isPrependingRef = useRef(false);
@@ -41,6 +51,8 @@ function ChatArea({
   const pendingMediaMessagesRef = useRef([]);
   const selectedMediaRef = useRef([]);
   const uploadTasksRef = useRef(new Map());
+  const autoFillBatchCountRef = useRef(0);
+  const isAutoFillingRef = useRef(false);
 
   useEffect(() => {
     pendingMediaMessagesRef.current = pendingMediaMessages;
@@ -75,6 +87,10 @@ function ChatArea({
     [messages, visiblePendingMediaMessages],
   );
 
+  const scrollToBottom = useCallback((behavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
   useEffect(() => {
     const container = chatMessagesRef.current;
     const prevMessages = prevMessagesRef.current;
@@ -106,17 +122,66 @@ function ChatArea({
 
     forceScrollToBottomRef.current = false;
     prevMessagesRef.current = displayMessages;
-  }, [displayMessages]);
+  }, [displayMessages, scrollToBottom]);
 
   useEffect(() => {
     isPrependingRef.current = false;
     forceScrollToBottomRef.current = true;
     prevMessagesRef.current = [];
+    autoFillBatchCountRef.current = 0;
+    isAutoFillingRef.current = false;
+    setShowLoadOlderFallback(false);
   }, [chatId]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const isContainerScrollable = useCallback((container) => {
+    if (!container) {
+      return false;
+    }
+
+    return container.scrollHeight > container.clientHeight + 1;
+  }, []);
+
+  const loadOlderMessages = useCallback(async ({ preserveViewport }) => {
+    const container = chatMessagesRef.current;
+    if (
+      !container ||
+      !hasMoreMessages ||
+      isLoadingOlderRef.current ||
+      isLoading ||
+      !onLoadOlderMessages
+    ) {
+      return false;
+    }
+
+    const previousHeight = container.scrollHeight;
+    const previousTop = container.scrollTop;
+
+    isPrependingRef.current = true;
+    const loaded = await onLoadOlderMessages();
+
+    if (!loaded) {
+      isPrependingRef.current = false;
+      return false;
+    }
+
+    requestAnimationFrame(() => {
+      const updatedContainer = chatMessagesRef.current;
+      if (!updatedContainer) {
+        isPrependingRef.current = false;
+        return;
+      }
+
+      if (preserveViewport) {
+        updatedContainer.scrollTop = updatedContainer.scrollHeight - previousHeight + previousTop;
+      } else {
+        updatedContainer.scrollTop = updatedContainer.scrollHeight;
+      }
+
+      isPrependingRef.current = false;
+    });
+
+    return true;
+  }, [hasMoreMessages, isLoading, onLoadOlderMessages]);
 
   const handleMessagesScroll = async (event) => {
     const container = event.currentTarget;
@@ -130,22 +195,83 @@ function ChatArea({
       return;
     }
 
-    const previousHeight = container.scrollHeight;
-    const previousTop = container.scrollTop;
+    await loadOlderMessages({ preserveViewport: true });
+  };
 
-    isPrependingRef.current = true;
-    const loaded = await onLoadOlderMessages();
-
-    if (!loaded) {
-      isPrependingRef.current = false;
+  useEffect(() => {
+    if (
+      chatId === "public" ||
+      isLoading ||
+      isLoadingOlder ||
+      !hasMoreMessages ||
+      !onLoadOlderMessages ||
+      !displayMessages.length
+    ) {
+      if (chatId === "public" || !hasMoreMessages) {
+        setShowLoadOlderFallback(false);
+      }
       return;
     }
 
-    requestAnimationFrame(() => {
-      const updatedHeight = container.scrollHeight;
-      container.scrollTop = updatedHeight - previousHeight + previousTop;
-      isPrependingRef.current = false;
+    const container = chatMessagesRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (isContainerScrollable(container)) {
+      setShowLoadOlderFallback(false);
+      return;
+    }
+
+    if (autoFillBatchCountRef.current >= AUTO_FILL_MAX_BATCHES) {
+      setShowLoadOlderFallback(true);
+      return;
+    }
+
+    if (isAutoFillingRef.current) {
+      return;
+    }
+
+    let canceled = false;
+    isAutoFillingRef.current = true;
+
+    requestAnimationFrame(async () => {
+      if (canceled) {
+        isAutoFillingRef.current = false;
+        return;
+      }
+
+      const currentContainer = chatMessagesRef.current;
+      if (!currentContainer || isContainerScrollable(currentContainer) || !hasMoreMessages) {
+        isAutoFillingRef.current = false;
+        return;
+      }
+
+      // Auto-top-off the first load so tall viewports still expose older history.
+      autoFillBatchCountRef.current += 1;
+      setShowLoadOlderFallback(false);
+      await loadOlderMessages({ preserveViewport: false });
+      isAutoFillingRef.current = false;
     });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    AUTO_FILL_MAX_BATCHES,
+    chatId,
+    displayMessages,
+    hasMoreMessages,
+    isContainerScrollable,
+    isLoading,
+    isLoadingOlder,
+    loadOlderMessages,
+    onLoadOlderMessages,
+  ]);
+
+  const handleLoadOlderFallbackClick = async () => {
+    setShowLoadOlderFallback(false);
+    await loadOlderMessages({ preserveViewport: false });
   };
 
   const handleFilesSelected = (files) => {
@@ -237,6 +363,104 @@ function ChatArea({
     },
   });
 
+  const updateUploadProgress = (localId, uploadedBytes, totalBytes) => {
+    const progressPercent = totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
+    updatePendingMessage(localId, (currentMessage) => ({
+      ...currentMessage,
+      localUploadState: {
+        ...currentMessage.localUploadState,
+        status: LOCAL_UPLOAD_STATUSES.UPLOAD_IN_PROGRESS,
+        progressPercent,
+        errorMessage: "",
+      },
+    }));
+  };
+
+  const uploadMultipartFile = async ({
+    uploadSessionId,
+    preparedAttachment,
+    file,
+    task,
+    baseUploadedBytes,
+    totalBytes,
+    pendingMessageLocalId,
+  }) => {
+    const partSize = Number(preparedAttachment.recommendedPartSize);
+    if (!Number.isFinite(partSize) || partSize <= 0) {
+      throw new Error("The upload session did not include a valid multipart part size.");
+    }
+
+    const partNumbers = Array.from(
+      { length: Math.ceil(file.size / partSize) },
+      (_, index) => index + 1,
+    );
+    const loadedBytesByPart = new Map();
+    const activeUploadHandles = new Map();
+    const completedParts = [];
+
+    const updateMultipartProgress = () => {
+      const currentFileUploadedBytes = Array.from(loadedBytesByPart.values())
+        .reduce((sum, loadedBytes) => sum + loadedBytes, 0);
+      updateUploadProgress(
+        pendingMessageLocalId,
+        baseUploadedBytes + Math.min(currentFileUploadedBytes, file.size),
+        totalBytes,
+      );
+    };
+
+    task.abort = () => {
+      activeUploadHandles.forEach((uploadHandle) => uploadHandle.abort());
+    };
+
+    for (let batchStart = 0; batchStart < partNumbers.length; batchStart += MULTIPART_PART_URL_BATCH_SIZE) {
+      if (task.canceled) {
+        throw createAbortError();
+      }
+
+      const batchPartNumbers = partNumbers.slice(batchStart, batchStart + MULTIPART_PART_URL_BATCH_SIZE);
+      const partUrlResponse = await requestMultipartPartUrls(
+        uploadSessionId,
+        preparedAttachment.attachmentId,
+        batchPartNumbers,
+      );
+      const presignedUrlByPartNumber = new Map(
+        (partUrlResponse.parts || []).map((part) => [part.partNumber, part.presignedUrl]),
+      );
+
+      const uploadedBatchParts = await Promise.all(batchPartNumbers.map(async (partNumber) => {
+        const presignedUrl = presignedUrlByPartNumber.get(partNumber);
+        if (!presignedUrl) {
+          throw new Error(`Missing multipart upload URL for part ${partNumber}.`);
+        }
+
+        const startByte = (partNumber - 1) * partSize;
+        const endByte = Math.min(startByte + partSize, file.size);
+        const partBlob = file.slice(startByte, endByte, file.type || undefined);
+        const uploadHandle = uploadBlobToPresignedUrl(presignedUrl, partBlob, {
+          onProgress: (loadedBytes) => {
+            loadedBytesByPart.set(partNumber, Math.min(loadedBytes, partBlob.size));
+            updateMultipartProgress();
+          },
+        });
+
+        activeUploadHandles.set(partNumber, uploadHandle);
+        try {
+          const etag = await uploadHandle.promise;
+          loadedBytesByPart.set(partNumber, partBlob.size);
+          updateMultipartProgress();
+          return { partNumber, etag };
+        } finally {
+          activeUploadHandles.delete(partNumber);
+        }
+      }));
+
+      completedParts.push(...uploadedBatchParts);
+    }
+
+    task.abort = null;
+    return completedParts.sort((left, right) => left.partNumber - right.partNumber);
+  };
+
   const uploadPendingMessage = async (pendingMessage) => {
     const files = pendingMessage.attachments.map((attachment) => attachment.file).filter(Boolean);
     const task = {
@@ -274,24 +498,36 @@ function ChatArea({
         const file = files[index];
         const baseUploadedBytes = uploadedBytesBeforeCurrentFile;
 
+        if (preparedAttachment.uploadStrategy === "MULTIPART") {
+          const parts = await uploadMultipartFile({
+            uploadSessionId: prepareResponse.uploadSessionId,
+            preparedAttachment,
+            file,
+            task,
+            baseUploadedBytes,
+            totalBytes,
+            pendingMessageLocalId: pendingMessage.localId,
+          });
+          uploadedBytesBeforeCurrentFile += file.size;
+          completionAttachments.push({
+            attachmentId: preparedAttachment.attachmentId,
+            parts,
+          });
+          continue;
+        }
+
         if (preparedAttachment.uploadStrategy !== "SINGLE_PART") {
-          // TODO: Replace this guard with browser multipart upload once backend multipart completion is real.
-          throw new Error("This file is too large for the current UI upload flow. Try a smaller file for now.");
+          throw new Error(`Unsupported upload strategy: ${preparedAttachment.uploadStrategy}`);
+        }
+
+        if (!preparedAttachment.presignedUrl) {
+          throw new Error("The upload session did not include a presigned upload URL.");
         }
 
         const uploadHandle = uploadFileToPresignedUrl(preparedAttachment.presignedUrl, file, {
           onProgress: (loadedBytes) => {
             const totalUploadedBytes = baseUploadedBytes + Math.min(loadedBytes, file.size);
-            const progressPercent = totalBytes > 0 ? Math.round((totalUploadedBytes / totalBytes) * 100) : 0;
-            updatePendingMessage(pendingMessage.localId, (currentMessage) => ({
-              ...currentMessage,
-              localUploadState: {
-                ...currentMessage.localUploadState,
-                status: LOCAL_UPLOAD_STATUSES.UPLOAD_IN_PROGRESS,
-                progressPercent,
-                errorMessage: "",
-              },
-            }));
+            updateUploadProgress(pendingMessage.localId, totalUploadedBytes, totalBytes);
           },
         });
 
@@ -419,6 +655,8 @@ function ChatArea({
           isLoading={isLoading}
           isLoadingOlder={isLoadingOlder}
           onScroll={handleMessagesScroll}
+          showLoadOlderFallback={showLoadOlderFallback}
+          onLoadOlderFallback={handleLoadOlderFallbackClick}
           onRetryPendingMessage={handleRetryPendingMedia}
           onCancelPendingMessage={handleCancelPendingMedia}
           onDismissPendingMessage={removePendingMessage}

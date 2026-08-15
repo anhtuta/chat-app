@@ -1,5 +1,7 @@
 # Membership Mutation Auth Before Lock (TOCTOU)
 
+TL;DR: "Auth Before Lock" causes the issue, "Lock Before Auth" fixes it.
+
 ## Current Problem
 
 `addMember` (and similar mutations) called `requireActivePermission` **before** `findByIdForUpdate`. A concurrent demotion/kick could revoke the actor's role after that check and before the membership write - e.g. a former privileged member still adds a member.
@@ -104,6 +106,8 @@ Shared helper `lockActiveGroup(groupId)` = `findByIdForUpdate` + `ensureActive`.
 `joinByToken` also refreshes and revalidates the loaded `GroupJoinLink` after `lockActiveGroup` so `revokeJoinLink` cannot win the lock and still let the waiting join insert from stale token state.
 
 Applies to: `addMember`, `createJoinLink`, `revokeJoinLink`, `joinByToken` (link refresh/revalidation and ban recheck after lock), `kickMember`, `banMember`, `unbanMember`, `updateMemberRole`, `transferLeadership`, `leaveGroup`.
+
+Group media finalize (`MediaUploadSessionService.completeUploadSession`) re-checks `SEND_MESSAGES` but does **not** take this lock — separate prepare/complete requests make a long-held group lock on complete a poor fit; the residual race is only concurrent revoke during the complete transaction.
 
 ## Lesson
 
@@ -222,7 +226,7 @@ If you switch to a Redis lock for this problem, then for these race conditions y
 - the DB write still happens inside a normal DB transaction
 - DB constraints still protect invariants like "one leader" and unique membership
 
-So Redis can replace the current `findByIdForUpdate` lock as the per-group mutex.
+So Redis can replace the current `findByIdForUpdate` lock as the per-group mutex — but only with a renewing lease plus fencing (see below), not a single fixed TTL.
 
 ### Important caveat
 
@@ -241,184 +245,33 @@ So with Redis, the safest shape is:
 
 That is the cleanest way to avoid the timing bug.
 
-### Draft design
+### Redis design requirements (not implemented)
 
-I would introduce a small lock service and call it from `GroupMembershipService`.
+There is **no** `GroupMutationRedisLockService` in the codebase today. Membership mutations use DB `findByIdForUpdate`. If we ever switch to Redis, do **not** ship a fixed-TTL `SET NX EX` wrapper like “hold for 30s then unlock in `finally`”.
 
-#### 1. Redis lock service
+A fixed lease is unsafe: if `action.get()` (or the DB transaction) runs longer than `LOCK_TTL`, Redis drops the key, another JVM can acquire the same lock, and two critical sections overlap. Token-safe `DEL` (compare token then delete) only prevents stealing someone else’s lock on release — it does **not** stop expiry while the owner is still running.
 
-```java
-package com.hello.chatapp.service;
+Any Redis design must satisfy all of:
 
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Service;
+1. **Ownership for the full action** — renew the lease (watchdog / heartbeat) while the critical section runs, or fail the action if renewal fails; do not rely on a single fixed TTL covering worst-case duration.
+2. **Fencing** — after acquire, carry a fencing token (monotonic version or unique lease id) into the DB work; refuse writes if a newer fence has been observed so a late owner after expiry cannot commit.
+3. **Token-safe release** — unlock only if `GET` still equals this owner’s token (Lua compare-and-del), never a blind `DEL`.
+4. **Unlock after DB commit** — acquire Redis → run work in `TransactionTemplate` → release Redis only after the transaction finishes (not in `@Transactional` method `finally` before commit).
+5. **One mutex everywhere** — every membership/role mutation for that `groupId` uses the same Redis key; do not mix Redis and `findByIdForUpdate` for the same races.
 
-import java.time.Duration;
-import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+Sketch (conceptual only — not production code):
 
-@Service
-public class GroupMutationRedisLockService {
-
-    private static final String LOCK_KEY_PREFIX = "group:mutation:lock:";
-    private static final Duration LOCK_TTL = Duration.ofSeconds(30);
-    private static final Duration ACQUIRE_TIMEOUT = Duration.ofSeconds(5);
-    private static final long RETRY_SLEEP_MS = 50L;
-
-    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>(
-            """
-            if redis.call('get', KEYS[1]) == ARGV[1] then
-                return redis.call('del', KEYS[1])
-            end
-            return 0
-            """,
-            Long.class);
-
-    private final StringRedisTemplate redisTemplate;
-
-    public GroupMutationRedisLockService(StringRedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
-    }
-
-    public <T> T withGroupLock(@NonNull Long groupId, @NonNull Supplier<T> action) {
-        Objects.requireNonNull(groupId, "groupId must not be null");
-        Objects.requireNonNull(action, "action must not be null");
-
-        String key = lockKey(groupId);
-        String token = UUID.randomUUID().toString();
-
-        acquireLock(key, token);
-        try {
-            return action.get();
-        } finally {
-            releaseLock(key, token);
-        }
-    }
-
-    public void withGroupLock(@NonNull Long groupId, @NonNull Runnable action) {
-        withGroupLock(groupId, () -> {
-            action.run();
-            return null;
-        });
-    }
-
-    private void acquireLock(String key, String token) {
-        long deadlineNanos = System.nanoTime() + ACQUIRE_TIMEOUT.toNanos();
-
-        while (System.nanoTime() < deadlineNanos) {
-            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(key, token, LOCK_TTL);
-            if (Boolean.TRUE.equals(acquired)) {
-                return;
-            }
-
-            try {
-                TimeUnit.MILLISECONDS.sleep(RETRY_SLEEP_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for Redis group lock", e);
-            }
-        }
-
-        throw new IllegalStateException("Could not acquire Redis group lock");
-    }
-
-    private void releaseLock(String key, String token) {
-        redisTemplate.execute(UNLOCK_SCRIPT, List.of(key), token);
-    }
-
-    private String lockKey(Long groupId) {
-        return LOCK_KEY_PREFIX + groupId;
-    }
-}
+```text
+acquire(key, token, shortLease) with retry
+start lease renewer for token until stopped
+try
+  transactionTemplate.execute { auth under lock; mutate; }
+finally
+  stop renewer
+  release(key, token)  // compare-and-del
 ```
 
-#### 2. Use `TransactionTemplate` in `GroupMembershipService`
-
-This avoids the "unlock before commit" problem.
-
-```java
-package com.hello.chatapp.service;
-
-import com.hello.chatapp.constant.GroupPermission;
-import com.hello.chatapp.constant.GroupRole;
-import com.hello.chatapp.constant.SystemEventType;
-import com.hello.chatapp.dto.GroupMemberResponse;
-import com.hello.chatapp.entity.Group;
-import com.hello.chatapp.entity.GroupParticipant;
-import com.hello.chatapp.entity.User;
-import com.hello.chatapp.exception.BadRequestException;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
-
-@Service
-public class GroupMembershipService {
-
-    private final GroupMutationRedisLockService groupMutationRedisLockService;
-    private final TransactionTemplate transactionTemplate;
-    private final GroupAuthorizationService groupAuthorizationService;
-    private final GroupParticipantRepository groupParticipantRepository;
-    private final GroupRepository groupRepository;
-    private final UserRepository userRepository;
-
-    public GroupMembershipService(
-            GroupMutationRedisLockService groupMutationRedisLockService,
-            TransactionTemplate transactionTemplate,
-            GroupAuthorizationService groupAuthorizationService,
-            GroupParticipantRepository groupParticipantRepository,
-            GroupRepository groupRepository,
-            UserRepository userRepository) {
-        this.groupMutationRedisLockService = groupMutationRedisLockService;
-        this.transactionTemplate = transactionTemplate;
-        this.groupAuthorizationService = groupAuthorizationService;
-        this.groupParticipantRepository = groupParticipantRepository;
-        this.groupRepository = groupRepository;
-        this.userRepository = userRepository;
-    }
-
-    public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
-        return groupMutationRedisLockService.withGroupLock(groupId, () ->
-                transactionTemplate.execute(status -> addMemberTx(actor, groupId, userId)));
-    }
-
-    private GroupMemberResponse addMemberTx(User actor, Long groupId, Long userId) {
-        Group group = loadActiveGroup(groupId);
-        groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
-
-        User target = loadUser(userId);
-        groupAuthorizationService.requireNotBanned(target, groupId);
-
-        if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
-            throw new BadRequestException("User is already a member of this group");
-        }
-
-        GroupParticipant participant = new GroupParticipant(group, target);
-        participant.setRole(GroupRole.MEMBER);
-        GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-
-        publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
-        return GroupMemberResponse.fromParticipant(savedParticipant);
-    }
-
-    private Group loadActiveGroup(Long groupId) {
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-        if (group.getArchivedAt() != null) {
-            throw new BadRequestException("Group is archived");
-        }
-        return group;
-    }
-
-    private User loadUser(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new NotFoundException("User with id " + userId + " not found"));
-    }
-}
-```
+Libraries such as Redisson’s lock with watchdog, or an explicit renew loop + fence column/version, are acceptable approaches; a hand-rolled fixed `LOCK_TTL` service is not.
 
 ### What changes conceptually
 
@@ -426,9 +279,9 @@ With the current DB lock approach:
 
 - `findByIdForUpdate(groupId)` is the shared mutex
 
-With the Redis approach:
+With a correct Redis approach:
 
-- `SET NX EX group:mutation:lock:{groupId}` is the shared mutex
+- a renewing lease on `group:mutation:lock:{groupId}` (plus fencing) is the shared mutex
 
 So the protection becomes:
 
@@ -463,4 +316,4 @@ I would choose Redis only if:
 
 - you want the same lock to coordinate work outside the DB too
 - DB lock contention becomes a real bottleneck
-- you are already committed to distributed app-level locking patterns
+- you are already committed to distributed app-level locking patterns (including lease renewal and fencing)

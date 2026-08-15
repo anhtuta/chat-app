@@ -7,8 +7,11 @@ import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.UploadSessionStatus;
 import com.hello.chatapp.dto.CompleteMediaAttachmentRequest;
 import com.hello.chatapp.dto.CompleteMediaMessageRequest;
+import com.hello.chatapp.dto.CompletedMultipartPartRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
+import com.hello.chatapp.dto.RequestMultipartPartUrlsRequest;
+import com.hello.chatapp.dto.RequestMultipartPartUrlsResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.MediaUpload;
 import com.hello.chatapp.entity.Message;
@@ -202,6 +205,70 @@ class MediaUploadSessionServiceTest {
         verify(messageService, never()).saveGroupMediaMessage(any(), any(), any(), anyList());
         verify(realtimeMessageDeliveryService, never()).publishToGroup(anyLong(), any());
         assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+    }
+
+    @Test
+    void requestMultipartPartUrls_initializesProviderMultipartUploadId() {
+        MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        upload.setRequestedSizeBytes(20L * 1024 * 1024);
+
+        when(mediaUploadRepository.findByUploadSessionIdAndUploadId(UPLOAD_SESSION_ID, ATTACHMENT_ID))
+                .thenReturn(java.util.Optional.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.createMultipartUpload(upload.getObjectKey()))
+                .thenReturn("provider-upload-id");
+        when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "provider-upload-id", 1))
+                .thenReturn("part-1-url");
+        when(objectStorageProvider.buildMultipartUploadPartUrl(upload.getObjectKey(), "provider-upload-id", 2))
+                .thenReturn("part-2-url");
+
+        RequestMultipartPartUrlsResponse response = mediaUploadSessionService.requestMultipartPartUrls(
+                user,
+                UPLOAD_SESSION_ID,
+                ATTACHMENT_ID,
+                new RequestMultipartPartUrlsRequest(List.of(1, 2)));
+
+        assertThat(response.getMultipartUploadId()).isEqualTo("provider-upload-id");
+        assertThat(response.getParts()).extracting("partNumber").containsExactly(1, 2);
+        assertThat(upload.getMultipartUploadId()).isEqualTo("provider-upload-id");
+        assertThat(upload.getStatus()).isEqualTo(UploadSessionStatus.UPLOAD_IN_PROGRESS);
+        verify(objectStorageProvider).createMultipartUpload(upload.getObjectKey());
+    }
+
+    @Test
+    void completeUploadSession_multipartAttachment_completesProviderUploadBeforePersistingMessage() {
+        MediaUpload upload = buildUpload(MessageType.VIDEO, ChatScope.PUBLIC, null);
+        upload.setRequestedSizeBytes(20L * 1024 * 1024);
+        upload.setMultipartUploadId("provider-upload-id");
+        Message savedMessage = buildMessage(MessageType.VIDEO, null);
+        MessageResponse response = MessageResponse.builder().id(MESSAGE_ID).build();
+
+        when(mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(UPLOAD_SESSION_ID))
+                .thenReturn(List.of(upload));
+        when(mediaStorageProperties.getMultipartThresholdBytes()).thenReturn(10L * 1024 * 1024);
+        when(objectStorageProviderRegistry.getProvider(ObjectStorageProviderType.MINIO))
+                .thenReturn(objectStorageProvider);
+        when(objectStorageProvider.objectExists(upload.getObjectKey())).thenReturn(true);
+        when(messageService.savePublicMediaMessage(eq(user), eq(MessageType.VIDEO), anyList()))
+                .thenReturn(savedMessage);
+        when(messageResponseMapper.toResponse(savedMessage)).thenReturn(response);
+
+        mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                new CompleteMediaMessageRequest(List.of(new CompleteMediaAttachmentRequest(
+                        ATTACHMENT_ID,
+                        null,
+                        List.of(
+                                new CompletedMultipartPartRequest(2, "\"etag-2\""),
+                                new CompletedMultipartPartRequest(1, "\"etag-1\""))))));
+
+        verify(objectStorageProvider).completeMultipartUpload(eq(upload.getObjectKey()), eq("provider-upload-id"), anyList());
+        verify(objectStorageProvider).objectExists(upload.getObjectKey());
+        verify(messageService).savePublicMediaMessage(eq(user), eq(MessageType.VIDEO), anyList());
+        assertThat(upload.getStatus()).isEqualTo(UploadSessionStatus.UPLOAD_SESSION_COMPLETED);
     }
 
     private MessageResponse stubSuccessfulCompletion(MessageType messageType) {

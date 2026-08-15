@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "bot-simulator"
+		},
+		{
+			"path": "media-processing"
 		}
 	],
 	"settings": {
@@ -16,6 +19,25 @@
 		"specstory.cloudSync.enabled": "never",
 		"cSpell.words": [
 			"chatapp"
+		],
+		"java.import.maven.enabled": true,
+		"java.import.exclusions": [
+			"**/node_modules/**",
+			"**/.metadata/**",
+			"**/archetype-resources/**",
+			"**/META-INF/maven/**",
+			"**/chat-app-frontend/**",
+			"**/chat-app-backend/**",
+			"**/bot-simulator/**",
+			"**/media-processing/**"
+		],
+		"java.jdt.ls.java.home": "/Users/mac/Programs/jdk-25.0.1.jdk/Contents/Home",
+		"java.configuration.runtimes": [
+			{
+				"name": "JavaSE-25",
+				"path": "/Users/mac/Programs/jdk-25.0.1.jdk/Contents/Home",
+				"default": true
+			}
 		]
 	}
 }

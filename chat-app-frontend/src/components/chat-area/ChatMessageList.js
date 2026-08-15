@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, CircularProgress, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Typography } from "@mui/material";
 import ChatMessageItem from "./ChatMessageItem";
 import "./ChatMessageList.css";
 
@@ -12,6 +12,8 @@ function ChatMessageList({
   isLoading,
   isLoadingOlder,
   onScroll,
+  showLoadOlderFallback,
+  onLoadOlderFallback,
   onRetryPendingMessage,
   onCancelPendingMessage,
   onDismissPendingMessage,
@@ -27,6 +29,21 @@ function ChatMessageList({
       )}
 
       <Box className="chat-message-list-container" ref={chatMessagesRef} onScroll={onScroll}>
+        {showLoadOlderFallback && !isLoadingOlder && (
+          <Box className="chat-message-list-load-older-action">
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              title="Load older messages"
+              aria-label="Load older messages"
+              onClick={onLoadOlderFallback}
+            >
+              Load older messages
+            </Button>
+          </Box>
+        )}
+
         {isLoadingOlder && (
           <Box className="chat-message-list-loading-older-container">
             <CircularProgress size={24} />
