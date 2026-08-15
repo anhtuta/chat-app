@@ -17,8 +17,49 @@ This is uncommon in chat (one author, occasional moderator), but it is a real co
 Related code:
 
 - `Message` (`updated_at` is a **business** “last content edit” timestamp, not a concurrency token)
-- `MessageModerationService`
+- `MessageModerationService.editMessage` / `deleteMessage` (`findWithMediaById` then `save`; edit also inserts `message_edit_history`)
 - Feature 15 message moderation APIs (`PATCH` / `DELETE /api/messages/{messageId}`)
+
+### Examples (status quo — not fixed)
+
+This is **same-row** last-write-wins, not membership TOCTOU (doc 23). It can happen in **group or public** chat: two devices of the author, or author + `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`).
+
+Both TXs: load message (no lock, no `@Version`) → auth → mutate in memory → `save`. Hibernate flushes whatever fields that persistence context thinks are dirty. There is no `UPDATE … WHERE version = ?`.
+
+#### 1. Two concurrent edits — skipped history version
+
+The message content is `"Hello"`. Alice (author) and Bob (`CO_LEADER`) both edit it.
+
+1. Both `PATCH /api/messages/{id}` load the row with `content = "Hello"`.
+2. Alice’s TX inserts history `oldContent = "Hello"` and sets content to `"Hi"`.
+3. Bob’s TX also inserts history `oldContent = "Hello"` (still the snapshot he loaded) and sets content to `"Hey"`.
+4. Both commit. Last writer wins on `messages.content` (e.g. `"Hey"`).
+
+**Broken outcome:** Two history rows both claim the previous text was `"Hello"`. If Alice committed first, the audit trail never records `"Hi"` as an intermediate version. Clients that already showed `"Hi"` can be overwritten by `"Hey"` with no 409.
+
+#### 2. Edit and delete at the same time
+
+Alice starts an edit; Bob starts a delete of the same text message.
+
+1. Both load the row with `deleted_at = null` and current content.
+2. Alice’s TX: `deleted_at` check passes; history insert; `content` / `updated_at` / `updated_by` set.
+3. Bob’s TX: `deleted_at` check passes; `deleted_at` / `deleted_by` set.
+4. Both `save` and commit. Order-dependent:
+   - Delete commits last → row is soft-deleted, possibly also with Alice’s new content (dirty-field updates can both apply).
+   - Edit commits last → if the edit session still has `deleted_at = null`, a full-state flush can **clear** Bob’s delete (message looks edited and alive). Dirty-field-only flush may keep the delete and still change content.
+
+**Broken outcome:** Soft-deleted message with a new edit, or a delete that disappears. Hard to explain in the API.
+
+#### 3. Two concurrent deletes
+
+Alice and Bob both `DELETE /api/messages/{id}`.
+
+1. Both load `deleted_at = null` and pass “not already deleted.”
+2. Both set `deleted_at` / `deleted_by` and save.
+
+**Broken outcome:** Mostly harmless — the row stays soft-deleted. `deleted_by` is last write wins (may show Bob even if Alice deleted first). No duplicate “already deleted” error for the loser.
+
+These are lost updates on `messages`: **time of check** = unlocked load + in-memory `deleted_at` / `content`; **time of use** = `save` with no version/CAS. Doc 23 is different: membership on another table can change without touching this row.
 
 **Related but different race:** concurrent kick/ban/role change vs edit/delete (auth TOCTOU on `group_participants`) — see [23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md](./23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md). Message `@Version` does not cover that case.
 
