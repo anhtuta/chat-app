@@ -10,13 +10,13 @@ Classic check-then-act (TOCTOU) on shared group lifecycle state.
 
 Related code: `GroupMembershipService.leaveGroup`, `addMember`, `joinByToken`.
 
-### Examples (before the fix)
+## Examples (before the fix)
 
 Last-member leave is when `countByGroupId <= 1`: the remaining participant (usually the solo `LEADER`) archives the group instead of transferring leadership. Outsiders can still `joinByToken` without being members; the leader can also `addMember` from another tab.
 
 Before `lockActiveGroup`, leave/add/join each did an **unlocked** “is the group still active?” read, then counted or inserted. Those TXs did not share a mutex on `groups`.
 
-#### 1. Solo leader leaves while someone joins by token
+### 1. Solo leader leaves while someone joins by token
 
 Alice is the only member (`LEADER`). Charlie has a valid join link.
 
@@ -29,7 +29,7 @@ Alice is the only member (`LEADER`). Charlie has a valid join link.
 
 (Two or more people redeeming join links at the same time as leave is the same race — more participant rows, same unlocked active check vs archive.)
 
-#### 2. Solo leader adds a member while leaving
+### 2. Solo leader adds a member while leaving
 
 Alice is the only member. She has `ADD_MEMBERS` as `LEADER`.
 
@@ -43,15 +43,6 @@ Alice is the only member. She has `ADD_MEMBERS` as `LEADER`.
 Case này hầu như KHÔNG xảy ra trong thực tế (trừ bot), dù lý thuyết là có thể xảy ra.
 
 These are TOCTOU: **time of check** = unlocked `archivedAt` / member count; **time of use** = `INSERT` participant or `UPDATE` archive on `groups` without a shared lock.
-
-### After the fix
-
-`leaveGroup`, `addMember`, and `joinByToken` all call `lockActiveGroup` (`SELECT … FOR UPDATE` + `ensureActive`) **before** count / insert / archive. They serialize on the same `groups` row.
-
-| Example                     | What happens after the fix                                                                                                                                                                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Leave vs join-by-token   | Whichever gets the lock first wins. If leave archives first, Charlie’s `lockActiveGroup` fails (`ensureActive`). If Charlie joins first, `memberCount > 1` and Alice cannot last-member-archive (as `LEADER` with others she must transfer leadership instead). |
-| 2. Leave vs Alice addMember | Same lock. Add-then-leave: Alice is no longer last member → leave rejected until transfer. Leave-then-add: group already archived → add fails.                                                                                                                  |
 
 ## Possible Solutions
 
@@ -78,6 +69,15 @@ Always lock the **same** group row in every path that pairs “is this group sti
 - Added `GroupRepository.findByIdForUpdate`.
 - Membership/role mutations use `lockActiveGroup` **before** authorization (see [24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md](./24_MEMBERSHIP_MUTATION_AUTH_LOCK_ORDER.md)), which also covers last-member leave vs add/join.
 - Docs note in Feature 15 Phase 3.
+
+## After the fix
+
+`leaveGroup`, `addMember`, and `joinByToken` all call `lockActiveGroup` (`SELECT … FOR UPDATE` + `ensureActive`) **before** count / insert / archive. They serialize on the same `groups` row.
+
+| Example                     | What happens after the fix                                                                                                                                                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Leave vs join-by-token   | Whichever gets the lock first wins. If leave archives first, Charlie’s `lockActiveGroup` fails (`ensureActive`). If Charlie joins first, `memberCount > 1` and Alice cannot last-member-archive (as `LEADER` with others she must transfer leadership instead). |
+| 2. Leave vs Alice addMember | Same lock. Add-then-leave: Alice is no longer last member → leave rejected until transfer. Leave-then-add: group already archived → add fails.                                                                                                                  |
 
 ## Lesson (look back here)
 

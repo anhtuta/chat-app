@@ -22,13 +22,13 @@ Related code:
 - `MessageModerationService.editMessage` / `deleteMessage` (`findWithMediaById` then `save`; edit also inserts `message_edit_history`)
 - Feature 15 message moderation APIs (`PATCH` / `DELETE /api/messages/{messageId}`)
 
-### Examples (status quo — not fixed)
+## Examples (status quo — not fixed)
 
 This is **same-row** last-write-wins, not membership TOCTOU (doc 23). It can happen in **group or public** chat: two devices of the author, or author + `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`).
 
 Both TXs: load message (no lock, no `@Version`) → auth → mutate in memory → `save`. Hibernate flushes whatever fields that persistence context thinks are dirty. There is no `UPDATE … WHERE version = ?`.
 
-#### 1. Two concurrent edits — skipped history version
+### 1. Two concurrent edits — skipped history version
 
 The message content is `"Hello"`. Alice (author) and Bob (`CO_LEADER`) both edit it.
 
@@ -39,7 +39,7 @@ The message content is `"Hello"`. Alice (author) and Bob (`CO_LEADER`) both edit
 
 **Broken outcome:** Two history rows both claim the previous text was `"Hello"`. If Alice committed first, the audit trail never records `"Hi"` as an intermediate version. Clients that already showed `"Hi"` can be overwritten by `"Hey"` with no 409.
 
-#### 2. Edit and delete at the same time
+### 2. Edit and delete at the same time
 
 Alice starts an edit; Bob starts a delete of the same text message.
 
@@ -52,7 +52,7 @@ Alice starts an edit; Bob starts a delete of the same text message.
 
 **Broken outcome:** Soft-deleted message with a new edit, or a delete that disappears. Hard to explain in the API.
 
-#### 3. Two concurrent deletes
+### 3. Two concurrent deletes
 
 Alice and Bob both `DELETE /api/messages/{id}`.
 

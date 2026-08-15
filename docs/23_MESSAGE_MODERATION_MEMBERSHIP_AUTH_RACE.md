@@ -26,13 +26,13 @@ Giải thích đơn giản 1 case:
 
 Thực ra cái lỗi này cũng ko nghiêm trọng lắm, nếu xảy ra cũng ko gây thiệt hại gì!
 
-### Examples (status quo — not fixed)
+## Examples (status quo — not fixed)
 
 Role rules from [15_GROUP_ROLES_AND_PERMISSIONS.md](./15_GROUP_ROLES_AND_PERMISSIONS.md): nobody can kick/ban the `LEADER` via manage-target APIs. Own-message races use a `MEMBER`; moderate-anyone races use `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`). Public messages are owner-only and have **no** `group_participants` row — this race does not apply there.
 
 `editMessage` / `deleteMessage` today: load message (no lock) → `requireCanEditMessage` / `requireCanDeleteMessage` (unlocked membership/role read) → mutate + `save`. Kick/ban/leave/demote take the group lifecycle lock (doc 24) but **moderation did not share that lock**, so the two TXs interleave.
 
-#### 1. Kick member, they still edit their own text
+### 1. Kick member, they still edit their own text
 
 Alice is `MEMBER` (may edit her own group text). Bob is `LEADER` (can kick Alice).
 
@@ -43,7 +43,7 @@ Alice is `MEMBER` (may edit her own group text). Bob is `LEADER` (can kick Alice
 
 **Broken outcome:** A kicked member still edits a group message.
 
-#### 2. Ban member, they still delete their own message
+### 2. Ban member, they still delete their own message
 
 Alice is `MEMBER` (may delete her own group message, text or media). Bob is `LEADER` / `CO_LEADER` (can ban).
 
@@ -54,7 +54,7 @@ Alice is `MEMBER` (may delete her own group message, text or media). Bob is `LEA
 
 **Broken outcome:** A banned user still soft-deletes a group message.
 
-#### 3. Demote co-leader, they still edit someone else’s text
+### 3. Demote co-leader, they still edit someone else’s text
 
 Alice is `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE`). Charlie sent a text message. Bob is `LEADER` (can demote Alice to `MEMBER`).
 
@@ -65,7 +65,7 @@ Alice is `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE`). Charlie sent a text message. Bob
 
 **Broken outcome:** A former co-leader still moderates another member’s text.
 
-#### 4. Kick co-leader, they still delete someone else’s message
+### 4. Kick co-leader, they still delete someone else’s message
 
 Alice is `CO_LEADER` (`DELETE_ANY_MESSAGE`). Charlie’s message is still visible. Bob is `LEADER` (can kick Alice).
 
@@ -76,7 +76,7 @@ Alice is `CO_LEADER` (`DELETE_ANY_MESSAGE`). Charlie’s message is still visibl
 
 **Broken outcome:** A removed moderator still deletes another member’s message.
 
-#### 5. Member leaves, then their in-flight edit commits
+### 5. Member leaves, then their in-flight edit commits
 
 Alice is `MEMBER` editing her own text. She also hits leave on another tab.
 
@@ -90,26 +90,6 @@ These are TOCTOU:
 
 - **time of check** = unlocked `requireCanEditMessage` / `requireCanDeleteMessage`
 - **time of use** = `messageRepository.save` after membership/role on another table already changed.
-
-### After the fix
-
-~~Group edit/delete take `lockActiveGroup` before auth, then save under that lock.~~
-
-Group edit/delete take `SELECT … FOR UPDATE` on the **actor’s** `group_participants` row before auth, then save under that lock. Kick/ban/leave `DELETE` and demote `UPDATE` that same row wait; unrelated members editing other messages do not share that lock.
-
-| Example                            | What happens after the fix                                                                                                                                 |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Kick vs own edit                | Kick’s delete of Alice’s participant waits on Alice’s row lock (or Alice’s lock fails if kick already deleted it). Auth and save cannot split around kick. |
-| 2. Ban vs own delete               | Same serialization on Alice’s participant row.                                                                                                             |
-| 3. Demote vs edit others           | Demote’s role `UPDATE` waits on Alice’s participant lock; after demote, `EDIT_ANY_TEXT_MESSAGE` fails.                                                     |
-| 4. Kick co-leader vs delete others | After kick, Alice has no row to lock / `requireMember` fails.                                                                                              |
-| 5. Leave vs own edit               | Leave’s delete waits on the same participant row; after leave, `requireMember` fails.                                                                      |
-
-Tại sao KHÔNG dùng `lockActiveGroup`?
-
-- Cách này không sai, nhưng ko tối ưu.
-- Nếu 1 group có rất nhiều member, và nhiều người cùng edit message 1 lúc, thì khi lock group, mọi lượt edit sẽ bị tuần tự hoá (serialized).
-- Alice editing her message and Charlie editing his do not share auth state, so they should not wait on each other.
 
 ## Not the same as doc 19
 
@@ -155,6 +135,26 @@ Treat as a **separate** follow-up from message `@Version` (doc 19). Prefer locki
 - Unit tests: participant lock-before-auth; public edit never locks; missing participant never reaches auth.
 
 Why it changed: a `groups` row lock was correct for kick vs edit but serialized every concurrent edit in a large group. The planned mutex is the actor’s membership row.
+
+## After the fix
+
+~~Group edit/delete take `lockActiveGroup` before auth, then save under that lock.~~
+
+Group edit/delete take `SELECT … FOR UPDATE` on the **actor’s** `group_participants` row before auth, then save under that lock. Kick/ban/leave `DELETE` and demote `UPDATE` that same row wait; unrelated members editing other messages do not share that lock.
+
+| Example                            | What happens after the fix                                                                                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Kick vs own edit                | Kick’s delete of Alice’s participant waits on Alice’s row lock (or Alice’s lock fails if kick already deleted it). Auth and save cannot split around kick. |
+| 2. Ban vs own delete               | Same serialization on Alice’s participant row.                                                                                                             |
+| 3. Demote vs edit others           | Demote’s role `UPDATE` waits on Alice’s participant lock; after demote, `EDIT_ANY_TEXT_MESSAGE` fails.                                                     |
+| 4. Kick co-leader vs delete others | After kick, Alice has no row to lock / `requireMember` fails.                                                                                              |
+| 5. Leave vs own edit               | Leave’s delete waits on the same participant row; after leave, `requireMember` fails.                                                                      |
+
+Tại sao KHÔNG dùng `lockActiveGroup`?
+
+- Cách này không sai, nhưng ko tối ưu.
+- Nếu 1 group có rất nhiều member, và nhiều người cùng edit message 1 lúc, thì khi lock group, mọi lượt edit sẽ bị tuần tự hoá (serialized).
+- Alice editing her message and Charlie editing his do not share auth state, so they should not wait on each other.
 
 ## Lesson (look back here)
 
