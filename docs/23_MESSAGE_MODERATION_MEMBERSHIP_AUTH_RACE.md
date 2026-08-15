@@ -159,3 +159,42 @@ Why it changed: a `groups` row lock was correct for kick vs edit but serialized 
 ## Lesson (look back here)
 
 Authorization at the start of a TX is not enough if another TX can revoke that authorization on a **different table** before you write. Lock or CAS the auth source of truth together with the privileged write — don’t confuse that with optimistic locking on the message row alone.
+
+## Can we replace this with Redis lock?
+
+Yes, Redis _can_ be the mutex — but for doc 23 it is a worse fit than for doc 24, and it only works if **kick/ban/leave/demote take the same Redis key**. Mixing Redis on edit with the current DB locks does **not** close the race.
+
+**What the DB lock is doing here**
+
+Doc 24’s `groups` `FOR UPDATE` is an _explicit shared mutex_: every membership path calls `lockActiveGroup` first.
+
+Doc 23 is different. The edit holds `FOR UPDATE` on Alice’s `group_participants` row. Kick never takes that lock on purpose; it still serializes because Postgres makes `DELETE`/`UPDATE` of that row wait. The database is both mutex and the table being mutated.
+
+**Why a Redis lock on edit alone is not enough**
+
+If Alice’s edit takes `SET NX` on `group:participant:{groupId}:{aliceId}` and Bob’s kick only does `lockActiveGroup` then `DELETE` Alice:
+
+- Redis and Postgres do not wait on each other
+- Bob can delete the row and commit while Alice still holds Redis
+- Alice’s `requireCan*` already passed (or she still has a stale in-TX snapshot) and she saves the message
+
+So Redis does **not** replace the participant row lock unless every path that revokes edit/delete rights also acquires **that same key** before it writes:
+
+- kick / ban / leave / demote of Alice → `group:participant:lock:{groupId}:{aliceId}`
+- Alice’s edit/delete → same key
+- auth only after acquire
+- Redis released **after** the DB transaction commits (same `finally`-before-commit trap as doc 24)
+
+Unrelated edits stay parallel if the key is per member, not per group. A Redis lock on `group:{groupId}` would bring back the coarse queue you already rejected.
+
+**Same Redis design rules as doc 24**
+
+A fixed TTL `SET NX EX` is still unsafe (expiry while the TX is running). You still need lease renewal, fencing, token-safe unlock, and unlock after commit. DB unique constraints stay the source of truth.
+
+**Lock order if you keep both**
+
+If kick still uses a group mutex (DB or Redis) **and** a per-user Redis lock, always take **group then participant**. Edit should take **only** the participant key, or you serialize the whole group again. Do not mix “edit uses Redis, kick uses only `findByIdForUpdate`.”
+
+**Recommendation (same as doc 24, stronger here)**
+
+Keep the current participant `FOR UPDATE`. It is simpler, tied to the TX, and coordinates with kick/ban for free. Use Redis only if you already have a project-wide distributed lock (renewal + fencing) and you are willing to put that key on **every** membership mutation that touches that user — not just on `editMessage` / `deleteMessage`.
