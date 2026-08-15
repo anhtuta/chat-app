@@ -76,27 +76,47 @@ public class MediaProcessingJobHandler {
         }
 
         try (LoadedMediaSource source = sourceLoader.load(job)) {
+            Set<ProcessingTarget> implementedTargets = resolveImplementedTargets();
+            Set<ProcessingTarget> actionableTargets = EnumSet.copyOf(enabledTargets);
+            actionableTargets.retainAll(implementedTargets);
+
+            if (actionableTargets.isEmpty()) {
+                Set<ProcessingTarget> pendingTargets = Set.copyOf(enabledTargets);
+                logTransition(
+                        MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                        job,
+                        "source loaded; pendingTargets=" + pendingTargets + ", awaiting later phases");
+                resultSink.accept(new MediaProcessingResult(
+                        job.jobId(),
+                        job.messageId(),
+                        job.mediaId(),
+                        MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                        null,
+                        Set.of(),
+                        pendingTargets));
+                return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
+            }
+
             logTransition(
                     MediaProcessingJobStatus.DISPATCHED,
                     job,
-                    "handoff=" + workerProperties.getHandoff()
-                            + ", localSource=" + source.getLocalFile()
-                            + ", contentType=" + source.getContentType()
-                            + ", bytes=" + source.getObjectSize());
+                    "handoff=" + workerProperties.getHandoff() + ", localSource=" + source.getLocalFile() + ", contentType=" +
+                            source.getContentType() + ", bytes=" + source.getObjectSize());
 
-            Set<ProcessingTarget> implementedTargets = EnumSet.of(ProcessingTarget.METADATA);
-            Set<ProcessingTarget> completedTargets = EnumSet.copyOf(enabledTargets);
-            completedTargets.retainAll(implementedTargets);
-            Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
-            pendingTargets.removeAll(completedTargets);
+            Set<ProcessingTarget> completedTargets = EnumSet.noneOf(ProcessingTarget.class);
+            VideoMetadata videoMetadata = null;
 
-            if (completedTargets.isEmpty()) {
-                return MediaProcessingJobStatus.DISPATCHED;
+            if (actionableTargets.contains(ProcessingTarget.METADATA)) {
+                logTransition(
+                        MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                        job,
+                        "actionableTargets=" + actionableTargets);
+                videoMetadata = extractVideoMetadata(job, source);
+                completedTargets.add(ProcessingTarget.METADATA);
             }
 
-            logTransition(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, job, "completedTargets=" + completedTargets);
-
-            VideoMetadata videoMetadata = extractVideoMetadata(job, source);
+            Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
+            pendingTargets.removeAll(completedTargets);
             MediaProcessingJobStatus finalStatus = pendingTargets.isEmpty()
                     ? MediaProcessingJobStatus.MEDIA_READY
                     : MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
@@ -111,7 +131,8 @@ public class MediaProcessingJobHandler {
             logTransition(
                     finalStatus,
                     job,
-                    "videoMetadata extracted; pendingTargets=" + pendingTargets + ", mimeType=" + videoMetadata.detectedMimeType());
+                    "completedTargets=" + completedTargets + "; pendingTargets=" + pendingTargets +
+                            (videoMetadata == null ? "" : "; mimeType=" + videoMetadata.detectedMimeType()));
             return finalStatus;
         } catch (MediaProcessingSourceLoadException | VideoMetadataExtractionException e) {
             logTransition(
@@ -120,6 +141,15 @@ public class MediaProcessingJobHandler {
                     "failureReason=" + resolveFailureReason(e) + ", message=" + e.getMessage());
             return MediaProcessingJobStatus.PROCESSING_FAILED;
         }
+    }
+
+    /**
+     * Returns the processing targets currently implemented by this worker phase.
+     *
+     * @return targets that can be completed during the current handler execution
+     */
+    private Set<ProcessingTarget> resolveImplementedTargets() {
+        return EnumSet.of(ProcessingTarget.METADATA);
     }
 
     /**

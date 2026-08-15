@@ -106,6 +106,34 @@ class MediaProcessingJobHandlerTest {
     }
 
     /**
+     * Verifies that enabled but unimplemented targets stay pending instead of returning DISPATCHED.
+     */
+    @Test
+    void handle_thumbnailOnly_staysPendingWithoutDispatchReturn() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoMetadata(false);
+        properties.getFeatureFlags().setVideoPoster(true);
+        CapturingResultSink resultSink = new CapturingResultSink();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                resultSink,
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-thumbnail-only", List.of(ProcessingTarget.THUMBNAIL)));
+
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(resultSink.lastResult()).isNotNull();
+        assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(resultSink.lastResult().completedTargets()).isEmpty();
+        assertThat(resultSink.lastResult().pendingTargets()).containsExactly(ProcessingTarget.THUMBNAIL);
+        assertThat(resultSink.lastResult().videoMetadata()).isNull();
+    }
+
+    /**
      * Verifies that source-loading failures are translated into a processing-failed status.
      */
     @Test
@@ -231,6 +259,33 @@ class MediaProcessingJobHandlerTest {
         @Override
         public void cleanupWorkspaceQuietly(Path workspaceDirectory) {
             // No-op for unit tests.
+        }
+    }
+
+    /**
+     * Test sink that records the most recent worker result for assertions.
+     */
+    private static final class CapturingResultSink implements MediaProcessingResultSink {
+
+        private MediaProcessingResult lastResult;
+
+        /**
+         * Stores the latest worker result emitted by the handler under test.
+         *
+         * @param result normalized worker output
+         */
+        @Override
+        public void accept(MediaProcessingResult result) {
+            this.lastResult = result;
+        }
+
+        /**
+         * Returns the most recently captured worker result.
+         *
+         * @return last result accepted by this sink, or {@code null} when none was recorded
+         */
+        private MediaProcessingResult lastResult() {
+            return lastResult;
         }
     }
 
