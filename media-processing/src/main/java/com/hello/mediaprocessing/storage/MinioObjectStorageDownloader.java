@@ -59,21 +59,22 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                     .bucket(bucket)
                     .object(objectKey)
                     .build());
-            if (stat.size() <= 0) {
+
+            long bytesCopied;
+            try (InputStream inputStream = minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(objectKey)
+                    .build())) {
+                bytesCopied = Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (bytesCopied <= 0) {
                 // TODO: Replace the zero-byte corruption heuristic with decoder-level validation once Phase 4 metadata extraction is in place.
                 throw new ObjectStorageDownloadException(
                         MediaProcessingFailureReason.SOURCE_CORRUPTED,
                         "Downloaded source object is empty: " + bucket + "/" + objectKey);
             }
 
-            try (InputStream inputStream = minioClient.getObject(GetObjectArgs.builder()
-                    .bucket(bucket)
-                    .object(objectKey)
-                    .build())) {
-                Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            return new ObjectStorageDownloadResult(stat.size(), stat.contentType(), stat.etag());
+            return new ObjectStorageDownloadResult(bytesCopied, stat.contentType(), stat.etag());
         } catch (ErrorResponseException e) {
             String code = e.errorResponse() == null ? null : e.errorResponse().code();
             if ("NoSuchKey".equals(code) || "NoSuchObject".equals(code) || "NoSuchBucket".equals(code)) {
