@@ -28,10 +28,15 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
 
     public MinioObjectStorageDownloader(MediaProcessingStorageProperties storageProperties) {
         MediaProcessingStorageProperties.Minio minio = storageProperties.getMinio();
-        this.minioClient = MinioClient.builder()
+        MinioClient minioClient = MinioClient.builder()
                 .endpoint(minio.getEndpoint())
                 .credentials(minio.getAccessKey(), minio.getSecretKey())
+                .region(minio.getRegion())
                 .build();
+        if (minio.isPathStyleAccess()) {
+            minioClient.disableVirtualStyleEndpoint();
+        }
+        this.minioClient = minioClient;
     }
 
     /**
