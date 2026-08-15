@@ -27,6 +27,8 @@ Alice is the only member (`LEADER`). Charlie has a valid join link.
 
 **Broken outcome:** Group is archived **and** still has Charlie as a member. Archived groups are hidden from normal lists, but a participant row exists; Charlie may still appear as a member of a dead group.
 
+(Two or more people redeeming join links at the same time as leave is the same race — more participant rows, same unlocked active check vs archive.)
+
 #### 2. Solo leader adds a member while leaving
 
 Alice is the only member. She has `ADD_MEMBERS` as `LEADER`.
@@ -40,16 +42,6 @@ Alice is the only member. She has `ADD_MEMBERS` as `LEADER`.
 
 Case này hầu như KHÔNG xảy ra trong thực tế (trừ bot), dù lý thuyết là có thể xảy ra.
 
-#### 3. Two join-by-token requests racing last-member leave
-
-Alice is the only member and is leaving. Dana and Eve both redeem the same (or two) join links.
-
-1. Leave, Dana’s join, and Eve’s join all pass “group is active.”
-2. Dana and Eve insert participant rows.
-3. Leave archives and deletes Alice.
-
-**Broken outcome:** Archived group with one or more new members. Join did not serialize with archive.
-
 These are TOCTOU: **time of check** = unlocked `archivedAt` / member count; **time of use** = `INSERT` participant or `UPDATE` archive on `groups` without a shared lock.
 
 ### After the fix
@@ -60,7 +52,6 @@ These are TOCTOU: **time of check** = unlocked `archivedAt` / member count; **ti
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Leave vs join-by-token   | Whichever gets the lock first wins. If leave archives first, Charlie’s `lockActiveGroup` fails (`ensureActive`). If Charlie joins first, `memberCount > 1` and Alice cannot last-member-archive (as `LEADER` with others she must transfer leadership instead). |
 | 2. Leave vs Alice addMember | Same lock. Add-then-leave: Alice is no longer last member → leave rejected until transfer. Leave-then-add: group already archived → add fails.                                                                                                                  |
-| 3. Two joins vs leave       | All three queue on the group row; after archive, later joins hit `ensureActive` and do not insert.                                                                                                                                                              |
 
 ## Possible Solutions
 
