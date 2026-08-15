@@ -4,6 +4,7 @@ import com.hello.mediaprocessing.config.MediaProcessingWorkerProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
@@ -135,7 +136,7 @@ class MediaProcessingJobHandlerTest {
                 100L,
                 200L,
                 MediaProcessingMessageType.VIDEO,
-                "MINIO",
+                ObjectStorageProviderType.MINIO,
                 "chat-media",
                 "media/7/video/demo.mp4",
                 "video/mp4",

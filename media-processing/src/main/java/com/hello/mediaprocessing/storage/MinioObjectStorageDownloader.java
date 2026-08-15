@@ -2,6 +2,7 @@ package com.hello.mediaprocessing.storage;
 
 import com.hello.mediaprocessing.config.MediaProcessingStorageProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import io.micronaut.context.annotation.Requires;
 import io.minio.GetObjectArgs;
@@ -15,8 +16,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * Downloads source objects directly from MinIO using service credentials.
@@ -33,6 +32,16 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                 .endpoint(minio.getEndpoint())
                 .credentials(minio.getAccessKey(), minio.getSecretKey())
                 .build();
+    }
+
+    /**
+     * Returns the MinIO provider type for registry routing.
+     *
+     * @return {@link ObjectStorageProviderType#MINIO}
+     */
+    @Override
+    public ObjectStorageProviderType getType() {
+        return ObjectStorageProviderType.MINIO;
     }
 
     /**
@@ -77,7 +86,7 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                     MediaProcessingFailureReason.SOURCE_UNREADABLE,
                     "Failed to read source object from MinIO: " + bucket + "/" + objectKey,
                     e);
-        } catch (IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+        } catch (IOException e) {
             throw new ObjectStorageDownloadException(
                     MediaProcessingFailureReason.SOURCE_UNREADABLE,
                     "Failed to download source object from MinIO: " + bucket + "/" + objectKey,

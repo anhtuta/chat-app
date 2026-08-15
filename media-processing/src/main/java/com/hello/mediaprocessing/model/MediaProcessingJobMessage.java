@@ -1,6 +1,7 @@
 package com.hello.mediaprocessing.model;
 
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 
 import io.micronaut.serde.annotation.Serdeable;
@@ -29,7 +30,7 @@ public record MediaProcessingJobMessage(
         @NotNull Long messageId,
         @NotNull Long mediaId,
         @NotNull MediaProcessingMessageType messageType,
-        @NotBlank String storageProvider,
+        @NotNull ObjectStorageProviderType storageProvider,
         @NotBlank String bucket,
         @NotBlank String objectKey,
         @NotBlank String requestedMimeType,
