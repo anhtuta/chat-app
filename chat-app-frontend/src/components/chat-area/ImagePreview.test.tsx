@@ -148,6 +148,44 @@ describe("ImagePreview", () => {
     trigger.remove();
   });
 
+  it("keeps focus on the active dialog control when currentIndex changes while open", async () => {
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.textContent = "Open preview";
+    document.body.appendChild(trigger);
+    act(() => {
+      trigger.focus();
+    });
+
+    const { rerender } = renderImagePreview({ open: true, currentIndex: 0 });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    });
+
+    const nextButton = screen.getByRole("button", { name: "Next image" });
+    await userEvent.tab();
+    expect(screen.getByRole("button", { name: "Previous image" })).toHaveFocus();
+    await userEvent.tab();
+    expect(nextButton).toHaveFocus();
+
+    rerender(
+      <ThemeProvider theme={testTheme}>
+        <ImagePreview
+          open
+          images={images}
+          currentIndex={1}
+          onClose={jest.fn()}
+          onCurrentIndexChange={jest.fn()}
+        />
+      </ThemeProvider>,
+    );
+
+    expect(nextButton).toHaveFocus();
+    expect(trigger).not.toHaveFocus();
+    trigger.remove();
+  });
+
   it("traps tab navigation within the dialog controls", async () => {
     renderImagePreview({ open: true, currentIndex: 0 });
 

@@ -57,6 +57,13 @@ function ImagePreview({
     onCurrentIndexChange(safeIndex === images.length - 1 ? 0 : safeIndex + 1);
   }, [hasMultiple, images.length, onCurrentIndexChange, safeIndex]);
 
+  const onCloseRef = useRef(onClose);
+  const showPreviousRef = useRef(showPrevious);
+  const showNextRef = useRef(showNext);
+  onCloseRef.current = onClose;
+  showPreviousRef.current = showPrevious;
+  showNextRef.current = showNext;
+
   useEffect(() => {
     if (!open) {
       return undefined;
@@ -117,17 +124,17 @@ function ImagePreview({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        showPrevious();
+        showPreviousRef.current();
         return;
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        showNext();
+        showNextRef.current();
         return;
       }
 
@@ -147,7 +154,7 @@ function ImagePreview({
         elementToRestore.focus();
       }
     };
-  }, [open, onClose, showNext, showPrevious]);
+  }, [open]);
 
   if (!open || !currentImage) {
     return null;
