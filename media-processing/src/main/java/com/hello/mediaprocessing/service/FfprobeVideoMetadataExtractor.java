@@ -14,14 +14,17 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Uses ffprobe to extract metadata from downloaded local video files.
  */
 @Singleton
 public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
+
+    private static final Duration READER_JOIN_GRACE_AFTER_KILL = Duration.ofSeconds(2);
 
     private final MediaProcessingVideoMetadataProperties videoMetadataProperties;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -46,15 +49,25 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
             CompletableFuture<String> stderrFuture =
                     CompletableFuture.supplyAsync(() -> readStreamToString(process.getErrorStream()));
 
-            boolean completed = process.waitFor(videoMetadataProperties.getTimeoutSeconds(), TimeUnit.SECONDS);
+            long startNanos = System.nanoTime();
+            Duration configuredTimeout = Duration.ofSeconds(videoMetadataProperties.getTimeoutSeconds());
+            boolean completed = process.waitFor(configuredTimeout.toSeconds(), TimeUnit.SECONDS);
             if (!completed) {
                 process.destroyForcibly();
-                ProbeOutput output = awaitReaders(stdoutFuture, stderrFuture);
+                ProbeOutput output = awaitReaders(
+                        stdoutFuture,
+                        stderrFuture,
+                        readerJoinTimeoutAfterKill(startNanos, configuredTimeout),
+                        true);
                 throw new VideoMetadataExtractionException(
                         "ffprobe timed out for file " + localFile + formatProbeDiagnostics(output));
             }
 
-            ProbeOutput output = awaitReaders(stdoutFuture, stderrFuture);
+            ProbeOutput output = awaitReaders(
+                    stdoutFuture,
+                    stderrFuture,
+                    remainingReaderTimeout(startNanos, configuredTimeout),
+                    false);
             if (process.exitValue() != 0) {
                 throw new VideoMetadataExtractionException(
                         "ffprobe failed for file " + localFile + ": " + output.stderr().trim());
@@ -88,12 +101,45 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
      *
      * @param stdoutFuture task draining standard output
      * @param stderrFuture task draining standard error
+     * @param timeout maximum time to wait for each reader task
+     * @param lenientDiagnostics when {@code true}, reader timeouts return empty output instead of failing
      * @return captured stdout and stderr from the probe process
      */
-    private ProbeOutput awaitReaders(CompletableFuture<String> stdoutFuture, CompletableFuture<String> stderrFuture) {
+    private ProbeOutput awaitReaders(
+            CompletableFuture<String> stdoutFuture,
+            CompletableFuture<String> stderrFuture,
+            Duration timeout,
+            boolean lenientDiagnostics) {
+        return new ProbeOutput(
+                awaitReader(stdoutFuture, timeout, lenientDiagnostics),
+                awaitReader(stderrFuture, timeout, lenientDiagnostics));
+    }
+
+    /**
+     * Waits for a single ffprobe reader task to finish within the allotted time.
+     *
+     * @param readerFuture task draining a process stream
+     * @param timeout maximum time to wait for the reader task
+     * @param lenientDiagnostics when {@code true}, timeouts are treated as unavailable diagnostics
+     * @return captured stream contents, or an empty string when diagnostics are unavailable
+     */
+    private String awaitReader(CompletableFuture<String> readerFuture, Duration timeout, boolean lenientDiagnostics) {
         try {
-            return new ProbeOutput(stdoutFuture.join(), stderrFuture.join());
-        } catch (CompletionException e) {
+            return readerFuture.get(Math.max(1L, timeout.toMillis()), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            readerFuture.cancel(true);
+            if (lenientDiagnostics) {
+                return "";
+            }
+            throw new VideoMetadataExtractionException("Timed out while reading ffprobe output", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            readerFuture.cancel(true);
+            if (lenientDiagnostics) {
+                return "";
+            }
+            throw new VideoMetadataExtractionException("Interrupted while reading ffprobe output", e);
+        } catch (ExecutionException e) {
             Throwable cause = e.getCause() == null ? e : e.getCause();
             if (cause instanceof UncheckedIOException uncheckedIOException) {
                 throw new VideoMetadataExtractionException(
@@ -102,6 +148,36 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
             }
             throw new VideoMetadataExtractionException("Failed to read ffprobe output", cause);
         }
+    }
+
+    /**
+     * Returns the remaining reader wait budget after ffprobe is forcibly terminated.
+     *
+     * @param startNanos process start timestamp in nanoseconds
+     * @param configuredTimeout configured ffprobe timeout
+     * @return bounded wait duration for draining process streams after a kill
+     */
+    private Duration readerJoinTimeoutAfterKill(long startNanos, Duration configuredTimeout) {
+        Duration remaining = configuredTimeout.minusNanos(System.nanoTime() - startNanos);
+        if (remaining.isNegative() || remaining.isZero()) {
+            return READER_JOIN_GRACE_AFTER_KILL;
+        }
+        return remaining.compareTo(READER_JOIN_GRACE_AFTER_KILL) < 0 ? remaining : READER_JOIN_GRACE_AFTER_KILL;
+    }
+
+    /**
+     * Returns the remaining reader wait budget for a process that exited within the configured timeout.
+     *
+     * @param startNanos process start timestamp in nanoseconds
+     * @param configuredTimeout configured ffprobe timeout
+     * @return remaining wait duration for draining process streams
+     */
+    private Duration remainingReaderTimeout(long startNanos, Duration configuredTimeout) {
+        Duration remaining = configuredTimeout.minusNanos(System.nanoTime() - startNanos);
+        if (remaining.isNegative() || remaining.isZero()) {
+            return Duration.ofMillis(1);
+        }
+        return remaining;
     }
 
     /**
