@@ -1,7 +1,21 @@
-export const THEME_STORAGE_KEY = "chat-app-theme";
-export const DEFAULT_THEME_ID = "forest";
+import type { ResolvedTheme, ThemeCssVars, ThemeId, ThemeOption } from "../types/theme";
 
-const THEME_PRESETS = {
+export const THEME_STORAGE_KEY = "chat-app-theme";
+export const DEFAULT_THEME_ID: ThemeId = "forest";
+
+interface ThemePresetColors {
+    primary: string;
+    primaryDark: string;
+    primarySoft: string;
+    surface: string;
+}
+
+interface ThemePreset {
+    label: string;
+    colors: ThemePresetColors;
+}
+
+const THEME_PRESETS: Record<string, ThemePreset> = {
     forest: {
         label: "Forest",
         colors: {
@@ -58,9 +72,11 @@ const THEME_PRESETS = {
     },
 };
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
 
-const normalizeHex = (hex) => {
+function normalizeHex(hex: string): string {
     const value = hex.replace("#", "").trim();
     if (value.length === 3) {
         return value
@@ -69,9 +85,9 @@ const normalizeHex = (hex) => {
             .join("");
     }
     return value;
-};
+}
 
-const hexToRgb = (hex) => {
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
     const normalized = normalizeHex(hex);
     const intValue = Number.parseInt(normalized, 16);
     return {
@@ -79,14 +95,15 @@ const hexToRgb = (hex) => {
         g: (intValue >> 8) & 255,
         b: intValue & 255,
     };
-};
+}
 
-const rgbToHex = ({ r, g, b }) =>
-    `#${[r, g, b]
+function rgbToHex({ r, g, b }: { r: number; g: number; b: number }): string {
+    return `#${[r, g, b]
         .map((channel) => clamp(Math.round(channel), 0, 255).toString(16).padStart(2, "0"))
         .join("")}`;
+}
 
-const mix = (hexA, hexB, weight) => {
+function mix(hexA: string, hexB: string, weight: number): string {
     const a = hexToRgb(hexA);
     const b = hexToRgb(hexB);
     return rgbToHex({
@@ -94,43 +111,32 @@ const mix = (hexA, hexB, weight) => {
         g: a.g * (1 - weight) + b.g * weight,
         b: a.b * (1 - weight) + b.b * weight,
     });
-};
+}
 
-const alpha = (hex, opacity) => {
+function alpha(hex: string, opacity: number): string {
     const { r, g, b } = hexToRgb(hex);
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-};
+}
 
-const buildCssVars = ({ primary, primaryDark, primarySoft, surface }) => {
-    // Detect if this is a dark theme by checking if surface is dark
+function buildCssVars({ primary, primaryDark, primarySoft, surface }: ThemePresetColors): ThemeCssVars {
     const surfaceRgb = hexToRgb(surface);
     const surfaceLuminance = (0.299 * surfaceRgb.r + 0.587 * surfaceRgb.g + 0.114 * surfaceRgb.b) / 255;
     const isDarkTheme = surfaceLuminance < 0.5;
 
-    // For dark themes, use light text; for light themes, use dark text
     const textColor = isDarkTheme ? "#FBFBFB" : primaryDark;
     const textSecondaryColor = isDarkTheme ? "#E0E0E0" : primary;
-    const sidebarBg = isDarkTheme ? primaryDark : surface;
-    const chatBg = isDarkTheme ? primarySoft : surface;
-    const borderColor = isDarkTheme ? primarySoft : primarySoft;
-
-    // For light themes, mix towards white; for dark, stay dark
-    const surfaceMuted = isDarkTheme ? mix(surface, "#1A1A1E", 0.4) : mix(surface, "#ffffff", 0.35);
-    const surfaceSoft = isDarkTheme ? mix(primarySoft, primary, 0.12) : mix(surface, primarySoft, 0.18);
     const surfaceSubtle = isDarkTheme ? mix(primarySoft, primary, 0.25) : mix(surface, primarySoft, 0.32);
-    const surfaceRaised = isDarkTheme ? mix(primarySoft, "#2A2A30", 0.5) : mix(surface, "#ffffff", 0.55);
-    const surfaceHover = isDarkTheme ? mix(primarySoft, primary, 0.4) : mix(surface, primarySoft, 0.45);
 
     return {
         "--color-primary": primary,
         "--color-primary-dark": primaryDark,
         "--color-primary-soft": primarySoft,
         "--color-surface": surface,
-        "--color-surface-muted": surfaceMuted,
-        "--color-surface-soft": surfaceSoft,
+        "--color-surface-muted": isDarkTheme ? mix(surface, "#1A1A1E", 0.4) : mix(surface, "#ffffff", 0.35),
+        "--color-surface-soft": isDarkTheme ? mix(primarySoft, primary, 0.12) : mix(surface, primarySoft, 0.18),
         "--color-surface-subtle": surfaceSubtle,
-        "--color-surface-raised": surfaceRaised,
-        "--color-surface-hover": surfaceHover,
+        "--color-surface-raised": isDarkTheme ? mix(primarySoft, "#2A2A30", 0.5) : mix(surface, "#ffffff", 0.55),
+        "--color-surface-hover": isDarkTheme ? mix(primarySoft, primary, 0.4) : mix(surface, primarySoft, 0.45),
         "--color-border": isDarkTheme ? mix(primarySoft, primary, 0.5) : primarySoft,
         "--color-border-strong": primary,
         "--color-border-soft": isDarkTheme ? mix(primarySoft, primary, 0.3) : mix(primarySoft, surface, 0.5),
@@ -149,7 +155,7 @@ const buildCssVars = ({ primary, primaryDark, primarySoft, surface }) => {
         "--color-status-error-text": isDarkTheme ? "#FF6B6B" : surface,
         "--color-status-live-error": isDarkTheme ? "#FF6B6B" : primaryDark,
         "--color-selection-bg": alpha(primary, isDarkTheme ? 0.25 : 0.35),
-        "--color-message-received": isDarkTheme ? surfaceSubtle : surfaceSubtle,
+        "--color-message-received": surfaceSubtle,
         "--color-auth-error-bg": alpha(primary, isDarkTheme ? 0.15 : 0.16),
         "--color-auth-error-text": textColor,
         "--color-overlay": alpha(primaryDark, isDarkTheme ? 0.6 : 0.5),
@@ -163,14 +169,14 @@ const buildCssVars = ({ primary, primaryDark, primarySoft, surface }) => {
         "--color-button-ghost-border": alpha(primary, isDarkTheme ? 0.4 : 0.45),
         "--gradient-brand": `linear-gradient(135deg, ${primary} 0%, ${primaryDark} 100%)`,
     };
-};
+}
 
-export const themeOptions = Object.entries(THEME_PRESETS).map(([id, theme]) => ({
+export const themeOptions: ThemeOption[] = Object.entries(THEME_PRESETS).map(([id, theme]) => ({
     id,
     label: theme.label,
 }));
 
-export const resolveThemeTokens = (themeId) => {
+export function resolveThemeTokens(themeId: ThemeId): ResolvedTheme {
     const selected = THEME_PRESETS[themeId] || THEME_PRESETS[DEFAULT_THEME_ID];
     const { primary, primaryDark, primarySoft, surface } = selected.colors;
 
@@ -189,4 +195,4 @@ export const resolveThemeTokens = (themeId) => {
         },
         cssVars: buildCssVars({ primary, primaryDark, primarySoft, surface }),
     };
-};
+}

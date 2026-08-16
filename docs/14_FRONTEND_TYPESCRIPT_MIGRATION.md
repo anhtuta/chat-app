@@ -181,14 +181,22 @@ Notes:
 
 ### Phase 7: Convert presentational components and tests
 
-- Status: In progress
+- Status: Implemented
 - Renamed and converted (minimal typing for rename-friendly diffs):
   - `src/components/Sidebar.js` -> `src/components/Sidebar.tsx`
   - `src/components/CreateGroupModal.js` -> `src/components/CreateGroupModal.tsx`
   - `src/components/ChatArea.js` -> `src/components/ChatArea.tsx`
   - chat-area presentational files under `src/components/chat-area/` (header, composer, list, and related media UI)
-- Remaining: convert leftover components/tests as needed (`App.test.js`, etc.)
+  - group-details components under `src/components/group-details/`
+  - `src/theme/tokens.js` -> `src/theme/tokens.ts` (wired to shared theme types)
+  - `src/App.test.js` -> `src/App.test.tsx` (typed mocks; fixed `checkAuth` mock shape)
+- Intentionally left in JavaScript for now (CRA/tooling bootstrap only):
+  - `src/setupTests.js`
+  - `src/setupProxy.js`
 - Prefer filesystem rename + small type annotations so git rename detection stays high.
+- Verification:
+  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
+  - `make test` passes (utils + components + App smoke test)
 
 ### Phase 8: Tighten constraints
 
