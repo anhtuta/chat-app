@@ -86,7 +86,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public PrepareMediaMessageResponse prepareUploadSession(User user, PrepareMediaMessageRequest request) {
-        logger.info("Prepare upload session for user {} with groupId {}", user.getUsername(), request.getGroupId());
+        logger.debug("Prepare upload session for user {} with groupId {}", user.getUsername(), request.getGroupId());
         Group group = validateScopeAndMembership(user, request.getChatScope(), request.getGroupId());
         validateMessageType(request.getMessageType());
         validateAttachmentCount(request.getMessageType(), request.getAttachments());
@@ -133,7 +133,7 @@ public class MediaUploadSessionService {
             String uploadSessionId,
             String attachmentId,
             RequestMultipartPartUrlsRequest request) {
-        logger.info("Request multipart part urls for user {} with uploadSessionId {} and attachmentId {}",
+        logger.debug("Request multipart part urls for user {} with uploadSessionId {} and attachmentId {}",
                 user.getUsername(), uploadSessionId, attachmentId);
         MediaUpload mediaUpload = mediaUploadRepository.findByUploadSessionIdAndUploadId(uploadSessionId, attachmentId)
                 .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
@@ -173,7 +173,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public MessageResponse completeUploadSession(User user, String uploadSessionId, CompleteMediaMessageRequest request) {
-        logger.info("Complete upload session for user {} with uploadSessionId {}", user.getUsername(), uploadSessionId);
+        logger.debug("Complete upload session for user {} with uploadSessionId {}", user.getUsername(), uploadSessionId);
         List<MediaUpload> uploads = mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(uploadSessionId);
         if (uploads.isEmpty()) {
             throw new NotFoundException("Upload session not found");
