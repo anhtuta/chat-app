@@ -54,21 +54,25 @@ Same family as “irreversible side effect inside a DB transaction” in `.curso
 
 ### 1. Persist a recoverable “object finalized” state, then skip provider complete on retry (chosen)
 
-- How it works:
-  1. On `/complete`, if the attachment is already marked finalized (new status or flag), **skip** `completeMultipartUpload`; only `objectExists` (and later scan/persist).
-  2. Otherwise call `completeMultipartUpload`, then **commit a durable marker** that the object was finalized (must be visible even if later steps fail).
-  3. Run `assertClean` **outside** any long-lived DB TX (still synchronous in the request — publish gate).
-  4. Short TX: persist message → `UPLOAD_SESSION_COMPLETED`.
-  5. Retry of `/complete` sees the marker → resume without reusing the multipart upload id.
-- How to make the marker survive outer rollback (pick one when implementing):
-  - **A.** `REQUIRES_NEW` (or separate committed TX) right after successful provider complete: update status / flag, commit, then continue outer work.
+- How it works (per attachment on `/complete`):
+  1. Reload the `media_uploads` row. If status is already `OBJECT_FINALIZED`, **skip** `completeMultipartUpload` (do not create a new multipart upload). Continue with `objectExists` → scan → persist.
+  2. Otherwise **atomically claim** the attachment into a durable `FINALIZING` state **before** any provider complete. CAS, e.g. `UPDATE media_uploads SET status = FINALIZING, finalize_lease_until = now() + lease, finalize_owner = :token WHERE id = :id AND status = UPLOAD_IN_PROGRESS`. Commit this claim so concurrent `/complete` requests see it (same `REQUIRES_NEW` / `TransactionTemplate` idea as the later marker).
+  3. **CAS updated = 1 (this request owns the claim):** call `completeMultipartUpload` with the **existing** `multipartUploadId`. Then commit a durable `OBJECT_FINALIZED` marker (must survive later scan/persist failure), clear the lease, continue.
+  4. **CAS updated = 0 (lost the claim):** **do not** call the provider. Reload:
+     - `OBJECT_FINALIZED` → same as step 1 (resume; no new multipart upload).
+     - `FINALIZING` and lease still valid → **wait** (short backoff / poll reload) until `OBJECT_FINALIZED` or the lease expires. Do not start a second `completeMultipartUpload`.
+     - `FINALIZING` and lease **expired** (crash / stuck owner) → **recover** with a second CAS that steals only an expired claim (`status = FINALIZING AND finalize_lease_until < now()`). After steal: `objectExists` first. If the object is already there, commit `OBJECT_FINALIZED` and **never** call `completeMultipartUpload` (upload id may already be consumed). If it is not, call `completeMultipartUpload` once with the stored id, then mark `OBJECT_FINALIZED`.
+  5. Run `assertClean` **outside** any long-lived DB TX (still synchronous in the request — publish gate).
+  6. Short TX: persist message → `UPLOAD_SESSION_COMPLETED`.
+- How to make claim + marker survive outer rollback (pick one when implementing):
+  - **A.** `REQUIRES_NEW` (or `TransactionTemplate`) for the `FINALIZING` claim **and** for `OBJECT_FINALIZED` after successful provider complete (or after steal + `objectExists`).
   - **B.** Split API phases (finalize-storage vs publish-message) — heavier API change; not needed if A is enough.
-- Marker shape (TBD in implementation): new `UploadSessionStatus` value (e.g. `OBJECT_FINALIZED`) and/or a boolean / timestamp column on `media_uploads`. Prefer a status the complete flow already understands.
-- Pros: Retries are safe; user bytes kept; matches “persist recoverable completion state before finishing”; no need to delete a good object on transient DB failure.
-- Cons: Need a committed step around provider complete; orphan objects possible until a later complete succeeds or a cleanup job runs; must define idempotent complete for multi-attachment sessions (some attachments finalized, others not).
+- Marker shape (TBD in implementation): `FINALIZING` and `OBJECT_FINALIZED` on `UploadSessionStatus`, plus a lease (`finalize_lease_until` and an owner token). Prefer statuses the complete flow already branches on. Do not treat in-TX `UPLOAD_COMPLETED` as the checkpoint — it rolls back with the outer TX.
+- Pros: Two in-flight `/complete`s cannot both call `completeMultipartUpload`; retries after `OBJECT_FINALIZED` resume without a consumed or new multipart id; crash during finalize is recoverable via lease + `objectExists`; user bytes kept.
+- Cons: Need committed steps around claim and provider complete; lease/steal rules must not blindly complete after a consumed upload id; orphan objects possible until a later complete succeeds or a cleanup job runs; multi-attachment sessions can be partly `FINALIZING` / partly `OBJECT_FINALIZED`.
 - Recommendation for our problem: **Yes**.
 
-On retry after marker is set: **do not** call `completeMultipartUpload` again. Verify object, run scan/persist. Do not invent a new multipart upload id for the same attachment.
+Invariant: **only the holder of a live `FINALIZING` claim** may invoke `completeMultipartUpload`. After `OBJECT_FINALIZED`, never call it again and never `createMultipartUpload` for that attachment.
 
 ### 2. Compensate: delete finalized object if later steps fail
 
@@ -97,9 +101,9 @@ On retry after marker is set: **do not** call `completeMultipartUpload` again. V
 
 - How it works: `SELECT … FOR UPDATE` so two concurrent `/complete` calls serialize.
 - Pros: Reduces double-complete races between two in-flight requests.
-- Cons: Does **not** fix rollback-after-provider-complete; loser/retry after rollback still hits a consumed multipart id. Necessary concurrency hygiene maybe later, not sufficient.
-- Recommendation for our problem: **No** as the fix for this issue.
-- When I’d use it: Alongside Solution 1, to serialize concurrent completes on the same session.
+- Cons: Does **not** fix rollback-after-provider-complete; loser/retry after rollback still hits a consumed multipart id. Holding `FOR UPDATE` across MinIO RTT is the same cost we avoided in [doc 31](./31_MEDIA_MULTIPART_UPLOAD_ID_INIT_RACE.md).
+- Recommendation for our problem: **No** as the fix for this issue. Solution 1’s durable `FINALIZING` CAS claim is the concurrency control (serialize provider complete without a long row lock).
+- When I’d use it: Only if we want DB wait-queues instead of wait/poll on `FINALIZING`, and we accept locking through storage RTT.
 
 ## High level Architecture/Design
 
@@ -128,18 +132,27 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-  A[POST /complete] --> B{Attachment already OBJECT_FINALIZED?}
+  A[POST /complete per attachment] --> B{Status OBJECT_FINALIZED?}
   B -->|yes| C[Skip completeMultipartUpload]
-  B -->|no| D[completeMultipartUpload]
-  D --> E[Commit durable OBJECT_FINALIZED marker]
-  E --> C
-  C --> F[objectExists]
-  F --> S[assertClean outside long DB TX]
-  S --> G[Short TX: persist Message + SESSION_COMPLETED]
-  G --> H{Persist TX OK?}
-  H -->|yes| I[Done]
-  H -->|no| J[Marker still committed]
-  J --> K[Retry: marker set → resume from C]
+  B -->|no| D["CAS claim FINALIZING + lease"]
+  D -->|won| E[completeMultipartUpload existing id]
+  E --> F[Commit OBJECT_FINALIZED, clear lease]
+  F --> C
+  D -->|lost| G[Reload row]
+  G -->|OBJECT_FINALIZED| C
+  G -->|FINALIZING lease valid| H[Wait / poll reload]
+  H --> G
+  G -->|FINALIZING lease expired| I[CAS steal expired claim]
+  I --> J{objectExists?}
+  J -->|yes| F
+  J -->|no| E
+  C --> K[objectExists]
+  K --> S[assertClean outside long DB TX]
+  S --> L[Short TX: persist Message + SESSION_COMPLETED]
+  L --> M{Persist TX OK?}
+  M -->|yes| N[Done]
+  M -->|no| O[OBJECT_FINALIZED still committed]
+  O --> P[Retry: skip provider complete]
 ```
 
 ### Malware scan placement (related)
@@ -158,8 +171,9 @@ So: “out of the transaction” ≠ “background job.” Doc 32 owns the forme
 
 One `/complete` may finalize several attachments. Each attachment should carry its own finalized marker. Retry must:
 
-- Skip provider complete only for attachments already marked finalized.
-- Still run provider complete for attachments not yet finalized.
+- Skip provider complete for attachments already `OBJECT_FINALIZED`.
+- CAS-claim `FINALIZING` (then provider complete) only for attachments still `UPLOAD_IN_PROGRESS`.
+- If another request holds a live `FINALIZING` lease, wait/reload — do not complete that attachment in parallel.
 - Require the request to include every prepared attachment (existing rule).
 
 ### Hard failures vs retryable failures
@@ -172,18 +186,20 @@ One `/complete` may finalize several attachments. Each attachment should carry i
 
 ## Recommendation
 
-1. Add a durable per-attachment “object finalized” marker (new `UploadSessionStatus` and/or column) that survives failure of later complete steps (`REQUIRES_NEW` or equivalent after successful `completeMultipartUpload`).
-2. Make `finalizeAndVerifyUploadedObject` idempotent: if marker set (or equivalently: multipart already consumed and object exists + marker), skip `completeMultipartUpload`.
-3. Restructure `/complete` roughly as: finalize (+ checkpoint) → `assertClean` outside long TX → short TX for message persistence. Retries resume from verification/scan/persist without reusing a consumed multipart id.
-4. For malware block (and similar hard fails), prefer delete/quarantine compensation rather than leaving a readable orphan.
-5. Add tests: provider complete succeeds then persist throws → retry skips complete and succeeds; already-finalized attachment never calls `completeMultipartUpload` again.
-6. **Do not implement yet** — this doc is for design review. Update **Implementation details** after coding; do not rewrite **Recommendation**.
+1. Per attachment, CAS-claim durable `FINALIZING` (with a lease) **before** `completeMultipartUpload`. Losers reload, wait, or steal an **expired** claim; they must not both call the provider.
+2. After a successful complete (or steal + object already exists), commit `OBJECT_FINALIZED` so later scan/persist failure is resumable (`REQUIRES_NEW` / `TransactionTemplate`).
+3. Make finalize idempotent: `OBJECT_FINALIZED` → skip provider complete and **do not** create a new multipart upload. Expired-lease recovery uses `objectExists` before any second complete.
+4. Restructure `/complete` roughly as: claim → finalize (+ checkpoint) → `assertClean` outside long TX → short TX for message persistence.
+5. For malware block (and similar hard fails), prefer delete/quarantine compensation rather than leaving a readable orphan.
+6. Add tests: two concurrent `/complete`s → one provider complete; persist throws after finalize → retry skips complete; expired `FINALIZING` + object exists → no second complete; expired `FINALIZING` + missing object → one complete with the stored id.
+7. **Do not implement yet** — this doc is for design review. Update **Implementation details** after coding; do not rewrite **Recommendation**.
 
 Open points for review:
 
-- Exact marker: new enum value vs boolean `storage_finalized_at`?
+- Exact statuses/columns: `FINALIZING` + `OBJECT_FINALIZED` vs flag + `finalize_lease_until` / owner token.
+- Lease length vs worst-case `completeMultipartUpload` RTT; wait/poll vs 409 “finalize in progress” to the client.
 - Marker TX: `REQUIRES_NEW` on a small helper vs explicit `TransactionTemplate`?
-- Should single-part also set the same marker for a uniform resume path?
+- Should single-part also take `FINALIZING` / `OBJECT_FINALIZED` for a uniform resume path?
 - Interaction with future orphan-cleanup jobs (Feature 12 hardening).
 - Confirm v1 keeps synchronous scan-as-publish-gate (out of TX only); defer background scan unless product wants `SCAN_PENDING` visibility.
 

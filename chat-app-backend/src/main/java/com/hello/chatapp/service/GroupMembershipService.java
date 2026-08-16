@@ -222,6 +222,7 @@ public class GroupMembershipService {
         GroupParticipant targetParticipant = loadParticipant(groupId, userId);
         User targetUser = targetParticipant.getUser();
         String removedUsername = targetUser.getUsername();
+        // No race while editing message (see leaveGroup below)
         groupParticipantRepository.delete(targetParticipant);
         publishMembershipEvent(group, targetUser, actor, SystemEventType.USER_KICKED, removedUsername);
     }
@@ -249,6 +250,7 @@ public class GroupMembershipService {
         String removedUsername = groupParticipantRepository.findByGroupIdAndUserId(groupId, userId)
                 .map(participant -> {
                     groupAuthorizationService.requireCanManageTarget(actor, groupId, target, GroupPermission.BAN_MEMBERS);
+                    // No race while editing message (see leaveGroup below)
                     groupParticipantRepository.delete(Objects.requireNonNull(participant));
                     return target.getUsername();
                 })
@@ -342,6 +344,8 @@ public class GroupMembershipService {
             groupRepository.save(group);
         }
 
+        // If the user is editing their message, they must hold a lock on their own participant row in edit method.
+        // Which means this line will wait for the lock to be released (wait for them to finish editing their message).
         groupParticipantRepository.delete(participant);
         publishMembershipEvent(group, actor, actor, SystemEventType.USER_LEFT, actor.getUsername());
         if (memberCount <= 1) {

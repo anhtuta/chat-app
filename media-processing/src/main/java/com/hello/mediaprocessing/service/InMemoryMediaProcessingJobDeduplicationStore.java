@@ -35,8 +35,8 @@ public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProces
      */
     @Override
     public void markCompleted(String jobId) {
-        inProgressJobIds.remove(jobId);
         completedJobIds.add(jobId);
+        inProgressJobIds.remove(jobId);
     }
 
     /**
