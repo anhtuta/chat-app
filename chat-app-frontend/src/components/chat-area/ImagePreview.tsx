@@ -1,10 +1,17 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Box, IconButton, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import "./ImagePreview.css";
+
+const FOCUSABLE_ELEMENTS_SELECTOR =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_ELEMENTS_SELECTOR));
+}
 
 export interface ImagePreviewItem {
   url: string;
@@ -27,6 +34,9 @@ function ImagePreview({
   onClose,
   onCurrentIndexChange,
 }: ImagePreviewProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
   const hasMultiple = images.length > 1;
   const safeIndex = images.length
     ? Math.min(Math.max(currentIndex, 0), images.length - 1)
@@ -52,8 +62,57 @@ function ImagePreview({
       return undefined;
     }
 
+    previouslyFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const focusFrameId = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    const trapTabNavigation = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current;
+      if (!dialog || event.key !== "Tab") {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(dialog);
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      const activeElement = document.activeElement;
+      const activeIsInDialog = activeElement instanceof Node && dialog.contains(activeElement);
+
+      if (event.shiftKey) {
+        if (!activeIsInDialog || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+        return;
+      }
+
+      if (!activeIsInDialog || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    const keepFocusInsideDialog = (event: FocusEvent) => {
+      const dialog = dialogRef.current;
+      const target = event.target;
+      if (!dialog || !(target instanceof Node) || dialog.contains(target)) {
+        return;
+      }
+
+      const focusableElements = getFocusableElements(dialog);
+      focusableElements[0]?.focus();
+    };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -69,13 +128,24 @@ function ImagePreview({
       if (event.key === "ArrowRight") {
         event.preventDefault();
         showNext();
+        return;
       }
+
+      trapTabNavigation(event);
     };
 
     window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", keepFocusInsideDialog);
     return () => {
+      cancelAnimationFrame(focusFrameId);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", keepFocusInsideDialog);
+
+      const elementToRestore = previouslyFocusedElementRef.current;
+      if (elementToRestore && document.contains(elementToRestore)) {
+        elementToRestore.focus();
+      }
     };
   }, [open, onClose, showNext, showPrevious]);
 
@@ -85,13 +155,16 @@ function ImagePreview({
 
   return createPortal(
     <div
+      ref={dialogRef}
       className="image-preview-wrapper"
       role="dialog"
       aria-modal="true"
       aria-label="Image preview"
+      tabIndex={-1}
       onClick={onClose}
     >
       <IconButton
+        ref={closeButtonRef}
         className="image-preview-close-button"
         onClick={onClose}
         title="Close"
