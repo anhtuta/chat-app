@@ -1,15 +1,31 @@
 package com.hello.mediaprocessing.service;
 
 /**
- * Tracks job ids that have already been observed so workers can skip duplicate deliveries.
+ * Tracks in-progress and completed job ids so workers can skip duplicate deliveries without
+ * blocking retries for deferred or failed work.
  */
 public interface MediaProcessingJobDeduplicationStore {
 
     /**
-     * Marks a job id as seen if this is the first delivery attempt handled by the current store.
+     * Attempts to mark a job as in-progress when processing is about to start.
      *
      * @param jobId idempotency key for a processing job
-     * @return {@code true} when the job id was new, otherwise {@code false}
+     * @return {@code true} when the job was newly claimed, otherwise {@code false} for completed or
+     *         already in-progress deliveries
      */
-    boolean markIfFirstSeen(String jobId);
+    boolean tryBeginProcessing(String jobId);
+
+    /**
+     * Records a terminal successful completion so later duplicate deliveries can be skipped.
+     *
+     * @param jobId idempotency key for a processing job
+     */
+    void markCompleted(String jobId);
+
+    /**
+     * Releases an in-progress claim so deferred or failed jobs can be retried later.
+     *
+     * @param jobId idempotency key for a processing job
+     */
+    void releaseProcessing(String jobId);
 }

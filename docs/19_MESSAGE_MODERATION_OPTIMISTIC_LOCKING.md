@@ -1,5 +1,7 @@
 # Message Moderation Optimistic Locking
 
+Severity: 🟠 Major
+
 ## Current Problem
 
 `MessageModerationService.editMessage` / `deleteMessage` load a message with `findWithMediaById` (no lock) and then `save` it. `Message` has no `@Version` field.
@@ -17,8 +19,49 @@ This is uncommon in chat (one author, occasional moderator), but it is a real co
 Related code:
 
 - `Message` (`updated_at` is a **business** “last content edit” timestamp, not a concurrency token)
-- `MessageModerationService`
+- `MessageModerationService.editMessage` / `deleteMessage` (`findWithMediaById` then `save`; edit also inserts `message_edit_history`)
 - Feature 15 message moderation APIs (`PATCH` / `DELETE /api/messages/{messageId}`)
+
+## Examples (status quo — not fixed)
+
+This is **same-row** last-write-wins, not membership TOCTOU (doc 23). It can happen in **group or public** chat: two devices of the author, or author + `CO_LEADER` (`EDIT_ANY_TEXT_MESSAGE` / `DELETE_ANY_MESSAGE`).
+
+Both TXs: load message (no lock, no `@Version`) → auth → mutate in memory → `save`. Hibernate flushes whatever fields that persistence context thinks are dirty. There is no `UPDATE … WHERE version = ?`.
+
+### 1. Two concurrent edits — skipped history version
+
+The message content is `"Hello"`. Alice (author) and Bob (`CO_LEADER`) both edit it.
+
+1. Both `PATCH /api/messages/{id}` load the row with `content = "Hello"`.
+2. Alice’s TX inserts history `oldContent = "Hello"` and sets content to `"Hi"`.
+3. Bob’s TX also inserts history `oldContent = "Hello"` (still the snapshot he loaded) and sets content to `"Hey"`.
+4. Both commit. Last writer wins on `messages.content` (e.g. `"Hey"`).
+
+**Broken outcome:** Two history rows both claim the previous text was `"Hello"`. If Alice committed first, the audit trail never records `"Hi"` as an intermediate version. Clients that already showed `"Hi"` can be overwritten by `"Hey"` with no 409.
+
+### 2. Edit and delete at the same time
+
+Alice starts an edit; Bob starts a delete of the same text message.
+
+1. Both load the row with `deleted_at = null` and current content.
+2. Alice’s TX: `deleted_at` check passes; history insert; `content` / `updated_at` / `updated_by` set.
+3. Bob’s TX: `deleted_at` check passes; `deleted_at` / `deleted_by` set.
+4. Both `save` and commit. Order-dependent:
+   - Delete commits last → row is soft-deleted, possibly also with Alice’s new content (dirty-field updates can both apply).
+   - Edit commits last → if the edit session still has `deleted_at = null`, a full-state flush can **clear** Bob’s delete (message looks edited and alive). Dirty-field-only flush may keep the delete and still change content.
+
+**Broken outcome:** Soft-deleted message with a new edit, or a delete that disappears. Hard to explain in the API.
+
+### 3. Two concurrent deletes
+
+Alice and Bob both `DELETE /api/messages/{id}`.
+
+1. Both load `deleted_at = null` and pass “not already deleted.”
+2. Both set `deleted_at` / `deleted_by` and save.
+
+**Broken outcome:** Mostly harmless — the row stays soft-deleted. `deleted_by` is last write wins (may show Bob even if Alice deleted first). No duplicate “already deleted” error for the loser.
+
+These are lost updates on `messages`: **time of check** = unlocked load + in-memory `deleted_at` / `content`; **time of use** = `save` with no version/CAS. Doc 23 is different: membership on another table can change without touching this row.
 
 **Related but different race:** concurrent kick/ban/role change vs edit/delete (auth TOCTOU on `group_participants`) — see [23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md](./23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md). Message `@Version` does not cover that case.
 
@@ -26,7 +69,7 @@ Related code:
 
 ### 1. Dedicated `@Version` column (optimistic locking)
 
-- How it works: Add `messages.version BIGINT NOT NULL DEFAULT 0` and `@Version` on `Message`. Hibernate includes `version` in `UPDATE … WHERE id=? AND version=?` and increments on successful flush. Map `OptimisticLockException` / `ObjectOptimisticLockingFailureException` to HTTP 409; client refreshes and retries.
+- How it works: Add `messages.version INTEGER NOT NULL DEFAULT 0` and `@Version` on `Message`. Hibernate includes `version` in `UPDATE … WHERE id=? AND version=?` and increments on successful flush. Map `OptimisticLockException` / `ObjectOptimisticLockingFailureException` to HTTP 409; client refreshes and retries.
 - Pros: Standard JPA approach; protects edit and delete; keeps edit-history chain consistent under conflict (loser fails instead of writing stale `oldContent`); no row lock held for the whole TX.
 - Cons: Requires a migration and API/error-contract handling; FE must handle 409.
 - Recommendation for our problem: **Yes** (preferred when we fix this).
@@ -78,13 +121,29 @@ Related code:
 
 ## Implementation details
 
-(Planned — not implemented yet.)
+- Added Flyway `V10__add_messages_version.sql`: `messages.version INTEGER NOT NULL DEFAULT 0` (existing rows backfill to 0). Java type is `Integer` (nullable on new transient instances).
+- Added JPA `@Version` on `Message.version`. Left new in-memory instances `null` so Hibernate treats them as transient. `updated_at` stays business edit time.
+  - Tức là KHÔNG init giá trị cho cột version = 0 (để nó = `null`), nếu không khi insert, Hibernate sẽ tưởng đây là đang update.
+- `GlobalExceptionHandler` maps `OptimisticLockingFailureException` to HTTP **409** with a stable string (no Hibernate details). The losing TX rolls back, including any `message_edit_history` insert.
+- `MessageModerationService` is unchanged: `save` still flushes the versioned row; conflict surfaces at flush/commit.
+- Tests: `GlobalExceptionHandlerTest` (409 body), `MessageModerationServiceTest` (edit/delete propagate lock failure).
+- FE: no If-Match/`version` field yet. Existing `handleErrorResponse` shows the 409 body; reload-and-retry is still optional.
 
-When implementing, record here:
+Why it changed: concurrent edit/delete on the same row was last-write-wins and could skip history versions.
 
-- What changed (migration, entity, exception handling, tests, FE if any)
-- Why it changed
-- Rollout / migration / backward-compatibility notes (`DEFAULT 0` backfill, old clients ignoring 409, etc.)
+Rollout / backward-compatibility: `DEFAULT 0` backfill; old clients that ignore 409 still get a failed request instead of a silent overwrite. Re-run Flyway on each environment before deploying the entity change.
+
+Test: when editing a message, here is the generated SQL:
+
+```sql
+UPDATE messages
+SET content=?,deleted_at=?,deleted_by=?,group_id=?,message_type=?,timestamp=?,updated_at=?,updated_by=?,user_id=?,version=?
+WHERE id=? AND version=?
+```
+
+## Lesson (look back here)
+
+Same-row concurrent `save` without `@Version` is last-write-wins. A dedicated version column (not `updated_at`) makes the loser fail with 409 and rolls back edit history. Membership races (doc 23) still need a different lock.
 
 ## Future Higher-Scale Path
 

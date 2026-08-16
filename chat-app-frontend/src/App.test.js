@@ -5,6 +5,7 @@ jest.mock("./services/api", () => ({
   checkAuth: jest.fn().mockResolvedValue({
     authenticated: false,
     username: null,
+    fullname: null,
   }),
   logout: jest.fn(),
 }));

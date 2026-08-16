@@ -1,5 +1,6 @@
 package com.hello.mediaprocessing.storage;
 
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import java.nio.file.Path;
 
@@ -7,6 +8,13 @@ import java.nio.file.Path;
  * Downloads media source objects from the configured storage backend into the local worker filesystem.
  */
 public interface ObjectStorageDownloader {
+
+    /**
+     * Returns the storage provider type implemented by this downloader.
+     *
+     * @return provider type served by this implementation
+     */
+    ObjectStorageProviderType getType();
 
     /**
      * Downloads an object into a caller-provided local file path.

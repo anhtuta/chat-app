@@ -1,10 +1,12 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkspaceProperties;
+import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloadException;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloader;
+import com.hello.mediaprocessing.storage.ObjectStorageDownloaderRegistry;
 import jakarta.inject.Singleton;
 import java.nio.file.Path;
 
@@ -14,15 +16,15 @@ import java.nio.file.Path;
 @Singleton
 public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessingSourceLoader {
 
-    private final ObjectStorageDownloader objectStorageDownloader;
+    private final ObjectStorageDownloaderRegistry downloaderRegistry;
     private final MediaProcessingWorkspaceManager workspaceManager;
     private final MediaProcessingWorkspaceProperties workspaceProperties;
 
     public ObjectStorageMediaProcessingSourceLoader(
-            ObjectStorageDownloader objectStorageDownloader,
+            ObjectStorageDownloaderRegistry downloaderRegistry,
             MediaProcessingWorkspaceManager workspaceManager,
             MediaProcessingWorkspaceProperties workspaceProperties) {
-        this.objectStorageDownloader = objectStorageDownloader;
+        this.downloaderRegistry = downloaderRegistry;
         this.workspaceManager = workspaceManager;
         this.workspaceProperties = workspaceProperties;
     }
@@ -35,10 +37,20 @@ public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessing
      */
     @Override
     public LoadedMediaSource load(MediaProcessingJobMessage job) {
+        if (job.storageProvider() != downloaderRegistry.getConfiguredProviderType()) {
+            throw new MediaProcessingSourceLoadException(
+                    MediaProcessingFailureReason.STORAGE_PROVIDER_MISMATCH,
+                    "Job storage provider "
+                            + job.storageProvider()
+                            + " does not match configured provider "
+                            + downloaderRegistry.getConfiguredProviderType());
+        }
+
+        ObjectStorageDownloader objectStorageDownloader = downloaderRegistry.getDownloader(job.storageProvider());
         Path workspaceDirectory = workspaceManager.createWorkspace(job.jobId());
-        Path localSourcePath = workspaceManager.resolveLocalSourcePath(workspaceDirectory, job.objectKey());
 
         try {
+            Path localSourcePath = workspaceManager.resolveLocalSourcePath(workspaceDirectory, job.objectKey());
             ObjectStorageDownloadResult downloadResult = objectStorageDownloader.download(
                     job.bucket(),
                     job.objectKey(),

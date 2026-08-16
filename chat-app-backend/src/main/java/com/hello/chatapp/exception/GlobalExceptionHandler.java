@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,8 +14,13 @@ import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 
+/**
+ * Maps domain and framework exceptions to HTTP / STOMP responses.
+ * 4xx bodies are plain strings so the frontend can use {@code response.text()}.
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -30,6 +36,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleNotFoundException(NotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(e.getMessage());
+    }
+
+    /**
+     * Missing static resource (often Chrome DevTools probing
+     * {@code /.well-known/appspecific/com.chrome.devtools.json}). Not an application failure:
+     * log without a stack trace and return 404 instead of the 500 catch-all.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<String> handleNoResourceFound(NoResourceFoundException e) {
+        logger.warn("No static resource: {}", e.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Not found");
     }
 
     @ExceptionHandler(BadRequestException.class)
@@ -68,6 +85,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleForbiddenException(RuntimeException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(e.getMessage());
+    }
+
+    /**
+     * Concurrent {@code Message} edit/delete (JPA {@code @Version}) — loser gets 409, not 500.
+     * Body is a stable string so FE {@code response.text()} can show it after refresh.
+     */
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<String> handleOptimisticLockingFailure(OptimisticLockingFailureException e) {
+        logger.warn("Optimistic lock conflict: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body("This message was updated by someone else. Refresh and try again.");
     }
 
     @MessageExceptionHandler(ForbiddenException.class)

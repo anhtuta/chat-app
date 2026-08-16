@@ -58,18 +58,20 @@ Current state:
   - OCR or speech-to-text failures
   - search latency
 - Search must respect existing authorization rules even if the index contains messages from many groups.
-- Search should degrade safely if the search index is temporarily unavailable.
+- Search must distinguish an unavailable search index from a valid empty result set:
+  - Prefer a bounded database fallback where the product supports it (for example MVP `search_content` queries).
+  - Otherwise return a typed service-unavailable error such as HTTP `503`, never a successful empty page.
+  - Index outages must never produce an empty successful search response that could be mistaken for "no matches".
 - Search should not require Kafka for MVP.
 
 ## Use Cases
 
 1. User searches globally from the sidebar or top-level search screen.
-   - The backend searches only messages from groups where the user is a member.
+   - The backend scopes candidates to groups the user can access, then finalizes authorization via `GroupAuthorizationService`.
    - The UI shows matching message snippets grouped or labeled by group.
 
 2. User searches inside a selected group.
-   - The backend searches only messages from that group.
-   - The backend verifies that the user is still a member of that group.
+   - The backend scopes to that group and calls `GroupAuthorizationService` for the final read permission decision.
    - The UI lets the user jump to the message in the conversation.
 
 3. User searches Vietnamese without diacritics.
@@ -114,20 +116,36 @@ Current state:
 
 - How it works:
   - Store a normalized version of searchable message text, for example `search_content`.
-  - Normalization happens in application code:
-    - lowercase
-    - remove Vietnamese diacritics
-    - normalize whitespace
-  - Search normalizes the query the same way.
-  - Query uses `search_content LIKE '%normalized_query%'`.
+  - Normalization happens in application code through the shared Vietnamese normalizer (see section 2.1).
+  - Indexing and query parsing use the same normalizer.
+  - Create and edit paths maintain `search_content` in the **same transaction** as `messages.content`:
+    - On create: persist `content` and `search_content` together.
+    - On edit: update `content` and recompute `search_content` together.
+    - Soft-delete does not need to clear `search_content`, but every search query must exclude soft-deleted rows.
+  - If normalization fails for a create or edit:
+    - Fail the write (do not commit `content` without a matching usable `search_content`), **or**
+    - Persist a documented sentinel such as `NULL` `search_content` and exclude that row from search until a successful re-normalization/backfill.
+    - Do not leave an inconsistent searchable string that does not match the shared normalizer contract.
+  - Existing rows need an idempotent migration/backfill:
+    - Recompute `search_content` from current non-soft-deleted `messages.content`.
+    - Safe to re-run; already-normalized rows can be overwritten with the same result.
+    - Soft-deleted rows may be skipped or filled, but remain excluded by the search predicate.
+  - Query contract for MVP:
+    ```sql
+    WHERE deleted_at IS NULL
+      AND search_content LIKE '%' || :escapedNormalizedQuery || '%'
+    ```
+    Escape `%` and `_` in the normalized query so matching is literal substring, not SQL wildcard matching.
 - Pros:
   - Database portable.
   - Easy to understand.
   - Correctly handles case-insensitive and accent-insensitive matching if normalization is consistent.
+  - Same-transaction maintenance keeps `content` and `search_content` consistent for creates and edits.
 - Cons:
   - Still inefficient for leading-wildcard substring search without an additional index strategy.
   - Duplicates message text in the database.
   - Does not provide strong ranking.
+  - Requires careful create/edit/backfill and soft-delete query discipline.
 - Recommendation for our problem: No as the only search solution.
 - When I'd use it:
   - Very small datasets.
@@ -230,11 +248,26 @@ Current state:
 #### 2.1. Normalize in Application Code
 
 - How it works:
-  - Add a shared normalizer used by both indexing and query parsing.
-  - The normalizer lowercases text, removes Vietnamese diacritics, normalizes Unicode forms, and collapses whitespace.
+  - Add one shared normalizer used by both indexing (`search_content` / search documents) and query parsing.
+  - Vietnamese normalization contract:
+    1. Unicode form: normalize input to NFC before further processing.
+    2. Case folding: lowercase using Unicode-aware case folding after NFC.
+    3. Explicit `đ` / `Đ` conversion: map `đ` and `Đ` to `d` (do not rely only on generic ASCII folding, because `đ` is not a combining-diacritic form of `d`).
+    4. Diacritic removal: strip remaining Vietnamese combining marks / equivalent accented characters so accented and unaccented queries match.
+    5. Whitespace collapsing: trim leading/trailing whitespace and collapse internal runs of whitespace to a single ASCII space.
+    6. Punctuation handling: MVP keeps alphanumeric and spaces after folding; strip or normalize common punctuation so `làm gì?` and `lam gi` can match. Document the exact punctuation set in the normalizer implementation.
+    7. Length limits: reject or truncate normalized query/`search_content` according to the same max length used by searchable message text (aligned with `messages.content` / API `q` max). Empty normalized output after collapsing is not a searchable query.
   - Example:
     - raw text: `Bạn Đang Làm Gì Thế`
     - normalized text: `ban dang lam gi the`
+  - Indexing and query parsing must call the same normalizer class/method so stored and queried forms cannot drift.
+  - Required tests for the normalizer:
+    - NFC vs NFD composed/decomposed Unicode for the same Vietnamese phrase
+    - mixed diacritics vs fully unaccented text
+    - explicit `đ` / `Đ` → `d`
+    - uppercase and mixed-case input
+    - leading/trailing/multiple whitespace variants
+    - punctuation variants covered by the MVP punctuation rule
 - Pros:
   - Works across databases and search engines.
   - Testable in Java.
@@ -275,32 +308,40 @@ Current state:
 
 ### 3. How should global search enforce authorization?
 
+Local and global search must call the centralized permission service (`GroupAuthorizationService`) for the final authorization decision, including actor membership/permission checks and any target-role rules that apply to the searched content. Membership joins and allowed-group-ID filters are **query-scoping mechanisms only**. They narrow the candidate set; they are not a replacement for the centralized authorization check.
+
 #### 3.1. Join Through Current Membership Tables at Query Time
 
 - How it works:
-  - Local search filters by `group_id`.
-  - Global search joins messages to group membership and filters by the current user.
+  - Local search scopes the SQL/query by `group_id`, then calls `GroupAuthorizationService` (for example `requirePermission(..., READ_MESSAGES)` or the active-membership equivalent used by message history) before returning results.
+  - Global search joins messages to current group membership to scope candidates to groups the actor belongs to, then still applies the centralized permission decision for the actor (and target-role rules when the searched action or hydrated content requires them).
+  - Banned or non-member actors must be rejected by the permission service even if a stale join somehow included a row.
 - Pros:
-  - Strong authorization.
-  - Uses the source of truth.
-  - No stale membership permissions in the search index.
+  - Scopes the candidate set using the membership source of truth.
+  - Final allow/deny stays in one authorization gate already used by chat APIs.
+  - No stale membership permissions treated as the final decision inside the search index.
 - Cons:
   - Can be slower for global search if the query scans many messages first.
   - Requires good indexes on membership and message group/timestamp fields.
-- Recommendation for our problem: Yes for database-backed MVP.
+  - Easy to misuse if developers treat the join alone as authorization.
+- Recommendation for our problem: Yes for database-backed MVP, with membership joins as scoping only and `GroupAuthorizationService` as the final gate.
 
 #### 3.2. Filter by Allowed Group IDs in the Search Query
 
 - How it works:
-  - Backend loads the user's group IDs.
-  - Backend sends `groupId IN (...)` as a filter to the database or search engine.
+  - Backend loads the user's currently allowed group IDs after authorization helpers resolve membership/permissions.
+  - Backend sends `groupId IN (...)` as a **scope filter** to the database or search engine.
+  - Before returning hydrated results, the backend still relies on the centralized permission service for the final decision (local: authorize that group; global: ensure each result group remains allowed and apply actor/target-role rules as required).
+  - Membership changes invalidate previous scopes; do not trust a previously cached group-ID list as the final authz decision.
 - Pros:
   - Works for both database search and dedicated search engines.
-  - Keeps authorization decision in the backend.
+  - Keeps the final authorization decision in backend code via `GroupAuthorizationService`.
+  - Useful as a pre-filter so the index never becomes the authz system of record.
 - Cons:
   - Large group lists may create large filters.
-  - Must handle membership changes carefully.
-- Recommendation for our problem: Yes for the search engine path.
+  - Must refresh allowed group IDs carefully after membership/ban/role changes.
+  - Dangerous if treated as a substitute for the permission service.
+- Recommendation for our problem: Yes for the search engine path, as scoping only, with centralized permission checks retained.
 
 #### 3.3. Store User Access Lists Inside the Search Index
 
@@ -313,7 +354,8 @@ Current state:
   - Bad fit for group chat.
   - High reindexing cost when membership changes.
   - Easy to leak data if the index is stale.
-- Recommendation for our problem: No.
+  - Bypasses the centralized permission service and target-role rules.
+- Recommendation for our problem: No. Reject user access lists in the search index; keep authorization in `GroupAuthorizationService` and use membership only for query scoping.
 
 ### 4. How should the search index be synced?
 
@@ -333,24 +375,29 @@ Current state:
 #### 4.2. After-Commit Index Event From `chat-app-backend`
 
 - How it works:
-  - Message is saved in PostgreSQL.
-  - After the transaction commits, `chat-app-backend` records or publishes a search indexing event.
-  - A worker consumes the event and updates the search index.
+  - Inside the message write `@Transactional` method, persist the message **and** a durable `SearchOutbox` (or equivalent outbox) record in the **same database transaction**.
+  - Do **not** publish to RabbitMQ, call `@Async`, or start other asynchronous indexing work while that transaction is still active.
+  - Use an after-commit hook only to trigger outbox publication or wake a poller after the transaction has successfully committed.
+  - A worker then consumes durable outbox work and updates the search index.
 - Pros:
-  - Does not block message writes on indexing.
+  - Does not block message writes on external indexing availability.
   - Avoids publishing events before the message row is committed.
+  - Survives process crash after commit when paired with the durable outbox row.
   - Can start inside the existing backend process.
   - Can later be extracted into a separate service.
 - Cons:
   - Eventually consistent.
   - Needs retry and dead-letter handling.
+  - Requires outbox cleanup and monitoring.
 - Recommendation for our problem: Yes.
+- Note: This option and section 4.3 are complementary. 4.2 describes the after-commit trigger boundary; 4.3 describes the durable outbox row that must be written with the message.
 
 #### 4.3. Transactional Outbox Table
 
 - How it works:
   - Save the message and an outbox row in the same database transaction.
-  - A background publisher reads unsent outbox rows and sends them to a queue or directly indexes them.
+  - After commit, a publisher/poller (triggered by after-commit or a scheduled worker) reads unsent outbox rows and sends them to a queue or directly indexes them.
+  - Asynchronous work and RabbitMQ publishing happen only after the write transaction has committed.
 - Pros:
   - Strong reliability.
   - Avoids losing indexing events if the process crashes after commit.
@@ -358,7 +405,7 @@ Current state:
 - Cons:
   - More tables and worker logic.
   - Requires cleanup and monitoring.
-- Recommendation for our problem: Yes if we build a dedicated search index or media extraction pipeline.
+- Recommendation for our problem: Yes if we build a dedicated search index or media extraction pipeline; also the preferred durability pattern underneath the after-commit trigger in 4.2.
 
 #### 4.4. Change Data Capture
 
@@ -528,12 +575,14 @@ Current state:
 flowchart LR
     A[React global search box] --> B[Search API]
     C[React group search box] --> B
-    B --> D[Auth and membership checks]
+    B --> D[Auth via GroupAuthorizationService + membership scope]
     D --> E[Normalize query]
     E --> F[(PostgreSQL messages + search_content)]
     F --> G[Search result DTOs]
     G --> H[React results panel]
 ```
+
+Index unavailable: bounded DB fallback where supported; otherwise typed 503 — never an empty successful page.
 
 ### Future Dedicated Search Flow
 
@@ -545,7 +594,7 @@ flowchart LR
     D --> E[(Search engine)]
     F[media-processing-service\nOCR / speech-to-text] --> M[(media_extracted_text)]
     M --> C
-    G[Search API] --> H[Load allowed group IDs]
+    G[Search API] --> H[GroupAuthorizationService + allowed group ID scope]
     H --> E
     E --> I[Message IDs + highlights]
     I --> J[Backend hydrates safe results]
@@ -582,9 +631,21 @@ flowchart LR
     - `end_ms`
     - `processor_name`
     - `processor_version`
-    - `status`
+    - `status`: at least `PENDING`, `READY`, `FAILED`, `TOMBSTONED` / suppressed
+    - `failure_reason` (nullable)
+    - `tombstoned_at` (nullable)
+    - `tombstone_reason` (nullable): e.g. `MESSAGE_SOFT_DELETED`, `MEDIA_REPLACED`, `ACCESS_RESTRICTED`, `EXTRACTION_FAILED`
     - `created_at`
     - `updated_at`
+  - Lifecycle / retention rules:
+    - **Ready text is searchable** only while the source message is not soft-deleted, the media attachment is still the current accessible attachment for that message, and the actor would be allowed to read the source message/media.
+    - **Message soft-delete:** tombstone or hard-delete linked `MediaExtractedText` rows and remove/suppress corresponding documents in every search index (`search_content` media fields, dedicated search engine docs, n-gram/media side indexes). Media-derived text must no longer match after the message becomes inaccessible.
+    - **Media replaced or removed:** tombstone extracted text for the old `media_id`, delete/suppress old index documents, and only reindex after a successful new extraction for the replacement media.
+    - **Access-restricted:** if bans, membership loss, archive, or other authz changes make the source inaccessible to a user, search APIs must not return media-derived hits for that user. Do not rely on stale index ACL lists (see section 3.3 rejection); scope by membership and finalize with `GroupAuthorizationService`. Shared index documents for restricted sources should be suppressed or filtered at query/hydration time so inaccessible content is not leaked.
+    - **Failed extraction:** keep `status = FAILED` (or equivalent) with reason; do **not** index failed rows as searchable text. Retries may overwrite the same logical extraction idempotently. Failed rows are not search hits.
+    - **Cleanup/retention:** tombstoned or orphaned extracted-text rows should be cleaned up by a retention job after a configured window, or deleted immediately when product prefers strict purge. Cleanup must also delete corresponding search-index documents so tombstoned media text cannot resurface.
+  - Deletion/suppression rule for every search index:
+    - When the source message/media becomes inaccessible or extraction is failed/tombstoned, remove or suppress the media-derived searchable fields/documents so that text is no longer searchable.
 
 - `SearchOutbox`
   - Future durable event table for indexing and media-derived text updates.
@@ -592,11 +653,37 @@ flowchart LR
 
 ### API Draft
 
+Shared request rules for Global Search and Local Group Search:
+
+- `q`:
+  - Required for a search request.
+  - Server-enforced minimum and maximum length after trim (exact bounds TBD in Open Questions / config; document chosen constants in the API).
+  - Queries below the minimum or above the maximum are rejected with `400`, not silently truncated into surprising matches.
+  - Normalize with the shared Vietnamese normalizer, then escape `%` and `_` so `LIKE` / equivalent substring matching is literal.
+- `limit`:
+  - Optional page size with server-enforced minimum and maximum bounds (for example default `20`, min `1`, max `50`; exact constants TBD but must be enforced server-side).
+  - Values outside bounds are rejected or clamped only if the API explicitly documents clamping; prefer reject with `400` for clarity.
+- `cursor`:
+  - Opaque to clients. Clients must not parse or construct cursors.
+  - Bound to the normalized query, search scope (global vs local), `groupId` for local search, active filters, and sort order.
+  - A cursor from a different `q` / scope / group / filter / sort must be rejected with `400`.
+- Sort / pagination stability:
+  - Primary order: newest first.
+  - Stable unique tuple: `(timestamp DESC, messageId DESC)`.
+  - When timestamps tie, `messageId DESC` breaks ties so pages neither duplicate nor skip rows across cursor fetches.
+- Index unavailable:
+  - Use bounded DB fallback where supported; otherwise return typed `503` (or equivalent). Never return `200` with an empty page solely because the index is down.
+
 #### Global Search
 
 ```http
 GET /api/search/messages?q=ban%20dang%20lam%20gi%20the&cursor=...&limit=20
 ```
+
+Authorization:
+
+- Scope candidate groups via current membership / allowed group IDs.
+- Finalize with `GroupAuthorizationService` (actor permission to read messages; apply target-role rules when hydrating or exposing moderated content requires them).
 
 Response shape:
 
@@ -619,13 +706,20 @@ Response shape:
 }
 ```
 
+`nextCursor` encodes the opaque continuation key for the next page under the same normalized query, scope, filters, and `(timestamp DESC, messageId DESC)` order. Absence of `nextCursor` means there is no further page.
+
 #### Local Group Search
 
 ```http
 GET /api/groups/{groupId}/search/messages?q=ban%20dang%20lam%20gi%20the&cursor=...&limit=20
 ```
 
-Response can match the global response shape, but `groupId` is already implied by the route.
+Authorization:
+
+- Scope by `{groupId}`.
+- Call `GroupAuthorizationService` for the final decision that the actor may read messages in that group (including ban/membership/role rules). Membership path parameters alone are not sufficient.
+
+Response can match the global response shape, but `groupId` is already implied by the route. Cursor binding includes this `groupId`.
 
 #### Future Search Filters
 
@@ -654,8 +748,9 @@ Possible query parameters:
 
 - Query behavior:
   - Debounce typing.
-  - Do not search empty or very short queries unless product chooses to support it.
+  - Do not search empty or below-minimum queries; show validation guidance instead.
   - Show loading, no-results, and error states.
+  - Distinguish "no matches" from search-unavailable (`503` / error banner). Never treat an index outage as an empty result list.
   - Keep local and global query state separate.
 
 ## Recommendation
@@ -664,14 +759,14 @@ Recommended phased path:
 
 1. MVP: implement database-backed text search using application-level normalization plus PostgreSQL `pg_trgm` on a normalized `search_content` column.
 2. Keep search APIs inside `chat-app-backend`.
-3. Enforce authorization in the backend through current group membership.
+3. Enforce final authorization through `GroupAuthorizationService` (actor and target-role rules). Treat membership joins / allowed group IDs as query scoping only; do not store user access lists in the search index.
 4. Do not use Kafka for MVP.
 5. Do not create a new search service for MVP.
-6. Add a transactional outbox before introducing a dedicated search engine or media extraction pipeline.
-7. Use `media-processing-service` as the owner of OCR/transcript generation; search should consume stored `media_extracted_text` rows or media-text-extracted events, not run OCR inside request handlers.
+6. Write message + durable `SearchOutbox` in the same transaction; use after-commit only to trigger outbox publication/polling. Never publish RabbitMQ or start async indexing while the write `@Transactional` method is active.
+7. Use `media-processing-service` as the owner of OCR/transcript generation; search should consume stored `media_extracted_text` rows or media-text-extracted events, not run OCR inside request handlers. Tombstone/suppress media-derived text whenever the source message/media becomes inaccessible or extraction fails.
 8. Move to Elasticsearch, OpenSearch, Meilisearch, or Typesense when search needs richer ranking, highlighting, typo tolerance, media-derived text, or database portability.
 
-This path gives the app a practical first search feature without locking the domain model to PostgreSQL forever. The key is to keep normalization, search request handling, and authorization in backend code behind a search service abstraction so the storage/index implementation can change later.
+This path gives the app a practical first search feature without locking the domain model to PostgreSQL forever. The key is to keep normalization, search request handling, and centralized authorization in backend code behind a search service abstraction so the storage/index implementation can change later.
 
 ## Future Higher-Scale Path
 
@@ -703,9 +798,10 @@ This path gives the app a practical first search feature without locking the dom
 ## Open Questions
 
 - Should system messages be searchable by their rendered human-readable text, or excluded from MVP search?
-- What is the minimum query length for search?
-- Should global search sort only by newest first, or combine recency with relevance?
+- What exact server-enforced minimum and maximum lengths should `q` and `limit` use?
+- Should global search sort only by newest first with `(timestamp DESC, messageId DESC)`, or combine recency with relevance later?
 - Should the UI group global results by group, or show one chronological result stream?
 - How long can search be eventually consistent after sending or editing a message?
 - Which OCR and speech-to-text provider is acceptable from a privacy and cost perspective?
 - Do we need Vietnamese-specific ranking beyond accent-insensitive matching?
+- How long should tombstoned `MediaExtractedText` rows be retained before hard cleanup?

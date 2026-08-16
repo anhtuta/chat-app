@@ -16,13 +16,13 @@ Same TOCTOU family as [21_LAST_MEMBER_LEAVE_CONCURRENT_JOIN.md](./21_LAST_MEMBER
 | join-by-token vs revoke-link            | Token looked valid; join ran after revocation          |
 | leave/archive vs add (doc 21)           | Active check vs insert - already fixed with group lock |
 
-### Examples (before the fix)
+## Examples (before the fix)
 
 Role rules from [15_GROUP_ROLES_AND_PERMISSIONS.md](./15_GROUP_ROLES_AND_PERMISSIONS.md): nobody can kick/ban/promote/demote the `LEADER` via manage-target APIs; a leader steps down only via `transferLeadership`. So races below use actors who **can** lose privilege mid-flight (`CO_LEADER` / `ELDER`), or leadership transfer for the leader case.
 
 Before the fix, membership mutations authorized or validated mutable state **first**, then acquired the group lock (or wrote without sharing that lock with role/link changes).
 
-#### 1. Demote co-leader then they still add a member
+### 1. Demote co-leader then they still add a member
 
 Alice is `CO_LEADER` (has `ADD_MEMBERS`). Bob is `LEADER` (can demote Alice).
 
@@ -33,7 +33,7 @@ Alice is `CO_LEADER` (has `ADD_MEMBERS`). Bob is `LEADER` (can demote Alice).
 
 **Broken outcome:** Charlie joins even though Alice is now `MEMBER` and no longer has `ADD_MEMBERS`.
 
-#### 2. Leadership transfer then former leader still bans
+### 2. Leadership transfer then former leader still bans
 
 Alice is `LEADER`. Only she can transfer leadership (which demotes her to `MEMBER`).
 
@@ -44,7 +44,7 @@ Alice is `LEADER`. Only she can transfer leadership (which demotes her to `MEMBE
 
 **Broken outcome:** A former leader who just stepped down still completes a ban as `MEMBER`.
 
-#### 3. Revoke join link while someone is joining
+### 3. Revoke join link while someone is joining
 
 Alice has a valid join token. Bob is `LEADER` or `CO_LEADER` (has `CREATE_JOIN_LINK`, so can revoke join links).
 
@@ -55,7 +55,7 @@ Alice has a valid join token. Bob is `LEADER` or `CO_LEADER` (has `CREATE_JOIN_L
 
 **Broken outcome:** A revoked invite still admits a new member.
 
-#### 4. Kick co-leader mid-create-join-link
+### 4. Kick co-leader mid-create-join-link
 
 Alice is `CO_LEADER` or `ELDER` (has `CREATE_JOIN_LINK`). Bob is `LEADER` (can kick Alice; he cannot kick the leader).
 
@@ -66,7 +66,7 @@ Alice is `CO_LEADER` or `ELDER` (has `CREATE_JOIN_LINK`). Bob is `LEADER` (can k
 
 **Broken outcome:** A removed member still creates an active invite.
 
-#### 5. Leader demotes actor mid-role change
+### 5. Leader demotes actor mid-role change
 
 Alice is `CO_LEADER` (has `MANAGE_ROLES`). Eve is `ELDER`. Bob is `LEADER`.
 
@@ -78,20 +78,6 @@ Alice is `CO_LEADER` (has `MANAGE_ROLES`). Eve is `ELDER`. Bob is `LEADER`.
 **Broken outcome:** Alice changes Eve's role after Alice's own privilege was already revoked.
 
 These are check-then-act (TOCTOU): **time of check** = unlocked permission/link-state read; **time of use** = membership/link/role write after a concurrent mutation changed what is allowed.
-
-### After the fix (how these are prevented)
-
-Every membership/role mutation takes the **same** group row lock (`lockActiveGroup` -> `findByIdForUpdate`) before authorization or final mutable-state validation, then writes under that lock:
-
-| Example                         | What happens after the fix                                                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Demote vs add                | Bob's demote and Alice's add serialize on the group lock. Whichever runs second re-reads Alice's role; if demoted to `MEMBER`, `ADD_MEMBERS` fails and Charlie is not inserted. |
-| 2. Transfer vs ban              | Transfer and ban serialize. After transfer, Alice's ban recheck sees she is `MEMBER` / lacks permission and fails.                                                              |
-| 3. Revoke vs join               | Revoke and join serialize. After a revoke wins, join refreshes and revalidates the link under the lock, sees `revokedAt`, and does not insert Alice.                            |
-| 4. Kick vs create join link     | Kick and create-link serialize. After kick, Alice is not a member; `CREATE_JOIN_LINK` fails and no link is saved.                                                               |
-| 5. Demote actor mid-role change | Both mutations take the same lock; after Bob's demote/kick, Alice's auth fails and Eve's role is not changed.                                                                   |
-
-Read-only list endpoints stay unlocked (stale lists are acceptable). Archive vs join remains covered by the same lock (see doc 21).
 
 ## Fix (implemented)
 
@@ -108,6 +94,20 @@ Shared helper `lockActiveGroup(groupId)` = `findByIdForUpdate` + `ensureActive`.
 Applies to: `addMember`, `createJoinLink`, `revokeJoinLink`, `joinByToken` (link refresh/revalidation and ban recheck after lock), `kickMember`, `banMember`, `unbanMember`, `updateMemberRole`, `transferLeadership`, `leaveGroup`.
 
 Group media finalize (`MediaUploadSessionService.completeUploadSession`) re-checks `SEND_MESSAGES` but does **not** take this lock — separate prepare/complete requests make a long-held group lock on complete a poor fit; the residual race is only concurrent revoke during the complete transaction.
+
+## Examples (after the fix)
+
+Every membership/role mutation takes the **same** group row lock (`lockActiveGroup` -> `findByIdForUpdate`) before authorization or final mutable-state validation, then writes under that lock:
+
+| Example                         | What happens after the fix                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Demote vs add                | Bob's demote and Alice's add serialize on the group lock. Whichever runs second re-reads Alice's role; if demoted to `MEMBER`, `ADD_MEMBERS` fails and Charlie is not inserted. |
+| 2. Transfer vs ban              | Transfer and ban serialize. After transfer, Alice's ban recheck sees she is `MEMBER` / lacks permission and fails.                                                              |
+| 3. Revoke vs join               | Revoke and join serialize. After a revoke wins, join refreshes and revalidates the link under the lock, sees `revokedAt`, and does not insert Alice.                            |
+| 4. Kick vs create join link     | Kick and create-link serialize. After kick, Alice is not a member; `CREATE_JOIN_LINK` fails and no link is saved.                                                               |
+| 5. Demote actor mid-role change | Both mutations take the same lock; after Bob's demote/kick, Alice's auth fails and Eve's role is not changed.                                                                   |
+
+Read-only list endpoints stay unlocked (stale lists are acceptable). Archive vs join remains covered by the same lock (see doc 21).
 
 ## Lesson
 

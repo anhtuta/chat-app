@@ -62,11 +62,6 @@ public class MediaProcessingJobHandler {
             return MediaProcessingJobStatus.REJECTED_INVALID;
         }
 
-        if (!deduplicationStore.markIfFirstSeen(job.jobId())) {
-            logTransition(MediaProcessingJobStatus.SKIPPED_DUPLICATE, job, "duplicate job id");
-            return MediaProcessingJobStatus.SKIPPED_DUPLICATE;
-        }
-
         Set<ProcessingTarget> enabledTargets = resolveEnabledTargets(job);
         logTransition(MediaProcessingJobStatus.VALIDATED, job, "enabledTargets=" + enabledTargets);
 
@@ -75,51 +70,97 @@ public class MediaProcessingJobHandler {
             return MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS;
         }
 
-        try (LoadedMediaSource source = sourceLoader.load(job)) {
-            logTransition(
-                    MediaProcessingJobStatus.DISPATCHED,
-                    job,
-                    "handoff=" + workerProperties.getHandoff()
-                            + ", localSource=" + source.getLocalFile()
-                            + ", contentType=" + source.getContentType()
-                            + ", bytes=" + source.getObjectSize());
+        if (!deduplicationStore.tryBeginProcessing(job.jobId())) {
+            logTransition(MediaProcessingJobStatus.SKIPPED_DUPLICATE, job, "duplicate job id");
+            return MediaProcessingJobStatus.SKIPPED_DUPLICATE;
+        }
 
-            Set<ProcessingTarget> implementedTargets = EnumSet.of(ProcessingTarget.METADATA);
-            Set<ProcessingTarget> completedTargets = EnumSet.copyOf(enabledTargets);
-            completedTargets.retainAll(implementedTargets);
-            Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
-            pendingTargets.removeAll(completedTargets);
+        boolean terminalSuccess = false;
+        try {
+            try (LoadedMediaSource source = sourceLoader.load(job)) {
+                Set<ProcessingTarget> implementedTargets = resolveImplementedTargets();
+                Set<ProcessingTarget> actionableTargets = EnumSet.copyOf(enabledTargets);
+                actionableTargets.retainAll(implementedTargets);
 
-            if (completedTargets.isEmpty()) {
-                return MediaProcessingJobStatus.DISPATCHED;
+                if (actionableTargets.isEmpty()) {
+                    Set<ProcessingTarget> pendingTargets = Set.copyOf(enabledTargets);
+                    logTransition(
+                            MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                            job,
+                            "source loaded; pendingTargets=" + pendingTargets + ", awaiting later phases");
+                    resultSink.accept(new MediaProcessingResult(
+                            job.jobId(),
+                            job.messageId(),
+                            job.mediaId(),
+                            MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                            null,
+                            Set.of(),
+                            pendingTargets));
+                    return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
+                }
+
+                logTransition(
+                        MediaProcessingJobStatus.DISPATCHED,
+                        job,
+                        "handoff=" + workerProperties.getHandoff() + ", localSource=" + source.getLocalFile() + ", contentType=" +
+                                source.getContentType() + ", bytes=" + source.getObjectSize());
+
+                Set<ProcessingTarget> completedTargets = EnumSet.noneOf(ProcessingTarget.class);
+                VideoMetadata videoMetadata = null;
+
+                if (actionableTargets.contains(ProcessingTarget.METADATA)) {
+                    logTransition(
+                            MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
+                            job,
+                            "actionableTargets=" + actionableTargets);
+                    videoMetadata = extractVideoMetadata(job, source);
+                    completedTargets.add(ProcessingTarget.METADATA);
+                }
+
+                Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
+                pendingTargets.removeAll(completedTargets);
+                MediaProcessingJobStatus finalStatus = pendingTargets.isEmpty()
+                        ? MediaProcessingJobStatus.MEDIA_READY
+                        : MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
+                resultSink.accept(new MediaProcessingResult(
+                        job.jobId(),
+                        job.messageId(),
+                        job.mediaId(),
+                        finalStatus,
+                        videoMetadata,
+                        Set.copyOf(completedTargets),
+                        Set.copyOf(pendingTargets)));
+                logTransition(
+                        finalStatus,
+                        job,
+                        "completedTargets=" + completedTargets + "; pendingTargets=" + pendingTargets +
+                                (videoMetadata == null ? "" : "; mimeType=" + videoMetadata.detectedMimeType()));
+                if (finalStatus == MediaProcessingJobStatus.MEDIA_READY) {
+                    deduplicationStore.markCompleted(job.jobId());
+                    terminalSuccess = true;
+                }
+                return finalStatus;
             }
-
-            logTransition(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, job, "completedTargets=" + completedTargets);
-
-            VideoMetadata videoMetadata = extractVideoMetadata(job, source);
-            MediaProcessingJobStatus finalStatus = pendingTargets.isEmpty()
-                    ? MediaProcessingJobStatus.MEDIA_READY
-                    : MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
-            resultSink.accept(new MediaProcessingResult(
-                    job.jobId(),
-                    job.messageId(),
-                    job.mediaId(),
-                    finalStatus,
-                    videoMetadata,
-                    Set.copyOf(completedTargets),
-                    Set.copyOf(pendingTargets)));
-            logTransition(
-                    finalStatus,
-                    job,
-                    "videoMetadata extracted; pendingTargets=" + pendingTargets + ", mimeType=" + videoMetadata.detectedMimeType());
-            return finalStatus;
         } catch (MediaProcessingSourceLoadException | VideoMetadataExtractionException e) {
             logTransition(
                     MediaProcessingJobStatus.PROCESSING_FAILED,
                     job,
                     "failureReason=" + resolveFailureReason(e) + ", message=" + e.getMessage());
             return MediaProcessingJobStatus.PROCESSING_FAILED;
+        } finally {
+            if (!terminalSuccess) {
+                deduplicationStore.releaseProcessing(job.jobId());
+            }
         }
+    }
+
+    /**
+     * Returns the processing targets currently implemented by this worker phase.
+     *
+     * @return targets that can be completed during the current handler execution
+     */
+    private Set<ProcessingTarget> resolveImplementedTargets() {
+        return EnumSet.of(ProcessingTarget.METADATA);
     }
 
     /**

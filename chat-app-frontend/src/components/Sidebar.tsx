@@ -15,8 +15,28 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import type { ChatGroup } from "../types/groups";
+import type { ThemeId, ThemeOption } from "../types/theme";
+import SidebarUserDetails from "./SidebarUserDetails";
 import "./Sidebar.css";
 import { useRef, useLayoutEffect } from "react";
+
+type ChatRouteId = "public" | number;
+
+interface SidebarProps {
+  groups: ChatGroup[];
+  totalUnreadCount?: number | null;
+  currentChatId: ChatRouteId;
+  onChatSelect: (chatId: ChatRouteId) => void;
+  onCreateGroupClick: () => void;
+  onJoinGroupClick: () => void;
+  selectedThemeId: ThemeId;
+  onThemeChange: (themeId: ThemeId) => void;
+  themeOptions: ThemeOption[];
+  username?: string | null;
+  fullname?: string | null;
+  onLogout: () => void | Promise<void>;
+}
 
 function Sidebar({
   groups,
@@ -28,9 +48,12 @@ function Sidebar({
   selectedThemeId,
   onThemeChange,
   themeOptions,
-}) {
-  const itemRefs = useRef(new Map());
-  const prevPositions = useRef(null);
+  username,
+  fullname,
+  onLogout,
+}: SidebarProps) {
+  const itemRefs = useRef(new Map<string, HTMLElement>());
+  const prevPositions = useRef<Map<string, DOMRect> | null>(null);
 
   // FLIP animation: measure previous and new positions and animate translateY
   useLayoutEffect(() => {
@@ -116,7 +139,7 @@ function Sidebar({
               labelId="theme-selector-label"
               value={selectedThemeId}
               label="Theme"
-              onChange={(event) => onThemeChange(event.target.value)}
+              onChange={(event) => onThemeChange(event.target.value as ThemeId)}
               className="theme-selector-select"
               MenuProps={{
                 sx: {
@@ -160,13 +183,15 @@ function Sidebar({
             <ListItemText
               primary="Public Chat"
               secondary="Everyone"
-              primaryTypographyProps={{
-                variant: "body2",
-                className: "sidebar-group-item-primary-text",
-              }}
-              secondaryTypographyProps={{
-                variant: "caption",
-                className: "sidebar-group-item-secondary-text",
+              slotProps={{
+                primary: {
+                  variant: "body2",
+                  className: "sidebar-group-item-primary-text",
+                },
+                secondary: {
+                  variant: "caption",
+                  className: "sidebar-group-item-secondary-text",
+                },
               }}
             />
           </ListItemButton>
@@ -186,13 +211,15 @@ function Sidebar({
               <ListItemText
                 primary={group.name}
                 secondary={group.latestMessage ? `${group.latestMessageSender}: ${group.latestMessage}` : "No messages"}
-                primaryTypographyProps={{
-                  variant: "body2",
-                  className: "sidebar-group-item-primary-text",
-                }}
-                secondaryTypographyProps={{
-                  variant: "caption",
-                  className: "sidebar-group-item-secondary-text",
+                slotProps={{
+                  primary: {
+                    variant: "body2",
+                    className: "sidebar-group-item-primary-text",
+                  },
+                  secondary: {
+                    variant: "caption",
+                    className: "sidebar-group-item-secondary-text",
+                  },
                 }}
               />
               {group.unreadCount ? (
@@ -201,6 +228,11 @@ function Sidebar({
             </ListItemButton>
           ))}
         </List>
+        <SidebarUserDetails
+          username={username}
+          fullname={fullname}
+          onLogout={onLogout}
+        />
       </Drawer>
     </div>
   );

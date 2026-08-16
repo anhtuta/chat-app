@@ -195,7 +195,18 @@
 
 .chat-message-image-link {
   display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: inherit;
   text-decoration: none;
+  color: inherit;
+}
+
+.chat-message-image-link:disabled {
+  cursor: default;
 }
 
 .chat-message-image,

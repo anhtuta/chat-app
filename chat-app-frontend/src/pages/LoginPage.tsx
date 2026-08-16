@@ -14,7 +14,7 @@ import {
 import { login } from "../services/api";
 
 interface LoginPageProps {
-    onLoginSuccess: (username: string) => void;
+    onLoginSuccess: (username: string, fullname?: string | null) => void;
     redirectTo?: string | null;
 }
 
@@ -42,7 +42,7 @@ function LoginPage({ onLoginSuccess, redirectTo = null }: LoginPageProps) {
         try {
             const result = await login(username.trim(), password);
             if (result.success) {
-                onLoginSuccess(result.username ?? username.trim());
+                onLoginSuccess(result.username ?? username.trim(), result.fullname ?? null);
                 navigate(redirectTo || "/group/public", { replace: true });
             } else {
                 setError(result.message || "Login failed");

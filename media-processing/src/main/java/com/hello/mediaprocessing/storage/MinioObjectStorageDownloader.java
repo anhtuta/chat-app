@@ -2,6 +2,7 @@ package com.hello.mediaprocessing.storage;
 
 import com.hello.mediaprocessing.config.MediaProcessingStorageProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import io.micronaut.context.annotation.Requires;
 import io.minio.GetObjectArgs;
@@ -15,8 +16,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * Downloads source objects directly from MinIO using service credentials.
@@ -29,10 +28,25 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
 
     public MinioObjectStorageDownloader(MediaProcessingStorageProperties storageProperties) {
         MediaProcessingStorageProperties.Minio minio = storageProperties.getMinio();
-        this.minioClient = MinioClient.builder()
+        MinioClient minioClient = MinioClient.builder()
                 .endpoint(minio.getEndpoint())
                 .credentials(minio.getAccessKey(), minio.getSecretKey())
+                .region(minio.getRegion())
                 .build();
+        if (minio.isPathStyleAccess()) {
+            minioClient.disableVirtualStyleEndpoint();
+        }
+        this.minioClient = minioClient;
+    }
+
+    /**
+     * Returns the MinIO provider type for registry routing.
+     *
+     * @return {@link ObjectStorageProviderType#MINIO}
+     */
+    @Override
+    public ObjectStorageProviderType getType() {
+        return ObjectStorageProviderType.MINIO;
     }
 
     /**
@@ -50,21 +64,22 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                     .bucket(bucket)
                     .object(objectKey)
                     .build());
-            if (stat.size() <= 0) {
+
+            long bytesCopied;
+            try (InputStream inputStream = minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(bucket)
+                    .object(objectKey)
+                    .build())) {
+                bytesCopied = Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (bytesCopied <= 0) {
                 // TODO: Replace the zero-byte corruption heuristic with decoder-level validation once Phase 4 metadata extraction is in place.
                 throw new ObjectStorageDownloadException(
                         MediaProcessingFailureReason.SOURCE_CORRUPTED,
                         "Downloaded source object is empty: " + bucket + "/" + objectKey);
             }
 
-            try (InputStream inputStream = minioClient.getObject(GetObjectArgs.builder()
-                    .bucket(bucket)
-                    .object(objectKey)
-                    .build())) {
-                Files.copy(inputStream, targetPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            return new ObjectStorageDownloadResult(stat.size(), stat.contentType(), stat.etag());
+            return new ObjectStorageDownloadResult(bytesCopied, stat.contentType(), stat.etag());
         } catch (ErrorResponseException e) {
             String code = e.errorResponse() == null ? null : e.errorResponse().code();
             if ("NoSuchKey".equals(code) || "NoSuchObject".equals(code) || "NoSuchBucket".equals(code)) {
@@ -77,7 +92,7 @@ public class MinioObjectStorageDownloader implements ObjectStorageDownloader {
                     MediaProcessingFailureReason.SOURCE_UNREADABLE,
                     "Failed to read source object from MinIO: " + bucket + "/" + objectKey,
                     e);
-        } catch (IOException | InvalidKeyException | NoSuchAlgorithmException e) {
+        } catch (IOException e) {
             throw new ObjectStorageDownloadException(
                     MediaProcessingFailureReason.SOURCE_UNREADABLE,
                     "Failed to download source object from MinIO: " + bucket + "/" + objectKey,

@@ -24,6 +24,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
 
+/**
+ * HTTP endpoints for register, login, logout, and session auth checks.
+ */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -46,6 +49,7 @@ public class AuthController {
                 .success(true)
                 .message("Registration successful")
                 .username(user.getUsername())
+                .fullname(user.getFullname())
                 .build());
     }
 
@@ -63,6 +67,7 @@ public class AuthController {
                 .success(true)
                 .message("Login successful")
                 .username(user.getUsername())
+                .fullname(user.getFullname())
                 .build());
     }
 
@@ -80,15 +85,21 @@ public class AuthController {
                 .build());
     }
 
+    /**
+     * Returns whether the current request has an authenticated session user.
+     * When authenticated, includes username from the security context and fullname from the session {@code user}.
+     */
     @GetMapping("/check")
-    public ResponseEntity<AuthCheckResponse> checkAuth() {
+    public ResponseEntity<AuthCheckResponse> checkAuth(HttpSession session) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication != null && authentication.isAuthenticated()
                 && !authentication.getName().equals("anonymousUser")) {
+            User user = (User) session.getAttribute("user");
             return ResponseEntity.ok(AuthCheckResponse.builder()
                     .authenticated(true)
                     .username(authentication.getName())
+                    .fullname(user != null ? user.getFullname() : null)
                     .build());
         } else {
             return ResponseEntity.ok(AuthCheckResponse.builder()

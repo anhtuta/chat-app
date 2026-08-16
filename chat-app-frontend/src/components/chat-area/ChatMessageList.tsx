@@ -1,7 +1,26 @@
 import React from "react";
 import { Box, Button, CircularProgress, Typography } from "@mui/material";
+import type { ChatMessage } from "../../types/chat";
 import ChatMessageItem from "./ChatMessageItem";
+import { type DisplayChatMessage, getPendingLocalId } from "./displayChatMessage";
 import "./ChatMessageList.css";
+
+interface ChatMessageListProps {
+  chatMessagesRef: React.RefObject<HTMLDivElement | null>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  messages: DisplayChatMessage[];
+  username: string | null;
+  currentUserPermissions?: string[] | null;
+  isLoading: boolean;
+  isLoadingOlder: boolean;
+  onScroll: (event: React.UIEvent<HTMLDivElement>) => void;
+  showLoadOlderFallback: boolean;
+  onLoadOlderFallback: () => void;
+  onRetryPendingMessage?: (localId: string) => void;
+  onCancelPendingMessage?: (localId: string) => void;
+  onDismissPendingMessage?: (localId: string) => void;
+  onMessageModerated?: (updatedMessage: ChatMessage) => void;
+}
 
 function ChatMessageList({
   chatMessagesRef,
@@ -18,7 +37,7 @@ function ChatMessageList({
   onCancelPendingMessage,
   onDismissPendingMessage,
   onMessageModerated,
-}) {
+}: ChatMessageListProps) {
   return (
     <div className="chat-message-list-wrapper">
       {isLoading && (
@@ -55,7 +74,7 @@ function ChatMessageList({
 
         {messages.map((message, index) => (
           <ChatMessageItem
-            key={message.id || message.localId || index}
+            key={message.id || getPendingLocalId(message) || index}
             message={message}
             username={username}
             currentUserPermissions={currentUserPermissions}

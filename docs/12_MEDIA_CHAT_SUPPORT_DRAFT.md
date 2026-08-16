@@ -513,9 +513,9 @@ Response fields:
   - `uploadStrategy` (`SINGLE_PART`, `MULTIPART`)
   - `presignedUrl` for single-part uploads
   - multipart instructions when required:
-    - `multipartUploadId`
     - `recommendedPartSize`
     - `completeBy`
+  - note: provider `multipartUploadId` is not returned here; it is created and returned by the parts endpoint on first part-URL request
 - `limits`:
   - `maxSizeBytes`
   - `maxAttachmentCount`
@@ -842,7 +842,7 @@ Multipart implementation plan:
    - abort multipart uploads when completion fails after provider initialization, when users cancel, or when sessions expire
 3. Frontend API/types
    - add `requestMultipartPartUrls(...)`
-   - extend prepared attachment types with `multipartUploadId`, `recommendedPartSize`, and `completeBy`
+   - extend prepared attachment types with `recommendedPartSize` and `completeBy` (provider `multipartUploadId` comes from the parts response, not prepare)
    - extend completion attachment input with `parts: [{ partNumber, etag }]`
 4. Browser multipart uploader
    - slice files by `recommendedPartSize`
@@ -1186,6 +1186,11 @@ prepareUploadSession
 #### Call order for Multi-image message
 
 For each attachment, follow single-part or multipart flow **independently**, then **one** `complete` with all attachments.
+
+Worked example sequence diagrams (PlantUML):
+
+- `docs/diagram/12_01-user-uploads-photos-single-part.puml` — multi-photo `IMAGE` / `SINGLE_PART` (from `docs/logs/12_user-uploads-3-photos-in-one-message.md`)
+- `docs/diagram/12_02-user-uploads-video-multipart.puml` — large `VIDEO` / `MULTIPART` with part-URL batches (from `docs/logs/12_user-uploads-a-video-59mb.md`)
 
 ```mermaid
 sequenceDiagram

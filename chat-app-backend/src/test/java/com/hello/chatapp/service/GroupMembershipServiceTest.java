@@ -14,6 +14,7 @@ import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
+import com.hello.chatapp.exception.ForbiddenException;
 import com.hello.chatapp.repository.GroupBanRepository;
 import com.hello.chatapp.repository.GroupJoinLinkRepository;
 import com.hello.chatapp.repository.GroupParticipantRepository;
@@ -411,5 +412,35 @@ class GroupMembershipServiceTest {
                 group, systemMessage, SystemEventType.USER_LEFT.latestPreview(), "alice");
         verify(membershipRealtimePublisher).publishMembershipChange(
                 group, systemMessage, SystemEventType.GROUP_ARCHIVED.latestPreview(), null);
+    }
+
+    /**
+     * Moderation must lock the actor’s participant row, not {@code groups}, so unrelated edits stay parallel.
+     */
+    @Test
+    void lockActorParticipantForModeration_locksParticipantAndRejectsArchivedGroup() {
+        GroupParticipant participant = new GroupParticipant(group, actor);
+        when(groupParticipantRepository.findByGroupIdAndUserIdForUpdate(100L, 1L))
+                .thenReturn(Optional.of(participant));
+
+        assertThat(groupMembershipService.lockActorParticipantForModeration(100L, 1L)).isSameAs(participant);
+        verify(groupRepository, never()).findByIdForUpdate(100L);
+
+        group.setArchivedAt(LocalDateTime.now());
+        assertThatThrownBy(() -> groupMembershipService.lockActorParticipantForModeration(100L, 1L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group is archived");
+    }
+
+    /**
+     * A kicked user has no row to lock — fail before message auth.
+     */
+    @Test
+    void lockActorParticipantForModeration_missingRow_isForbidden() {
+        when(groupParticipantRepository.findByGroupIdAndUserIdForUpdate(100L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMembershipService.lockActorParticipantForModeration(100L, 1L))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You are not a member of this group");
     }
 }

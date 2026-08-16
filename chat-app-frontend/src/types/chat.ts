@@ -104,7 +104,6 @@ export interface PreparedMediaAttachment {
   attachmentId: string;
   presignedUrl?: string | null;
   uploadStrategy: "SINGLE_PART" | "MULTIPART" | string;
-  multipartUploadId?: string | null;
   recommendedPartSize?: number | null;
   completeBy?: string | null;
 }

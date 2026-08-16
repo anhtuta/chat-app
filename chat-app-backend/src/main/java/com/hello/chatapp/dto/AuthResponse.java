@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * Auth API responses for register, login, and logout.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -13,5 +16,6 @@ public class AuthResponse {
     private boolean success;
     private String message;
     private String username;
+    private String fullname;
 }
 

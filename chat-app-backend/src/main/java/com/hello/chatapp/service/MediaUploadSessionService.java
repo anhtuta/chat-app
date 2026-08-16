@@ -34,6 +34,8 @@ import com.hello.chatapp.storage.ObjectStorageCompletedPart;
 import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.util.AfterCommit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +50,8 @@ import java.util.UUID;
 
 @Service
 public class MediaUploadSessionService {
+
+    private static final Logger logger = LoggerFactory.getLogger(MediaUploadSessionService.class);
 
     private final MediaUploadRepository mediaUploadRepository;
     private final GroupAuthorizationService groupAuthorizationService;
@@ -82,6 +86,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public PrepareMediaMessageResponse prepareUploadSession(User user, PrepareMediaMessageRequest request) {
+        logger.info("Prepare upload session for user {} with groupId {}", user.getUsername(), request.getGroupId());
         Group group = validateScopeAndMembership(user, request.getChatScope(), request.getGroupId());
         validateMessageType(request.getMessageType());
         validateAttachmentCount(request.getMessageType(), request.getAttachments());
@@ -128,6 +133,8 @@ public class MediaUploadSessionService {
             String uploadSessionId,
             String attachmentId,
             RequestMultipartPartUrlsRequest request) {
+        logger.info("Request multipart part urls for user {} with uploadSessionId {} and attachmentId {}",
+                user.getUsername(), uploadSessionId, attachmentId);
         MediaUpload mediaUpload = mediaUploadRepository.findByUploadSessionIdAndUploadId(uploadSessionId, attachmentId)
                 .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
 
@@ -145,6 +152,8 @@ public class MediaUploadSessionService {
         ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(mediaUpload.getStorageProvider());
         ensureMultipartUploadInitialized(mediaUpload, provider);
         mediaUpload.setStatus(UploadSessionStatus.UPLOAD_IN_PROGRESS);
+        // claimMultipartUploadId clears the persistence context; persist status + synced multipart id explicitly.
+        mediaUploadRepository.save(mediaUpload);
 
         List<MultipartPartResponse> parts = uniquePartNumbers.stream()
                 .map(partNumber -> MultipartPartResponse.builder()
@@ -164,6 +173,7 @@ public class MediaUploadSessionService {
 
     @Transactional
     public MessageResponse completeUploadSession(User user, String uploadSessionId, CompleteMediaMessageRequest request) {
+        logger.info("Complete upload session for user {} with uploadSessionId {}", user.getUsername(), uploadSessionId);
         List<MediaUpload> uploads = mediaUploadRepository.findByUploadSessionIdOrderByIdAsc(uploadSessionId);
         if (uploads.isEmpty()) {
             throw new NotFoundException("Upload session not found");
@@ -173,6 +183,8 @@ public class MediaUploadSessionService {
         MediaUpload firstUpload = uploads.getFirst();
         ensureNotExpired(firstUpload);
 
+        // Validate that the attachmentIds in the request are unique.
+        // This is to ensure that the same attachment is not uploaded multiple times.
         Map<String, CompleteMediaAttachmentRequest> requestByAttachmentId = new HashMap<>();
         for (CompleteMediaAttachmentRequest attachmentRequest : request.getAttachments()) {
             CompleteMediaAttachmentRequest previous =
@@ -182,6 +194,7 @@ public class MediaUploadSessionService {
             }
         }
 
+        // Validate that the number of attachments in the request matches the number of uploads.
         if (requestByAttachmentId.size() != uploads.size()) {
             throw new BadRequestException("Completion request must include every prepared attachment exactly once");
         }
@@ -189,6 +202,8 @@ public class MediaUploadSessionService {
         // Re-check SEND_MESSAGES at complete time: prepare can succeed, then kick/ban before finalize.
         // Intentionally no group FOR UPDATE here — membership mutations own that lock; media complete
         // only needs a fresh permission read (narrow residual race vs concurrent kick during this tx).
+        // Details: check SEND_MESSAGES on group_participants, then write the message later. Kick/ban can commit in between.
+        // Cái race condition này thực sự ko cần fix, nếu như user bị kick/ban khi đang complete thì cứ kệ thôi!
         Long preparedGroupId = firstUpload.getGroup() == null
                 ? null
                 : Objects.requireNonNull(firstUpload.getGroup().getId());
@@ -257,7 +272,6 @@ public class MediaUploadSessionService {
                 .objectKey(objectKey)
                 .uploadStrategy(uploadStrategy)
                 .presignedUrl(uploadStrategy == UploadStrategy.SINGLE_PART ? provider.buildUploadUrl(objectKey) : null)
-                .multipartUploadId(mediaUpload.getMultipartUploadId())
                 .recommendedPartSize(uploadStrategy == UploadStrategy.MULTIPART
                         ? mediaStorageProperties.getMultipartThresholdBytes()
                         : null)
@@ -357,10 +371,48 @@ public class MediaUploadSessionService {
         }
     }
 
+    /**
+     * Ensures {@code mediaUpload} has a provider multipart upload id, using CAS so concurrent first
+     * {@code /parts} calls cannot persist different ids. Losers abort their provider create and reload
+     * the winner's id (no create/CAS retry loop). See {@code docs/31_MEDIA_MULTIPART_UPLOAD_ID_INIT_RACE.md}.
+     *
+     * @param mediaUpload prepared multipart attachment row (multipart id synced onto this instance)
+     * @param provider storage provider for create/abort
+     */
     private void ensureMultipartUploadInitialized(MediaUpload mediaUpload, ObjectStorageProvider provider) {
-        if (mediaUpload.getMultipartUploadId() == null || mediaUpload.getMultipartUploadId().isBlank()) {
-            mediaUpload.setMultipartUploadId(provider.createMultipartUpload(mediaUpload.getObjectKey()));
+        // Early return if the multipart upload id is already set.
+        if (mediaUpload.getMultipartUploadId() != null && !mediaUpload.getMultipartUploadId().isBlank()) {
+            return;
         }
+
+        Long uploadRowId = Objects.requireNonNull(mediaUpload.getId(), "media upload id");
+        String candidateId = provider.createMultipartUpload(mediaUpload.getObjectKey());
+
+        // CAS: try to update multipartUploadId to the candidateId (multiple requests can do this concurrently).
+        int claimed = mediaUploadRepository.claimMultipartUploadId(
+                uploadRowId,
+                candidateId,
+                UploadSessionStatus.UPLOAD_INITIATED);
+
+        // Updated multipartUploadId successfully (won the CAS race), update the multipartUploadId on the entity.
+        if (claimed == 1) {
+            mediaUpload.setMultipartUploadId(candidateId);
+            return;
+        }
+
+        // Lost the CAS race (another request won the race and set the multipartUploadId), abort the provider multipart upload.
+        provider.abortMultipartUpload(mediaUpload.getObjectKey(), candidateId);
+
+        MediaUpload reloaded = mediaUploadRepository.findById(uploadRowId)
+                .orElseThrow(() -> new NotFoundException("Upload attachment not found"));
+        String winningId = reloaded.getMultipartUploadId();
+
+        // This should never happen.
+        if (winningId == null || winningId.isBlank()) {
+            throw new IllegalStateException(
+                    "Multipart upload id missing after lost CAS for attachment " + mediaUpload.getUploadId());
+        }
+        mediaUpload.setMultipartUploadId(winningId);
     }
 
     private void validateMultipartParts(List<CompletedMultipartPartRequest> parts) {

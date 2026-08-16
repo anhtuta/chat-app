@@ -69,10 +69,26 @@ public class MessageMedia {
     @Column(name = "checksum_sha256", length = 128)
     private String checksumSha256;
 
+    /**
+     * Attachment lifecycle for chat rendering and derivative work (thumbnails, transcode),
+     * not the malware result. Typical path: {@code UPLOAD_COMPLETED} /
+     * {@code PROCESSING_PENDING} → {@code PROCESSING_IN_PROGRESS} → {@code MEDIA_READY}
+     * (or {@code PROCESSING_FAILED} / {@code HARD_DELETED}).
+     * <p>
+     * {@link MediaStatus} still lists {@code SCAN_*} values from the Feature 12 model; do
+     * <strong>not</strong> use this column as the source of truth for ClamAV. Use
+     * {@link #scanStatus} instead.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 64)
     private MediaStatus status = MediaStatus.UPLOAD_COMPLETED;
 
+    /**
+     * Malware-scan outcome only ({@link MediaScanStatus}: pending / passed / blocked / failed).
+     * Independent of {@link #status}: a file can be {@code SCAN_PASSED} and still
+     * {@code PROCESSING_PENDING}, or {@code SCAN_BLOCKED} with no serving URLs.
+     * Recipients must not receive a signed content URL until this is {@code SCAN_PASSED}.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "scan_status", nullable = false, length = 64)
     private MediaScanStatus scanStatus = MediaScanStatus.SCAN_PENDING;

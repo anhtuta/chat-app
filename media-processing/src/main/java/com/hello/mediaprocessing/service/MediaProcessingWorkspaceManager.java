@@ -9,7 +9,9 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
 /**
  * Creates and removes the temporary directories used while a worker is handling a media file.
@@ -82,22 +84,29 @@ public class MediaProcessingWorkspaceManager {
         if (workspaceDirectory == null || Files.notExists(workspaceDirectory)) {
             return;
         }
+        List<IOException> deletionFailures = new ArrayList<>();
         try (var paths = Files.walk(workspaceDirectory)) {
             paths.sorted(Comparator.reverseOrder())
-                    .forEach(path -> deleteQuietly(path));
+                    .forEach(path -> attemptDelete(path, deletionFailures));
+        }
+        if (!deletionFailures.isEmpty()) {
+            IOException aggregate = new IOException("Failed to delete workspace " + workspaceDirectory);
+            deletionFailures.forEach(aggregate::addSuppressed);
+            throw aggregate;
         }
     }
 
     /**
-     * Deletes a single file-system path as part of recursive workspace cleanup.
+     * Attempts to delete a single file-system path and records any failure without aborting traversal.
      *
      * @param path file or directory to delete
+     * @param deletionFailures collector for per-path deletion errors
      */
-    private void deleteQuietly(Path path) {
+    private void attemptDelete(Path path, List<IOException> deletionFailures) {
         try {
             Files.deleteIfExists(path);
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to delete temp path " + path, e);
+            deletionFailures.add(e);
         }
     }
 

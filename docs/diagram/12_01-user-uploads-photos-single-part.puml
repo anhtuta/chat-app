@@ -1,0 +1,68 @@
+@startuml
+
+header "Media upload: multi-photo IMAGE (SINGLE_PART)"
+footer "Source: docs/logs/12_user-uploads-3-photos-in-one-message.md\n(log capture uses 2 images; flow is the same for N images ≤ maxImageCount)"
+
+actor User
+participant "Browser\n(ChatArea)" as Browser
+participant "Backend\n(/api/media/messages)" as Backend
+database "PostgreSQL\n(media_uploads,\nmessages, message_media)" as DB
+participant "MinIO\n(chat-media)" as MinIO
+participant "Realtime\n(STOMP / RabbitMQ)" as Realtime
+
+note over User, Realtime
+  Example: GROUP chat, messageType=IMAGE, 2 small JPEGs.
+  sizeBytes << multipart-threshold (10 MB) → uploadStrategy=SINGLE_PART.
+  Attach/select files does **not** call the API; APIs start on Send.
+end note
+
+== 0. Local selection (no network) ==
+
+User -> Browser: Attach → select photos → Send
+Browser -> Browser: Create local pending message\n(progress placeholder)
+
+== 1. Prepare upload session ==
+
+Browser -> Backend: POST /prepare\n{ chatScope, groupId, messageType: IMAGE,\n  attachments: [{filename, mimeType, sizeBytes}, ...] }
+Backend -> Backend: validate scope / SEND_MESSAGES,\nmessageType, attachment count & size
+Backend -> Backend: resolveUploadStrategy → SINGLE_PART\n(build objectKey per attachment)
+Backend -> DB: INSERT media_uploads rows\n(status=UPLOAD_INITIATED,\n multipart_upload_id=null)
+Backend -> MinIO: sign PUT URL per objectKey\n(presigned, ~15 min)
+Backend --> Browser: uploadSessionId +\nattachments[{ attachmentId, objectKey,\n  uploadStrategy: SINGLE_PART,\n  presignedUrl, recommendedPartSize: null,\n  completeBy }]
+
+== 2. Direct single-part uploads to MinIO ==
+
+note over Browser
+  ChatArea uploads attachments **sequentially**
+  (for-loop await). Each PUT is browser → MinIO
+  (no Spring session cookie).
+end note
+
+loop for each prepared attachment (e.g. 1.jpg, then 2.jpg)
+  Browser -> MinIO: PUT presignedUrl\nBody = file bytes\nContent-Type = image/jpeg
+  MinIO -> MinIO: verify SigV4; store object
+  MinIO --> Browser: 200 OK + ETag
+end
+
+== 3. Complete session → final message ==
+
+Browser -> Backend: POST .../upload-sessions/{id}/complete\n{ attachments: [{ attachmentId, etag }, ...] }
+Backend -> Backend: re-check SEND_MESSAGES;\nrequire every prepared attachment exactly once
+loop for each media_uploads row
+  Backend -> Backend: require etag (SINGLE_PART)
+  Backend -> MinIO: objectExists(objectKey)
+  Backend -> Backend: malwareScanService.assertClean()\n(placeholder pass today)
+  Backend -> DB: status = UPLOAD_COMPLETED
+end
+Backend -> DB: INSERT message + message_media\n(status=PROCESSING_PENDING,\n scanStatus=SCAN_PASSED)
+Backend -> DB: media_uploads → UPLOAD_SESSION_COMPLETED
+Backend --> Browser: MessageResponse\n(attachments with contentUrl, PROCESSING_PENDING)
+
+== 4. After commit (async side effects) ==
+
+Backend -> Realtime: publish MessageResponse to group topic
+Backend -> Backend: enqueue media processing\n(IMAGE → thumbnails / metadata later)
+
+Browser -> User: Replace pending placeholder\nwith delivered media message
+
+@enduml

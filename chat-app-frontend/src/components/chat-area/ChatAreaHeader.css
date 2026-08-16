@@ -4,7 +4,7 @@
 }
 
 .chat-area-header-toolbar {
-  justify-content: space-between !important;
+  justify-content: flex-start !important;
 }
 
 .chat-area-header-title-row {
@@ -13,10 +13,6 @@
 
 .chat-area-header-title {
   font-weight: bold !important;
-}
-
-.chat-area-header-logout-button {
-  text-transform: none !important;
 }
 
 .chat-area-header-status-box {

@@ -94,6 +94,10 @@ Use following format:
 
 (Describe the current behavior or problem that we need to optimize/solve.)
 
+## Examples (status quo — before the fix)
+
+(List some examples of the issue before the fix.)
+
 ## Possible Solutions
 
 ### 1. Solution A
@@ -125,6 +129,10 @@ For each phase, include the following sections:
 - What changed (mandatory, keep it concise and to the point)
 - Why it changed (optional, keep it concise and to the point)
 - Rollout, migration, or backward-compatibility notes (if applicable)
+
+## Examples (after the fix)
+
+(List some examples of the issue after the fix.)
 
 ## Lesson (look back here)
 

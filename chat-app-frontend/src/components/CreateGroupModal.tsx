@@ -15,14 +15,20 @@ import {
   Alert,
 } from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
+import type { ChatGroup, SelectableUser } from "../types/groups";
 import "./CreateGroupModal.css";
 
-function CreateGroupModal({ onClose, onGroupCreated }) {
+interface CreateGroupModalProps {
+  onClose: () => void;
+  onGroupCreated: (group: ChatGroup) => void;
+}
+
+function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
   const [groupName, setGroupName] = useState("");
-  const [users, setUsers] = useState([]);
-  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [users, setUsers] = useState<SelectableUser[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -38,7 +44,7 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
     }
   };
 
-  const toggleUser = (userId) => {
+  const toggleUser = (userId: number) => {
     setSelectedUserIds((prev) => {
       if (prev.includes(userId)) {
         return prev.filter((id) => id !== userId);
@@ -48,7 +54,7 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
     });
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -67,9 +73,10 @@ function CreateGroupModal({ onClose, onGroupCreated }) {
       const newGroup = await createGroup(groupName.trim(), selectedUserIds);
       onGroupCreated(newGroup);
       onClose();
-    } catch (error) {
-      console.error("Error creating group:", error);
-      setError("Error creating group: " + error.message);
+    } catch (err) {
+      console.error("Error creating group:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setError("Error creating group: " + message);
     } finally {
       setIsLoading(false);
     }

@@ -1,7 +1,6 @@
 package com.hello.mediaprocessing.service;
 
 import jakarta.inject.Singleton;
-
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,17 +10,42 @@ import java.util.concurrent.ConcurrentHashMap;
 @Singleton
 public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProcessingJobDeduplicationStore {
 
-    private final Set<String> seenJobIds = ConcurrentHashMap.newKeySet();
+    private final Set<String> completedJobIds = ConcurrentHashMap.newKeySet();
+    private final Set<String> inProgressJobIds = ConcurrentHashMap.newKeySet();
 
     /**
-     * Records a job id in the local in-memory set and reports whether it was first seen.
+     * Claims a job for processing unless it is already completed or currently in progress.
      *
      * @param jobId idempotency key for a processing job
-     * @return {@code true} when the job id is new to this process
+     * @return {@code true} when the job id is newly marked in-progress
      */
     @Override
-    public boolean markIfFirstSeen(String jobId) {
+    public boolean tryBeginProcessing(String jobId) {
         // TODO: Replace local in-memory deduplication with a distributed/durable idempotency store before multi-instance rollout.
-        return seenJobIds.add(jobId);
+        if (completedJobIds.contains(jobId)) {
+            return false;
+        }
+        return inProgressJobIds.add(jobId);
+    }
+
+    /**
+     * Moves a job from in-progress to completed so duplicate deliveries are skipped afterward.
+     *
+     * @param jobId idempotency key for a processing job
+     */
+    @Override
+    public void markCompleted(String jobId) {
+        inProgressJobIds.remove(jobId);
+        completedJobIds.add(jobId);
+    }
+
+    /**
+     * Clears an in-progress claim so the job can be retried after a deferral or failure.
+     *
+     * @param jobId idempotency key for a processing job
+     */
+    @Override
+    public void releaseProcessing(String jobId) {
+        inProgressJobIds.remove(jobId);
     }
 }

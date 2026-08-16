@@ -9,18 +9,24 @@ import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.NotFoundException;
 import com.hello.chatapp.repository.MessageEditHistoryRepository;
 import com.hello.chatapp.repository.MessageRepository;
+import com.hello.chatapp.util.AfterCommit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 
+/**
+ * Edit and soft-delete for chat messages. Group mutations lock the actor’s participant row
+ * before auth so kick/ban/demote/leave cannot race the write (see {@code docs/23_MESSAGE_MODERATION_MEMBERSHIP_AUTH_RACE.md}).
+ */
 @Service
 public class MessageModerationService {
 
     private final MessageRepository messageRepository;
     private final MessageEditHistoryRepository messageEditHistoryRepository;
     private final GroupAuthorizationService groupAuthorizationService;
+    private final GroupMembershipService groupMembershipService;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageService messageService;
 
@@ -28,11 +34,13 @@ public class MessageModerationService {
             MessageRepository messageRepository,
             MessageEditHistoryRepository messageEditHistoryRepository,
             GroupAuthorizationService groupAuthorizationService,
+            GroupMembershipService groupMembershipService,
             MessageResponseMapper messageResponseMapper,
             MessageService messageService) {
         this.messageRepository = messageRepository;
         this.messageEditHistoryRepository = messageEditHistoryRepository;
         this.groupAuthorizationService = groupAuthorizationService;
+        this.groupMembershipService = groupMembershipService;
         this.messageResponseMapper = messageResponseMapper;
         this.messageService = messageService;
     }
@@ -40,6 +48,7 @@ public class MessageModerationService {
     @Transactional
     public MessageResponse editMessage(User actor, Long messageId, String content) {
         Message message = loadMessage(messageId);
+        lockActorParticipantIfNeeded(actor, message);
         groupAuthorizationService.requireCanEditMessage(actor, message);
         if (message.getDeletedAt() != null) {
             throw new BadRequestException("Deleted messages cannot be edited");
@@ -71,6 +80,7 @@ public class MessageModerationService {
     @Transactional
     public MessageResponse deleteMessage(User actor, Long messageId) {
         Message message = loadMessage(messageId);
+        lockActorParticipantIfNeeded(actor, message);
         groupAuthorizationService.requireCanDeleteMessage(actor, message);
         if (message.getDeletedAt() != null) {
             throw new BadRequestException("Message is already deleted");
@@ -91,6 +101,20 @@ public class MessageModerationService {
                 .orElseThrow(() -> new NotFoundException("Message with id " + safeMessageId + " not found"));
     }
 
+    /**
+     * Serializes this actor’s group edit/delete with kick/ban/leave/demote of the same member.
+     * Public messages have no participant row — skip.
+     */
+    private void lockActorParticipantIfNeeded(User actor, Message message) {
+        if (message.getGroup() == null || message.getGroup().getId() == null) {
+            return;
+        }
+        User safeActor = Objects.requireNonNull(actor, "actor must not be null");
+        groupMembershipService.lockActorParticipantForModeration(
+                message.getGroup().getId(),
+                safeActor.getId());
+    }
+
     private String normalizeContent(String content) {
         String normalizedContent = Objects.requireNonNull(content, "content must not be null").trim();
         if (normalizedContent.isEmpty()) {
@@ -99,10 +123,18 @@ public class MessageModerationService {
         return normalizedContent;
     }
 
+    /**
+     * Refreshes the group sidebar preview after commit so this TX never {@code UPDATE}s {@code groups}
+     * while holding the participant row lock (that lock order deadlocks with kick/ban/leave).
+     */
     private void refreshGroupSummaryIfNeeded(Message message) {
         if (message.getGroup() == null || message.getGroup().getId() == null) {
             return;
         }
-        messageService.refreshGroupLatestMessage(message.getGroup().getId(), message.getId());
+        Long groupId = message.getGroup().getId();
+        Long messageId = Objects.requireNonNull(message.getId(), "message id must not be null");
+        AfterCommit.run(
+                () -> messageService.refreshGroupLatestMessage(groupId, messageId),
+                "Failed to refresh group latest-message after moderation");
     }
 }

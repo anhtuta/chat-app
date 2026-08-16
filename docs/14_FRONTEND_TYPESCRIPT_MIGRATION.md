@@ -9,13 +9,6 @@ The current frontend includes:
 - API and WebSocket boundary code in `src/services/`
 - A growing set of presentational and feature components in `src/components/`
 
-As more features are added, JavaScript-only code increases the risk of:
-
-- prop and callback contract drift across components
-- message/group payload shape mismatches between backend and frontend
-- weaker refactoring safety when moving logic into hooks or new modules
-- slower onboarding because data contracts live only in runtime behavior and comments
-
 We want TypeScript primarily to improve maintainability and refactoring safety, not to block feature delivery with a full rewrite.
 
 ## Possible Solutions
@@ -44,15 +37,6 @@ We want TypeScript primarily to improve maintainability and refactoring safety, 
 
 ## High level Architecture/Design
 
-### Use cases
-
-- Add new frontend features with typed props, state, and service contracts.
-- Refactor existing chat flows with lower regression risk.
-- Reuse shared domain models such as messages, groups, auth state, and media payloads.
-- Catch integration mistakes earlier during local development and CI.
-
-### Component Diagram
-
 ```text
 React Pages / Components
         |
@@ -68,33 +52,6 @@ Backend REST + WebSocket contracts
 Shared `src/types/*` sits across the frontend layers and defines
 stable shapes for messages, groups, auth, theme, and websocket events.
 ```
-
-### Core entities/models
-
-- `AuthState`: whether auth is being checked, whether the user is authenticated, and the active username.
-- `ChatMessage`: message id, sender, content, timestamp, optional `groupId`, and future media-related fields.
-- `ChatGroup`: id, name, latest message summary, latest message timestamp, and unread count.
-- `GroupSummaryUpdate`: real-time sidebar update payload for latest message and unread changes.
-- `ThemeOption` / resolved theme model: selectable theme id plus token metadata used by the app shell.
-- WebSocket subscription types: topic strings, unsubscribe handlers, connection state, and callback payloads.
-
-### API Draft
-
-This migration is intended to preserve the current external behavior.
-
-Frontend API draft changes are internal typing contracts, not backend API changes:
-
-- `checkAuth(): Promise<{ authenticated: boolean; username: string | null }>`
-- `getGroups(): Promise<ChatGroup[]>`
-- `getPublicMessages(): Promise<ChatMessage[]>`
-- `getGroupMessages(groupId, query): Promise<ChatMessage[]>`
-- `markGroupAsRead(groupId, messageId): Promise<void>`
-- `connectWebSocket(...)`, `subscribeToTopic(...)`, `sendMessage(...)` return typed values and accept typed payloads
-
-Backward-compatibility note:
-
-- No backend endpoint or websocket topic changes are required for Phase 1 of this migration.
-- If backend payloads are inconsistent today, TypeScript may expose that mismatch and force explicit normalization in the frontend service layer.
 
 ## Recommendation
 
@@ -138,7 +95,7 @@ Planned implementation phases:
   - `CI=true npm test -- --watchAll=false --runInBand` passes
   - the old CRA starter test was replaced with a small app smoke test because it no longer matched the real UI
 
-### Phase 1 Notes
+Notes:
 
 - Phase 1 is intentionally only a tooling/bootstrap step.
 - File conversion to `.ts` / `.tsx` starts in later phases.
@@ -158,7 +115,7 @@ Planned implementation phases:
 - Kept the first-pass types close to current frontend usage so later `.ts` / `.tsx` file conversions can adopt them incrementally.
 - Added a small TODO in the group update types where the backend contract is not fully settled yet.
 
-### Phase 2 Notes
+Notes:
 
 - These types are additive only in this phase; existing JavaScript files were not converted yet.
 - Media upload session shapes were included in `src/types/chat.ts` because that is already part of the current chat message flow.
@@ -176,7 +133,7 @@ Planned implementation phases:
 - Added a null check for the root DOM element in `index.tsx`.
 - Left page, service, and component files in JavaScript for later phases.
 
-### Phase 3 Notes
+Notes:
 
 - `App.test.js` still imports `./App` and continues to work without changes.
 - `theme/tokens.js` remains JavaScript for now; `App.tsx` consumes its exports as-is.
@@ -197,15 +154,6 @@ Planned implementation phases:
 - Added typed upload helpers (`UploadHandle`, `UploadProgressOptions`) in `api.ts`.
 - Made `subscribeToTopic` generic so topic callbacks can be typed at call sites.
 
-### Phase 4 Notes
-
-- Existing JavaScript consumers (`WebSocketProvider.js`, `ChatArea.js`, pages, components) continue to import these modules without changes.
-- `handleErrorResponse` is now typed as `never` so TypeScript understands failed API calls do not return normally.
-- Verification:
-  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
-  - `npm run build` passes
-  - `CI=true npm test -- --watchAll=false --runInBand` passes
-
 ### Phase 5: Convert shared runtime state
 
 - Status: Implemented
@@ -220,16 +168,6 @@ Planned implementation phases:
   - `useWebSocket()` return type
 - Extracted shared personal-subscription release logic into `releasePersonalSubscription` without changing reconnect/cleanup behavior.
 
-### Phase 5 Notes
-
-- `src/types/websocket.ts` now uses `StompSubscription` from `@stomp/stompjs` for subscription registry entries.
-- Map iteration uses `.forEach()` to stay compatible with the current `tsconfig` `target: "es5"` setting.
-- Pre-existing ESLint hook warnings in the provider remain unchanged in this phase.
-- Verification:
-  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
-  - `npm run build` passes
-  - `CI=true npm test -- --watchAll=false --runInBand` passes
-
 ### Phase 6: Convert page-level orchestration
 
 - Status: Implemented
@@ -241,25 +179,16 @@ Planned implementation phases:
 - Introduced local page types such as `ChatRouteId` (`"public" | number`) and `GroupMessageCursor` in `ChatPage.tsx`.
 - Wired pages to shared types (`ChatMessage`, `ChatGroup`, `ThemeId`, `ThemeOption`, `Unsubscribe`).
 
-### Phase 6 Notes
-
-- `ChatPage` still consumes JavaScript presentational components (`Sidebar`, `ChatArea`, `CreateGroupModal`) without changes.
-- `themeOptions` is still exported from `src/theme/tokens.js`; `ChatPage` types it as `ThemeOption[]` at the page boundary.
-- Verification:
-  - `tsc -p chat-app-frontend/tsconfig.json --noEmit` passes
-  - `npm run build` passes
-  - `CI=true npm test -- --watchAll=false --runInBand` passes
-
 ### Phase 7: Convert presentational components and tests
 
-- Convert UI components in small groups:
-  - `src/components/Sidebar.js`
-  - `src/components/ChatArea.js`
-  - `src/components/CreateGroupModal.js`
-  - files under `src/components/chat-area/`
-- Convert tests as needed:
-  - `src/App.test.js`
-  - `src/setupTests.js` only if the tooling or imports benefit from TypeScript
+- Status: In progress
+- Renamed and converted (minimal typing for rename-friendly diffs):
+  - `src/components/Sidebar.js` -> `src/components/Sidebar.tsx`
+  - `src/components/CreateGroupModal.js` -> `src/components/CreateGroupModal.tsx`
+  - `src/components/ChatArea.js` -> `src/components/ChatArea.tsx`
+  - chat-area presentational files under `src/components/chat-area/` (header, composer, list, and related media UI)
+- Remaining: convert leftover components/tests as needed (`App.test.js`, etc.)
+- Prefer filesystem rename + small type annotations so git rename detection stays high.
 
 ### Phase 8: Tighten constraints
 
@@ -273,20 +202,6 @@ Planned implementation phases:
 - Avoid mixing TypeScript migration with unrelated frontend behavior changes.
 - Keep each phase buildable and testable before moving to the next one.
 - If a file has unclear data contracts, add explicit TODOs rather than guessing field shapes silently.
-
-## Risks and Mitigations
-
-- Risk: backend payloads may not perfectly match frontend assumptions.
-  - Mitigation: normalize responses in `src/services/api.ts` and `src/services/websocket.ts` instead of spreading defensive checks across components.
-
-- Risk: migration slows active feature work.
-  - Mitigation: migrate only a few files per PR, starting with high-value boundaries and app shell files.
-
-- Risk: too many temporary `any` types reduce the benefit of migration.
-  - Mitigation: define shared types early and prefer `unknown` plus explicit narrowing at service boundaries when shape is uncertain.
-
-- Risk: CRA TypeScript support feels dated.
-  - Mitigation: keep the current bundler during this migration; reassess modern tooling after TypeScript is stable.
 
 ## Future Higher-Scale Path
 

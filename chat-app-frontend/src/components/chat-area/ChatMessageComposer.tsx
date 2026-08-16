@@ -11,8 +11,19 @@ import {
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import CloseIcon from "@mui/icons-material/Close";
 import SendIcon from "@mui/icons-material/Send";
+import type { PendingChatAttachment } from "../../types/chat";
 import { formatBytes } from "./mediaUtils";
 import "./ChatMessageComposer.css";
+
+interface ChatMessageComposerProps {
+  onSendMessage: (content: string) => void;
+  onSendMedia?: () => void;
+  selectedMedia: PendingChatAttachment[];
+  onSelectFiles: (files: FileList | null) => void;
+  onRemoveSelectedMedia: (localId: string) => void;
+  onClearSelectedMedia: () => void;
+  mediaError?: string | null;
+}
 
 function ChatMessageComposer({
   onSendMessage,
@@ -22,15 +33,15 @@ function ChatMessageComposer({
   onRemoveSelectedMedia,
   onClearSelectedMedia,
   mediaError,
-}) {
-  const fileInputRef = useRef(null);
+}: ChatMessageComposerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [messageInput, setMessageInput] = useState("");
   const hasSelectedMedia = selectedMedia.length > 0;
   const hasText = Boolean(messageInput.trim());
   const sendButtonLabel = hasSelectedMedia ? "Upload" : "Send";
   const disableSend = (!hasText && !hasSelectedMedia) || (hasSelectedMedia && hasText);
 
-  const handleFileInputChange = (event) => {
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     onSelectFiles(event.target.files);
     event.target.value = "";
   };
@@ -50,7 +61,7 @@ function ChatMessageComposer({
     }
   };
 
-  const handleKeyPress = (event) => {
+  const handleKeyPress = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSend();
@@ -119,6 +130,7 @@ function ChatMessageComposer({
                         size="small"
                         className="chat-message-media-draft-remove"
                         onClick={() => onRemoveSelectedMedia(attachment.localId)}
+                        title={`Remove ${attachment.originalFilename}`}
                         aria-label={`Remove ${attachment.originalFilename}`}
                       >
                         <CloseIcon fontSize="small" />
@@ -167,6 +179,8 @@ function ChatMessageComposer({
                     onClick={handleSend}
                     disabled={disableSend}
                     startIcon={<SendIcon />}
+                    title={sendButtonLabel}
+                    aria-label={sendButtonLabel}
                     sx={{ minWidth: "auto" }}
                   />
                 </InputAdornment>

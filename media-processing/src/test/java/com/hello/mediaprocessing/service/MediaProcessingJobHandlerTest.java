@@ -4,6 +4,7 @@ import com.hello.mediaprocessing.config.MediaProcessingWorkerProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
+import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
@@ -14,7 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Covers the initial worker state machine added in the implemented phases.
@@ -42,7 +43,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-1", List.of(ProcessingTarget.METADATA)));
 
-        assertEquals(MediaProcessingJobStatus.MEDIA_READY, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
     }
 
     /**
@@ -59,8 +60,8 @@ class MediaProcessingJobHandlerTest {
                 validator);
 
         MediaProcessingJobMessage job = buildVideoJob("job-dup", List.of(ProcessingTarget.METADATA));
-        assertEquals(MediaProcessingJobStatus.MEDIA_READY, handler.handle(job));
-        assertEquals(MediaProcessingJobStatus.SKIPPED_DUPLICATE, handler.handle(job));
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.SKIPPED_DUPLICATE);
     }
 
     /**
@@ -80,7 +81,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-2", List.of(ProcessingTarget.TRANSCODE)));
 
-        assertEquals(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
     }
 
     /**
@@ -101,7 +102,106 @@ class MediaProcessingJobHandlerTest {
         MediaProcessingJobStatus status = handler.handle(
                 buildVideoJob("job-partial", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL)));
 
-        assertEquals(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+    }
+
+    /**
+     * Verifies that enabled but unimplemented targets stay pending instead of returning DISPATCHED.
+     */
+    @Test
+    void handle_thumbnailOnly_staysPendingWithoutDispatchReturn() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoMetadata(false);
+        properties.getFeatureFlags().setVideoPoster(true);
+        CapturingResultSink resultSink = new CapturingResultSink();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                resultSink,
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-thumbnail-only", List.of(ProcessingTarget.THUMBNAIL)));
+
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(resultSink.lastResult()).isNotNull();
+        assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(resultSink.lastResult().completedTargets()).isEmpty();
+        assertThat(resultSink.lastResult().pendingTargets()).containsExactly(ProcessingTarget.THUMBNAIL);
+        assertThat(resultSink.lastResult().videoMetadata()).isNull();
+    }
+
+    /**
+     * Verifies that deferred jobs are not permanently deduplicated and can be retried later.
+     */
+    @Test
+    void handle_deferredJob_allowsRetry() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoTranscode(false);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-deferred", List.of(ProcessingTarget.TRANSCODE));
+
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.DEFERRED_NO_ENABLED_TARGETS);
+    }
+
+    /**
+     * Verifies that source-load failures release the in-progress claim so the job can be retried.
+     */
+    @Test
+    void handle_sourceLoadFailure_allowsRetry() {
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler failingHandler = new MediaProcessingJobHandler(
+                new MediaProcessingWorkerProperties(),
+                deduplicationStore,
+                new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+        MediaProcessingJobHandler successfulHandler = new MediaProcessingJobHandler(
+                new MediaProcessingWorkerProperties(),
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-retry-failure", List.of(ProcessingTarget.METADATA));
+
+        assertThat(failingHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(successfulHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+    }
+
+    /**
+     * Verifies that partial progress releases the in-progress claim so later phases can resume.
+     */
+    @Test
+    void handle_partialProgress_allowsRetryUntilMediaReady() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoPoster(true);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL));
+
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
     }
 
     /**
@@ -119,7 +219,7 @@ class MediaProcessingJobHandlerTest {
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
 
-        assertEquals(MediaProcessingJobStatus.PROCESSING_FAILED, status);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
     }
 
     /**
@@ -135,7 +235,7 @@ class MediaProcessingJobHandlerTest {
                 100L,
                 200L,
                 MediaProcessingMessageType.VIDEO,
-                "MINIO",
+                ObjectStorageProviderType.MINIO,
                 "chat-media",
                 "media/7/video/demo.mp4",
                 "video/mp4",
@@ -230,6 +330,33 @@ class MediaProcessingJobHandlerTest {
         @Override
         public void cleanupWorkspaceQuietly(Path workspaceDirectory) {
             // No-op for unit tests.
+        }
+    }
+
+    /**
+     * Test sink that records the most recent worker result for assertions.
+     */
+    private static final class CapturingResultSink implements MediaProcessingResultSink {
+
+        private MediaProcessingResult lastResult;
+
+        /**
+         * Stores the latest worker result emitted by the handler under test.
+         *
+         * @param result normalized worker output
+         */
+        @Override
+        public void accept(MediaProcessingResult result) {
+            this.lastResult = result;
+        }
+
+        /**
+         * Returns the most recently captured worker result.
+         *
+         * @return last result accepted by this sink, or {@code null} when none was recorded
+         */
+        private MediaProcessingResult lastResult() {
+            return lastResult;
         }
     }
 

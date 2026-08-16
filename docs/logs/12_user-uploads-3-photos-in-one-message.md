@@ -46,6 +46,53 @@
      }
      ```
 
+     Data of them in DB, table `media_uploads` (2 rows, but showing in JSON format):
+
+     ```json
+     [
+       {
+         "id": 55,
+         "upload_id": "264c6f87-458e-4780-887d-dd25645061fa",
+         "user_id": 2,
+         "chat_scope": "GROUP",
+         "group_id": 5,
+         "upload_session_id": "c1323cb4-1363-4730-8dee-f04339a5b29c",
+         "requested_message_type": "IMAGE",
+         "requested_filename": "1.jpg",
+         "requested_size_bytes": 33644,
+         "requested_mime_type": "image/jpeg",
+         "storage_provider": "MINIO",
+         "bucket": "chat-media",
+         "object_key": "media/2/image/efcc6fcc-4b98-43f5-bb23-0b61b4493775-1.jpg",
+         "multipart_upload_id": null,
+         "status": "UPLOAD_COMPLETED",
+         "expires_at": "2026-07-01 00:27:55.696345",
+         "created_at": "2026-07-01 00:12:55.702848",
+         "updated_at": "2026-07-01 00:12:55.987523"
+       },
+       {
+         "id": 56,
+         "upload_id": "aa30cd7f-8081-4da3-8276-430294fa47f2",
+         "user_id": 2,
+         "chat_scope": "GROUP",
+         "group_id": 5,
+         "upload_session_id": "c1323cb4-1363-4730-8dee-f04339a5b29c",
+         "requested_message_type": "IMAGE",
+         "requested_filename": "2.jpg",
+         "requested_size_bytes": 64558,
+         "requested_mime_type": "image/jpeg",
+         "storage_provider": "MINIO",
+         "bucket": "chat-media",
+         "object_key": "media/2/image/21c00511-0a60-41a1-a02e-220b29f0b6e6-2.jpg",
+         "multipart_upload_id": null,
+         "status": "UPLOAD_COMPLETED",
+         "expires_at": "2026-07-01 00:27:55.696345",
+         "created_at": "2026-07-01 00:12:55.764717",
+         "updated_at": "2026-07-01 00:12:55.989299"
+       }
+     ]
+     ```
+
   2. Send 2 photos to presigned URLs (from `presignedUrl` field in the response above), each photo is sent to a separate presigned URL. Note: when copying them from browser devtool as cURL, we cannot copy the file content. Also: browser doesn't send cookies:
      ```sh
       curl 'http://localhost:9000/chat-media/media/2/image/efcc6fcc-4b98-43f5-bb23-0b61b4493775-1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20260630%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260630T171255Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=11afeb186582508a0ae940acb00084c70cd5f707eb125db072aff5206cf2b786' \
