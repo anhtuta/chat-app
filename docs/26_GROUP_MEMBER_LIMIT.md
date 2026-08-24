@@ -336,6 +336,21 @@ The same rule also covers over-limit groups: if `maxMembers` was lowered to 50 w
 
 The count must happen after acquiring the lock. An unlocked pre-count is only a hint and cannot be used for correctness.
 
+## Implementation details
+
+### Phase 1. Schema And DTO Surface
+
+#### What changed
+
+- Added nullable `groups.max_members` (Flyway `V11`) with a non-negative check constraint.
+- Mapped `Group.maxMembers` and included it on `CreateGroupRequest`, `UpdateGroupRequest`, and `GroupResponse`.
+- `UpdateGroupRequest` tracks whether JSON included `maxMembers`, so omitted stays unchanged later while explicit `null`, `0`, and positives remain distinct.
+- Bean Validation rejects `maxMembers < 0` on create and update requests.
+
+#### Rollout, migration, or backward-compatibility notes
+
+- Existing rows keep `max_members = NULL` (unlimited).
+
 ## Future Higher-Scale Path
 
 If capacity checks become hot, add a denormalized `groups.member_count` column and enforce the insertion rule with atomic conditional updates. The database can then accept or reject a new seat without scanning/counting participants every time.

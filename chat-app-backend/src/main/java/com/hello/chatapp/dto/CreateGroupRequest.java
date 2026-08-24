@@ -1,5 +1,6 @@
 package com.hello.chatapp.dto;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
@@ -9,6 +10,9 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * Request body for {@code POST /api/groups}.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -23,4 +27,11 @@ public class CreateGroupRequest {
 
     @NotEmpty(message = "At least one participant is required")
     private List<Long> participantIds;
+
+    /**
+     * Optional member cap. Omitted, {@code null}, and {@code 0} mean unlimited.
+     * Values below {@code 0} are rejected before persistence.
+     */
+    @Min(value = 0, message = "maxMembers must not be negative")
+    private Integer maxMembers;
 }
