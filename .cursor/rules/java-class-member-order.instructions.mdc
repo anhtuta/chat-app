@@ -24,55 +24,7 @@ Apply the same sub-order for **fields**, **constructors**, and **methods**:
 3. package-private (no access modifier)
 4. `private`
 
-## Full ordering (most common case)
-
-1. `public static` members (put `public static final` constants first within this group)
-2. `public` methods with `@Override`
-3. `public` members with other annotations
-4. `public` members with no annotation
-5. `protected static` → `protected @Override` → `protected` annotated → `protected` plain
-6. package-private static → package-private `@Override` → package-private annotated → package-private plain
-7. `private static` → `private @Override` → `private` annotated → `private` plain
-
 ## Placement notes
 
-- Put **fields before constructors**, and **constructors before methods**, when visibility and annotation order are the same.
 - Put **nested types** (inner classes, enums, interfaces, records) at the **end** of the outer class, using the same visibility/annotation ordering inside each nested type.
 - When editing existing classes, DO NOT reorder the members you touch unless the user asks for a full-class cleanup.
-
-## Example
-
-```java
-public class ExampleService {
-
-    public static final String DEFAULT_NAME = "chat";
-
-    private final Repository repository;
-
-    public ExampleService(Repository repository) {
-        this.repository = repository;
-    }
-
-    @Override
-    public String toString() {
-        return DEFAULT_NAME;
-    }
-
-    @PostConstruct
-    public void init() {
-        // ...
-    }
-
-    public void handleMessage() {
-        // ...
-    }
-
-    protected void onError() {
-        // ...
-    }
-
-    private void persist() {
-        // ...
-    }
-}
-```
