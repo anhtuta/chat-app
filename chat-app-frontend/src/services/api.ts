@@ -163,24 +163,24 @@ export async function getGroupMembers(
 }
 
 /**
- * Add a user directly to a group as MEMBER.
+ * Add one or more users directly to a group as MEMBER.
  */
-export async function addGroupMember(
+export async function addGroupMembers(
   groupId: number | string,
-  userId: number,
-): Promise<GroupMember> {
+  userIds: number[],
+): Promise<GroupMember[]> {
   const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     credentials: "include",
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userIds }),
   });
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to add group member");
+  throw new Error((await response.text()) || "Failed to add group members");
 }
 
 /**

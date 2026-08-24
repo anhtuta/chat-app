@@ -37,8 +37,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Membership mutations (add, join, kick, ban, leave, roles) for a group.
@@ -123,28 +126,50 @@ public class GroupMembershipService {
     }
 
     /**
-     * Adds a user as {@code MEMBER} after locking the group, authorizing {@code ADD_MEMBERS},
-     * and applying the member-limit insertion rule.
+     * Adds one or more users as {@code MEMBER} after locking the group, authorizing {@code ADD_MEMBERS},
+     * and applying the member-limit insertion rule to the whole batch.
+     * Duplicate ids are ignored. If any target is banned, already a member, missing, or the batch
+     * would exceed capacity, the request fails and no participant rows are inserted.
+     *
+     * @param userIds users to add; must be non-empty after nulls are removed
+     * @return saved memberships in request order (distinct ids)
      */
     @Transactional
-    public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
+    public List<GroupMemberResponse> addMembers(User actor, Long groupId, List<Long> userIds) {
         // Lock before auth so a concurrent demotion cannot leave a former leader authorized to add.
         Group group = lockActiveGroup(groupId);
         groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
-        User target = loadUser(userId);
-        groupAuthorizationService.requireNotBanned(target, groupId);
 
-        if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
-            throw new BadRequestException("User is already a member of this group");
+        // Validate input
+        List<Long> distinctUserIds = distinctUserIds(userIds);
+        if (distinctUserIds.isEmpty()) {
+            throw new BadRequestException("At least one userId is required");
+        }
+        if (distinctUserIds.size() > MAX_ADDABLE_USERS) {
+            throw new BadRequestException("At most " + MAX_ADDABLE_USERS + " userIds are allowed");
         }
 
-        ensureGroupHasCapacityForNewMember(group);
+        List<User> targets = new ArrayList<>(distinctUserIds.size());
+        for (Long userId : distinctUserIds) {
+            User target = loadUser(userId);
+            groupAuthorizationService.requireNotBanned(target, groupId);
+            if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
+                throw new BadRequestException("User is already a member of this group");
+            }
+            targets.add(target);
+        }
 
-        GroupParticipant participant = new GroupParticipant(group, target);
-        participant.setRole(GroupRole.MEMBER);
-        GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-        publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
-        return GroupMemberResponse.fromParticipant(savedParticipant);
+        ensureGroupHasCapacityForNewMembers(group, targets.size());
+
+        List<GroupMemberResponse> addedMembers = new ArrayList<>(targets.size());
+        for (User target : targets) {
+            GroupParticipant participant = new GroupParticipant(group, target);
+            participant.setRole(GroupRole.MEMBER);
+            GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
+            publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
+            addedMembers.add(GroupMemberResponse.fromParticipant(savedParticipant));
+        }
+        return addedMembers;
     }
 
     @Transactional(readOnly = true)
@@ -457,14 +482,43 @@ public class GroupMembershipService {
      * @param group locked active group whose {@code maxMembers} is applied
      */
     private void ensureGroupHasCapacityForNewMember(Group group) {
+        ensureGroupHasCapacityForNewMembers(group, 1);
+    }
+
+    /**
+     * Same insertion rule as {@link #ensureGroupHasCapacityForNewMember(Group)} for a batch of new rows.
+     * Rejects the whole batch when {@code currentCount + newMemberCount} would exceed a positive cap.
+     *
+     * @param newMemberCount distinct users about to be inserted; ignored when {@code <= 0}
+     */
+    private void ensureGroupHasCapacityForNewMembers(Group group, int newMemberCount) {
+        if (newMemberCount <= 0) {
+            return;
+        }
         Integer maxMembers = group.getMaxMembers();
         if (maxMembers == null || maxMembers <= 0) {
             return;
         }
         long currentCount = groupParticipantRepository.countByGroupId(group.getId());
-        if (currentCount >= maxMembers) {
+        if (currentCount + newMemberCount > maxMembers) {
             throw new BadRequestException(GROUP_MEMBER_LIMIT_REACHED);
         }
+    }
+
+    /**
+     * Deduplicates ids while preserving request order. Null entries are dropped.
+     */
+    private List<Long> distinctUserIds(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long userId : userIds) {
+            if (userId != null) {
+                distinctIds.add(userId);
+            }
+        }
+        return new ArrayList<>(distinctIds);
     }
 
     /**

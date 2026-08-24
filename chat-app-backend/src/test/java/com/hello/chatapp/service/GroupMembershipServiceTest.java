@@ -48,6 +48,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -189,8 +190,11 @@ class GroupMembershipServiceTest {
         verify(userRepository).findAddableUsersForGroup(eq(100L), isNull(), any(Pageable.class));
     }
 
+    /**
+     * Direct add inserts the target as {@code MEMBER} after locking the group and authorizing.
+     */
     @Test
-    void addMember_createsMemberWithDefaultRole() {
+    void addMembers_createsMemberWithDefaultRole() {
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
@@ -199,7 +203,7 @@ class GroupMembershipServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
 
-        GroupMemberResponse response = groupMembershipService.addMember(actor, 100L, 2L);
+        List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L));
 
         InOrder order = inOrder(groupRepository, groupAuthorizationService);
         order.verify(groupRepository).findByIdForUpdate(100L);
@@ -213,12 +217,59 @@ class GroupMembershipServiceTest {
         assertThat(savedParticipant.getUser()).isSameAs(targetUser);
         assertThat(savedParticipant.getRole()).isEqualTo(GroupRole.MEMBER);
 
-        assertThat(response.getUserId()).isEqualTo(2L);
-        assertThat(response.getRole()).isEqualTo(GroupRole.MEMBER);
+        assertThat(responses).hasSize(1);
+        assertThat(responses.getFirst().getUserId()).isEqualTo(2L);
+        assertThat(responses.getFirst().getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
         verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_JOINED);
         verify(membershipRealtimePublisher).publishMembershipChange(
                 group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
+    }
+
+    /**
+     * One request can insert multiple distinct users, with a system event per added member.
+     */
+    @Test
+    void addMembers_addsMultipleUsersInOneCall() {
+        User thirdUser = new User();
+        thirdUser.setId(3L);
+        thirdUser.setUsername("carol");
+        thirdUser.setFullname("Carol");
+
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(thirdUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 3L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.save(any(GroupParticipant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(systemMessageService.recordGroupEvent(eq(group), any(User.class), eq(actor), eq(SystemEventType.USER_JOINED)))
+                .thenReturn(systemMessage);
+
+        List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L, 3L, 2L));
+
+        assertThat(responses).extracting(GroupMemberResponse::getUserId).containsExactly(2L, 3L);
+        verify(groupParticipantRepository, times(2)).save(any(GroupParticipant.class));
+        verify(systemMessageService, times(2)).recordGroupEvent(eq(group), any(User.class), eq(actor), eq(SystemEventType.USER_JOINED));
+    }
+
+    /**
+     * If one selected user is already a member, the whole batch is rejected and nobody is inserted.
+     */
+    @Test
+    void addMembers_rejectsBatchWhenAnyUserIsAlreadyAMember() {
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L))
+                .thenReturn(Optional.of(new GroupParticipant(group, targetUser)));
+
+        assertThatThrownBy(() -> groupMembershipService.addMembers(actor, 100L, List.of(2L)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("User is already a member of this group");
+
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
     }
 
     @Test
@@ -301,9 +352,10 @@ class GroupMembershipServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
 
-        GroupMemberResponse response = groupMembershipService.addMember(actor, 100L, 2L);
+        List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L));
 
-        assertThat(response.getUserId()).isEqualTo(2L);
+        assertThat(responses).hasSize(1);
+        assertThat(responses.getFirst().getUserId()).isEqualTo(2L);
         verify(groupParticipantRepository).save(any(GroupParticipant.class));
     }
 
@@ -319,7 +371,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(2L);
 
-        assertThatThrownBy(() -> groupMembershipService.addMember(actor, 100L, 2L))
+        assertThatThrownBy(() -> groupMembershipService.addMembers(actor, 100L, List.of(2L)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Group member limit has been reached");
 
@@ -339,7 +391,31 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(5L);
 
-        assertThatThrownBy(() -> groupMembershipService.addMember(actor, 100L, 2L))
+        assertThatThrownBy(() -> groupMembershipService.addMembers(actor, 100L, List.of(2L)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group member limit has been reached");
+
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+    }
+
+    /**
+     * A batch is rejected when remaining seats cannot cover every selected user; nobody is inserted.
+     */
+    @Test
+    void addMembers_rejectsWhenBatchWouldExceedLimit() {
+        User thirdUser = new User();
+        thirdUser.setId(3L);
+        thirdUser.setUsername("carol");
+        group.setMaxMembers(2);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(userRepository.findById(3L)).thenReturn(Optional.of(thirdUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 3L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
+
+        assertThatThrownBy(() -> groupMembershipService.addMembers(actor, 100L, List.of(2L, 3L)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Group member limit has been reached");
 

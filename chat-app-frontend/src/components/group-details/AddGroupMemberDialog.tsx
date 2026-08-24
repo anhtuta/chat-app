@@ -14,7 +14,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { addGroupMember, getAddableGroupUsers } from "../../services/api";
+import { addGroupMembers, getAddableGroupUsers } from "../../services/api";
 import type { SelectableUser } from "../../types/groups";
 import "../CreateGroupModal.css";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
@@ -113,41 +113,15 @@ function AddGroupMemberDialog({
     setIsSubmitting(true);
     setError("");
 
-    const failedUserIds: number[] = [];
-    let addedCount = 0;
-    let lastError: unknown;
-
-    for (const userId of selectedUserIds) {
-      try {
-        await addGroupMember(groupId, userId);
-        addedCount += 1;
-      } catch (submitError: unknown) {
-        console.error("Error adding group member:", submitError);
-        failedUserIds.push(userId);
-        lastError = submitError;
-      }
-    }
-
-    setIsSubmitting(false);
-
-    if (addedCount > 0) {
-      // Parent member list must refresh even when later adds fail.
+    try {
+      await addGroupMembers(groupId, selectedUserIds);
       onMembersAdded();
-      setUsers((previous) => previous.filter((user) => failedUserIds.includes(user.id)));
-    }
-
-    if (failedUserIds.length === 0) {
       onClose();
-      return;
-    }
-
-    // Keep only failed users selected so retry does not re-add successes.
-    setSelectedUserIds(failedUserIds);
-    if (addedCount > 0) {
-      const detail = lastError instanceof Error && lastError.message ? `: ${lastError.message}` : "";
-      setError(`Added ${addedCount} member(s), but ${failedUserIds.length} failed${detail}`);
-    } else {
-      setError(toErrorMessage(lastError, "Failed to add group member"));
+    } catch (submitError: unknown) {
+      console.error("Error adding group members:", submitError);
+      setError(toErrorMessage(submitError, "Failed to add group members"));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

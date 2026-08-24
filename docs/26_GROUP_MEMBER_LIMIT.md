@@ -121,7 +121,7 @@ sequenceDiagram
     GroupService->>DB: persist groups.max_members
 
     Client->>GroupMembershipController: POST /members or /join-links/{token}/join
-    GroupMembershipController->>GroupMembershipService: addMember/joinByToken
+    GroupMembershipController->>GroupMembershipService: addMembers/joinByToken
     GroupMembershipService->>DB: SELECT group FOR UPDATE
     GroupMembershipService->>DB: recheck active/auth/link/ban/existing member
     GroupMembershipService->>DB: COUNT group_participants
@@ -207,14 +207,22 @@ Behavior:
 
 `POST /api/groups/{groupId}/members`
 
+Request:
+
+```json
+{
+  "userIds": [2, 3, 4]
+}
+```
+
 Behavior:
 
 - Lock active group.
 - Authorize `ADD_MEMBERS`.
-- Reject banned target.
-- If target is already a member, keep existing "already a member" behavior.
-- Check capacity under the lock using the insertion rule.
-- Insert member only when unlimited or current count is strictly below `maxMembers`.
+- Deduplicate `userIds`. Reject an empty list.
+- Reject if any target is banned, missing, or already a member. The whole request fails; no partial inserts.
+- Check capacity under the lock for the whole batch: reject when a positive `maxMembers` would be exceeded by `currentCount + newDistinctCount`.
+- Insert all new members only when unlimited or the entire batch fits (`currentCount + N <= maxMembers`).
 
 #### Join Link
 
@@ -312,9 +320,9 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 
 #### What changed
 
-- `GroupMembershipService.ensureGroupHasCapacityForNewMember` counts participants under the existing group-row lock and rejects new inserts when `maxMembers > 0` and `count >= maxMembers`.
-- `addMember` runs the helper after the duplicate-member check and before saving.
-- `joinByToken` runs the helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
+- `GroupMembershipService.ensureGroupHasCapacityForNewMembers` counts participants under the existing group-row lock and rejects new inserts when a positive `maxMembers` cannot cover the whole batch (`currentCount + newCount > maxMembers`).
+- `addMembers` runs the helper after per-user ban/duplicate checks and before any save, so a multi-user add is all-or-nothing.
+- `joinByToken` runs the single-seat helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
 - Full-group rejection uses `Group member limit has been reached` (`400`).
 
 ### Phase 4. Error Contract And Frontend UX

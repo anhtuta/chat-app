@@ -405,9 +405,11 @@ Membership:
   - Returns at most 500 users (no pagination); refine `q` to narrow further.
   - Used by the add-member dialog; prefer this over `GET /api/groups/users` for that flow.
 - `POST /api/groups/{groupId}/members`
-  - Add a user directly as `MEMBER`.
+  - Add one or more users directly as `MEMBER` in a single request (`{ "userIds": [2, 3] }`).
   - Requires `ADD_MEMBERS`.
   - Rejects banned users and archived groups.
+  - Duplicate ids are ignored. If any target is already a member, banned, missing, or the batch would exceed `maxMembers`, the whole request fails and no rows are inserted.
+  - Returns the list of added memberships.
 - `DELETE /api/groups/{groupId}/members/{userId}`
   - Kick a user.
   - Requires `KICK_MEMBERS`.
@@ -612,7 +614,7 @@ What changed:
 - Added `GroupMembershipController` as the single controller for member management and join-link operations.
 - Implemented:
   - member list
-  - direct add member
+  - direct add members (batch `userIds` in one request)
   - join-link creation
   - self-join by token
   - join-link revocation
@@ -630,6 +632,7 @@ What changed:
 - Deletes the `group_participants` relationship when a user leaves, is kicked, or is banned.
 - Ensures transfer leadership updates the old leader to `MEMBER` before assigning `LEADER` to the new leader.
 - Ensures kick, ban, promote, and demote checks compare actor and target role ranks.
+- `POST /api/groups/{groupId}/members` accepts `{ "userIds": [...] }` and adds the whole selection in one transaction (no partial inserts).
 
 Why it changed:
 
@@ -639,7 +642,7 @@ Why it changed:
 API/contract/config impacts:
 
 - Added `GET /api/groups/{groupId}/members`.
-- Added `POST /api/groups/{groupId}/members`.
+- Added `POST /api/groups/{groupId}/members` (`userIds` batch body; response is an array of memberships).
 - Added `DELETE /api/groups/{groupId}/members/{userId}`.
 - Added `DELETE /api/groups/{groupId}/members/me`.
 - Added `PATCH /api/groups/{groupId}/members/{userId}/role`.
@@ -872,7 +875,7 @@ Status: Implemented.
 
 What changed:
 
-- Added frontend API helpers for `POST /api/groups/{groupId}/members` and `DELETE /api/groups/{groupId}/members/{userId}`.
+- Added frontend API helper for `POST /api/groups/{groupId}/members` with `{ userIds }` (one request for the whole selection) and `DELETE /api/groups/{groupId}/members/{userId}`.
 - Added `GET /api/groups/{groupId}/addable-users` so the add-member picker only shows users who are not already members and not banned (requires `ADD_MEMBERS`).
 - `addable-users` supports optional `q` search (username/fullname) and caps results at 500 with no pagination.
 - Added an Add Members dialog in the group details member section for users with `ADD_MEMBERS`; it uses `addable-users` instead of `GET /api/groups/users`.
