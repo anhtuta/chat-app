@@ -148,6 +148,20 @@ public class MessageService {
             User subjectUser,
             User actor,
             SystemEventType eventType) {
+        return saveGroupSystemMessage(group, subjectUser, actor, eventType, null);
+    }
+
+    /**
+     * Persists a structured {@code SYSTEM} message. Optional {@code subjectNames} lists extra
+     * people mentioned in a batch add ({@code subjectUser} remains the first subject).
+     */
+    @Transactional
+    public Message saveGroupSystemMessage(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            List<String> subjectNames) {
         Long groupId = Objects.requireNonNull(group.getId());
         SystemEventType safeEventType = Objects.requireNonNull(eventType, "eventType must not be null");
         Group existingGroup = groupRepository.findById(groupId)
@@ -159,6 +173,9 @@ public class MessageService {
         message.setGroup(existingGroup);
         message.setMessageType(MessageType.SYSTEM);
         message.setContent(safeEventType.name());
+        if (subjectNames != null && !subjectNames.isEmpty()) {
+            message.setSystemEventSubjectNames(List.copyOf(subjectNames));
+        }
 
         Message savedMessage = messageRepository.saveAndFlush(message);
         updateLatestMessageSummary(

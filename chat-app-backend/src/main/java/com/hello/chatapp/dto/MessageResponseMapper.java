@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Maps persisted {@link Message} rows to API payloads, including structured system-event metadata.
+ */
 @Component
 public class MessageResponseMapper {
 
@@ -20,6 +23,9 @@ public class MessageResponseMapper {
         this.objectStorageProviderRegistry = objectStorageProviderRegistry;
     }
 
+    /**
+     * Maps a persisted message, including optional {@code systemEventSubjectNames} for batch adds.
+     */
     public MessageResponse toResponse(Message message) {
         if (message == null) {
             return null;
@@ -33,6 +39,7 @@ public class MessageResponseMapper {
                 .content(resolveContent(message))
                 .systemEventType(resolveSystemEventType(message))
                 .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
+                .systemEventSubjectNames(message.getSystemEventSubjectNames())
                 .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)

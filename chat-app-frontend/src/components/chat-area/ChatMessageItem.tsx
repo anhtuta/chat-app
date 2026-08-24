@@ -79,13 +79,23 @@ function getDisplayUserName(user: ChatUser | null | undefined): string {
   return user.fullname || user.username || "Someone";
 }
 
+function formatNameList(names: string[]): string {
+  return names.filter((name) => name && name.trim()).join(", ") || "Someone";
+}
+
 function formatStructuredSystemMessage(message: ChatMessage): string {
   const actorName = getDisplayUserName(message.systemEventActor);
   const subjectName = getDisplayUserName(message.user);
+  const addedNames =
+    message.systemEventSubjectNames && message.systemEventSubjectNames.length > 0
+      ? formatNameList(message.systemEventSubjectNames)
+      : subjectName;
 
   switch (message.systemEventType) {
     case SYSTEM_EVENT_TYPES.USER_JOINED:
-      return actorName === subjectName ? `${subjectName} has joined the group` : `${actorName} has added ${subjectName}`;
+      return actorName === subjectName && (!message.systemEventSubjectNames || message.systemEventSubjectNames.length <= 1)
+        ? `${subjectName} has joined the group`
+        : `${actorName} has added ${addedNames}`;
     case SYSTEM_EVENT_TYPES.USER_LEFT:
       return `${subjectName} has left the group`;
     case SYSTEM_EVENT_TYPES.USER_KICKED:

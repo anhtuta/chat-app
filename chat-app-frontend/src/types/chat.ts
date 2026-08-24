@@ -63,6 +63,7 @@ export interface ChatMessage {
   messageType?: MessageType | null;
   systemEventType?: SystemEventType | null;
   systemEventActor?: ChatUser | null;
+  systemEventSubjectNames?: string[] | null;
   updatedBy?: ChatUser | null;
   updatedAt?: string | null;
   deletedBy?: ChatUser | null;

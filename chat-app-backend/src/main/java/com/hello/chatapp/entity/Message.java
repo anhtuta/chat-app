@@ -9,11 +9,12 @@ import java.util.List;
 import com.hello.chatapp.constant.MessageType;
 import java.time.LocalDateTime;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -64,6 +65,14 @@ public class Message {
     // (for example USER_JOINED) instead of final human-readable text.
     @Column(nullable = true, length = 1000)
     private String content;
+
+    /**
+     * Optional extra subject display names for batch membership events (JSON array).
+     * {@link #user} remains the first subject. Null for single-subject events.
+     */
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(name = "system_event_subject_names", columnDefinition = "TEXT")
+    private List<String> systemEventSubjectNames;
 
     @Column(nullable = false)
     private LocalDateTime timestamp;

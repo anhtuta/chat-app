@@ -19,7 +19,8 @@ import java.util.Optional;
  * Persistence for active group membership rows. Each row counts toward group member capacity.
  */
 @Repository
-public interface GroupParticipantRepository extends JpaRepository<GroupParticipant, Long> {
+public interface GroupParticipantRepository
+        extends JpaRepository<GroupParticipant, Long>, GroupParticipantBulkInsertRepository {
     List<GroupParticipant> findByGroup(Group group);
 
     @Query("""
@@ -113,6 +114,19 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
     Optional<GroupParticipant> findByGroupIdAndUserIdForUpdate(
             @Param("groupId") Long groupId,
             @Param("userId") Long userId);
+
+    /**
+     * Loads inserted members with user and group for API mapping after a bulk insert.
+     */
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.user
+            JOIN FETCH gp.group
+            WHERE gp.group.id = :groupId AND gp.user.id IN :userIds
+            """)
+    List<GroupParticipant> findByGroupIdAndUserIdIn(
+            @Param("groupId") Long groupId,
+            @Param("userIds") List<Long> userIds);
 
     @Query("""
             SELECT COUNT(gp)

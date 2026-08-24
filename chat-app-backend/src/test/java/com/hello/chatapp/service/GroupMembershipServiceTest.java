@@ -42,13 +42,13 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -199,9 +199,16 @@ class GroupMembershipServiceTest {
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
-        when(groupParticipantRepository.save(any(GroupParticipant.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
+        GroupParticipant savedParticipant = new GroupParticipant(group, targetUser);
+        savedParticipant.setRole(GroupRole.MEMBER);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class))).thenReturn(1);
+        when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L))).thenReturn(List.of(savedParticipant));
+        when(systemMessageService.recordGroupEvent(
+                eq(group),
+                eq(targetUser),
+                eq(actor),
+                eq(SystemEventType.USER_JOINED),
+                anyList())).thenReturn(systemMessage);
 
         List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L));
 
@@ -209,25 +216,25 @@ class GroupMembershipServiceTest {
         order.verify(groupRepository).findByIdForUpdate(100L);
         order.verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS);
 
-        ArgumentCaptor<GroupParticipant> participantCaptor = ArgumentCaptor.forClass(GroupParticipant.class);
-        verify(groupParticipantRepository).save(participantCaptor.capture());
-        GroupParticipant savedParticipant = participantCaptor.getValue();
-
-        assertThat(savedParticipant.getGroup()).isSameAs(group);
-        assertThat(savedParticipant.getUser()).isSameAs(targetUser);
-        assertThat(savedParticipant.getRole()).isEqualTo(GroupRole.MEMBER);
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class));
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
 
         assertThat(responses).hasSize(1);
         assertThat(responses.getFirst().getUserId()).isEqualTo(2L);
         assertThat(responses.getFirst().getRole()).isEqualTo(GroupRole.MEMBER);
         verify(groupAuthorizationService).requireNotBanned(targetUser, 100L);
-        verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_JOINED);
+        verify(systemMessageService).recordGroupEvent(
+                group,
+                targetUser,
+                actor,
+                SystemEventType.USER_JOINED,
+                List.of("Bob Builder"));
         verify(membershipRealtimePublisher).publishMembershipChange(
                 group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
     }
 
     /**
-     * One request can insert multiple distinct users, with a system event per added member.
+     * One request inserts all distinct users in a single SQL statement and one system message.
      */
     @Test
     void addMembers_addsMultipleUsersInOneCall() {
@@ -235,6 +242,10 @@ class GroupMembershipServiceTest {
         thirdUser.setId(3L);
         thirdUser.setUsername("carol");
         thirdUser.setFullname("Carol");
+        GroupParticipant bobParticipant = new GroupParticipant(group, targetUser);
+        bobParticipant.setRole(GroupRole.MEMBER);
+        GroupParticipant carolParticipant = new GroupParticipant(group, thirdUser);
+        carolParticipant.setRole(GroupRole.MEMBER);
 
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
@@ -242,16 +253,29 @@ class GroupMembershipServiceTest {
         when(userRepository.findById(3L)).thenReturn(Optional.of(thirdUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 3L)).thenReturn(Optional.empty());
-        when(groupParticipantRepository.save(any(GroupParticipant.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        when(systemMessageService.recordGroupEvent(eq(group), any(User.class), eq(actor), eq(SystemEventType.USER_JOINED)))
-                .thenReturn(systemMessage);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L, 3L)), any(LocalDateTime.class))).thenReturn(2);
+        when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L, 3L)))
+                .thenReturn(List.of(carolParticipant, bobParticipant));
+        when(systemMessageService.recordGroupEvent(
+                eq(group),
+                eq(targetUser),
+                eq(actor),
+                eq(SystemEventType.USER_JOINED),
+                anyList())).thenReturn(systemMessage);
 
         List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L, 3L, 2L));
 
         assertThat(responses).extracting(GroupMemberResponse::getUserId).containsExactly(2L, 3L);
-        verify(groupParticipantRepository, times(2)).save(any(GroupParticipant.class));
-        verify(systemMessageService, times(2)).recordGroupEvent(eq(group), any(User.class), eq(actor), eq(SystemEventType.USER_JOINED));
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L, 3L)), any(LocalDateTime.class));
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(systemMessageService).recordGroupEvent(
+                group,
+                targetUser,
+                actor,
+                SystemEventType.USER_JOINED,
+                List.of("Bob Builder", "Carol"));
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                group, systemMessage, SystemEventType.USER_JOINED.latestPreview(), null);
     }
 
     /**
@@ -270,6 +294,7 @@ class GroupMembershipServiceTest {
                 .hasMessage("User is already a member of this group");
 
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(groupParticipantRepository, never()).insertMembers(any(), any(), any());
     }
 
     @Test
@@ -348,15 +373,22 @@ class GroupMembershipServiceTest {
         when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
-        when(groupParticipantRepository.save(any(GroupParticipant.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
+        GroupParticipant savedParticipant = new GroupParticipant(group, targetUser);
+        savedParticipant.setRole(GroupRole.MEMBER);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class))).thenReturn(1);
+        when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L))).thenReturn(List.of(savedParticipant));
+        when(systemMessageService.recordGroupEvent(
+                eq(group),
+                eq(targetUser),
+                eq(actor),
+                eq(SystemEventType.USER_JOINED),
+                anyList())).thenReturn(systemMessage);
 
         List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L));
 
         assertThat(responses).hasSize(1);
         assertThat(responses.getFirst().getUserId()).isEqualTo(2L);
-        verify(groupParticipantRepository).save(any(GroupParticipant.class));
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class));
     }
 
     /**
@@ -376,6 +408,7 @@ class GroupMembershipServiceTest {
                 .hasMessage("Group member limit has been reached");
 
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(groupParticipantRepository, never()).insertMembers(any(), any(), any());
         verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
     }
 
@@ -396,6 +429,7 @@ class GroupMembershipServiceTest {
                 .hasMessage("Group member limit has been reached");
 
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(groupParticipantRepository, never()).insertMembers(any(), any(), any());
     }
 
     /**
@@ -420,6 +454,7 @@ class GroupMembershipServiceTest {
                 .hasMessage("Group member limit has been reached");
 
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(groupParticipantRepository, never()).insertMembers(any(), any(), any());
     }
 
     /**

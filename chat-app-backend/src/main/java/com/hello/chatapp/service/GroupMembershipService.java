@@ -38,8 +38,10 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -130,6 +132,8 @@ public class GroupMembershipService {
      * and applying the member-limit insertion rule to the whole batch.
      * Duplicate ids are ignored. If any target is banned, already a member, missing, or the batch
      * would exceed capacity, the request fails and no participant rows are inserted.
+     * Participants are inserted in one SQL statement. One {@code USER_JOINED} system message names
+     * every added member.
      *
      * @param userIds users to add; must be non-empty after nulls are removed
      * @return saved memberships in request order (distinct ids)
@@ -161,14 +165,18 @@ public class GroupMembershipService {
 
         ensureGroupHasCapacityForNewMembers(group, targets.size());
 
-        List<GroupMemberResponse> addedMembers = new ArrayList<>(targets.size());
-        for (User target : targets) {
-            GroupParticipant participant = new GroupParticipant(group, target);
-            participant.setRole(GroupRole.MEMBER);
-            GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-            publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
-            addedMembers.add(GroupMemberResponse.fromParticipant(savedParticipant));
-        }
+        LocalDateTime joinedAt = LocalDateTime.now();
+        List<Long> targetIds = targets.stream().map(u -> u.getId()).toList();
+        groupParticipantRepository.insertMembers(groupId, targetIds, joinedAt);
+        List<GroupParticipant> savedParticipants = groupParticipantRepository.findByGroupIdAndUserIdIn(
+                groupId,
+                targetIds);
+        List<GroupMemberResponse> addedMembers = orderParticipants(targetIds, savedParticipants).stream()
+                .map(GroupMemberResponse::fromParticipant)
+                .toList();
+
+        List<String> subjectNames = targets.stream().map(GroupMembershipService::displayName).toList();
+        publishMembershipEvent(group, targets.getFirst(), actor, SystemEventType.USER_JOINED, null, subjectNames);
         return addedMembers;
     }
 
@@ -444,7 +452,25 @@ public class GroupMembershipService {
             User actor,
             SystemEventType eventType,
             String removedUsername) {
-        Message systemMessage = systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType);
+        publishMembershipEvent(group, subjectUser, actor, eventType, removedUsername, null);
+    }
+
+    /**
+     * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
+     * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
+     *
+     * @param subjectNames extra added-member display names for a batch add; {@code null} otherwise
+     */
+    private void publishMembershipEvent(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String removedUsername,
+            List<String> subjectNames) {
+        Message systemMessage = subjectNames == null
+                ? systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType)
+                : systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType, subjectNames);
         membershipRealtimePublisher.publishMembershipChange(
                 group,
                 systemMessage,
@@ -519,6 +545,42 @@ public class GroupMembershipService {
             }
         }
         return new ArrayList<>(distinctIds);
+    }
+
+    /**
+     * Reorders bulk-insert results to match the requested user id sequence.
+     */
+    private List<GroupParticipant> orderParticipants(List<Long> userIds, List<GroupParticipant> participants) {
+        Map<Long, GroupParticipant> byUserId = new HashMap<>();
+        for (GroupParticipant participant : participants) {
+            if (participant.getUser() != null) {
+                byUserId.put(participant.getUser().getId(), participant);
+            }
+        }
+        List<GroupParticipant> ordered = new ArrayList<>(userIds.size());
+        for (Long userId : userIds) {
+            GroupParticipant participant = byUserId.get(userId);
+            if (participant != null) {
+                ordered.add(participant);
+            }
+        }
+        return ordered;
+    }
+
+    /**
+     * Display name used in batch {@code USER_JOINED} copy: fullname, else username.
+     */
+    private static String displayName(User user) {
+        if (user == null) {
+            return "Someone";
+        }
+        if (user.getFullname() != null && !user.getFullname().isBlank()) {
+            return user.getFullname();
+        }
+        if (user.getUsername() != null && !user.getUsername().isBlank()) {
+            return user.getUsername();
+        }
+        return "Someone";
     }
 
     /**

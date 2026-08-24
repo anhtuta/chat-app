@@ -222,7 +222,8 @@ Behavior:
 - Deduplicate `userIds`. Reject an empty list.
 - Reject if any target is banned, missing, or already a member. The whole request fails; no partial inserts.
 - Check capacity under the lock for the whole batch: reject when a positive `maxMembers` would be exceeded by `currentCount + newDistinctCount`.
-- Insert all new members only when unlimited or the entire batch fits (`currentCount + N <= maxMembers`).
+- Insert all new members in one multi-row `INSERT` when unlimited or the entire batch fits (`currentCount + N <= maxMembers`).
+- Publish one `USER_JOINED` system message naming every added member (not one event per user).
 
 #### Join Link
 
@@ -321,9 +322,13 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 #### What changed
 
 - `GroupMembershipService.ensureGroupHasCapacityForNewMembers` counts participants under the existing group-row lock and rejects new inserts when a positive `maxMembers` cannot cover the whole batch (`currentCount + newCount > maxMembers`).
-- `addMembers` runs the helper after per-user ban/duplicate checks and before any save, so a multi-user add is all-or-nothing.
+- `addMembers` inserts the whole batch with one multi-row `INSERT`, then publishes a single `USER_JOINED` system message whose `systemEventSubjectNames` lists every added display name.
 - `joinByToken` runs the single-seat helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
 - Full-group rejection uses `Group member limit has been reached` (`400`).
+
+#### Rollout, migration, or backward-compatibility notes
+
+- Flyway `V12` adds `messages.system_event_subject_names` for the combined add-members line. Existing events without that column stay single-subject.
 
 ### Phase 4. Error Contract And Frontend UX
 

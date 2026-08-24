@@ -12,6 +12,9 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * API representation of a chat message, including optional batch system-event subject names.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -24,6 +27,7 @@ public class MessageResponse {
     private String content;
     private SystemEventType systemEventType;
     private UserResponse systemEventActor;
+    private List<String> systemEventSubjectNames;
     private UserResponse updatedBy;
     private LocalDateTime updatedAt;
     private UserResponse deletedBy;
@@ -43,6 +47,7 @@ public class MessageResponse {
                 .content(resolveContent(message))
                 .systemEventType(resolveSystemEventType(message))
                 .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
+                .systemEventSubjectNames(message.getSystemEventSubjectNames())
                 .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)
