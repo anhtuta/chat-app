@@ -244,16 +244,58 @@ Recommended rules:
 - Make the PATCH DTO/wrapper presence-aware so omitted `maxMembers` is distinct from explicit `null`.
 - Keep Redis out of the correctness path for the first version.
 
-## Implementation Plan
+## Concurrency Notes
 
-### Phase 1. Schema And DTO Surface
+The member-limit rule is an **insertion rule**, not a permanent `COUNT <= maxMembers` database invariant. After a leader/co-leader lowers `maxMembers` below the current participant count, the group may temporarily satisfy:
 
-- Add nullable `max_members` to `groups`.
-- Add `maxMembers` to `Group`.
-- Add optional `maxMembers` to `CreateGroupRequest` and `GroupResponse`.
-- Update `UpdateGroupRequest` (or a PATCH wrapper) to track field presence for `maxMembers` so omission, explicit `null`, `0`, and positive values are distinguishable.
-- Add validation: values below `0` are rejected before persistence; only `null` and `0` mean unlimited.
-- Backward compatibility: existing rows stay `NULL`, so all existing groups remain unlimited.
+```text
+maxMembers > 0 AND COUNT(group_participants WHERE group_id = group.id) > maxMembers
+```
+
+That over-limit state is allowed. Existing members stay. What must never happen is committing a **new** membership row while the group is already at or above a positive limit:
+
+```text
+When maxMembers > 0, a new group_participants insert may commit only if:
+COUNT(group_participants WHERE group_id = group.id) < maxMembers
+
+When maxMembers IS NULL or maxMembers = 0:
+inserts are not limited by capacity
+```
+
+For the first implementation, the insertion rule is protected by the same lock already used for membership lifecycle state:
+
+```text
+transaction starts
+SELECT groups WHERE id = ? FOR UPDATE
+recheck active group / auth / join-link state / ban state
+if user is not already a member:
+    currentCount = COUNT(group_participants WHERE group_id = ?)
+    if maxMembers > 0 and currentCount >= maxMembers:
+        reject
+    insert group_participants row
+transaction commits
+```
+
+This works because all capacity-affecting insert paths wait on the same group row. If 200 users join concurrently and only 10 seats remain, the first 10 transactions that acquire the lock and insert will succeed. Every later transaction will re-count after those commits and fail.
+
+The same rule also covers over-limit groups: if `maxMembers` was lowered to 50 while 80 members remain, every new insert sees `currentCount >= maxMembers` and is rejected until enough members leave/are removed that `count < maxMembers`.
+
+The count must happen after acquiring the lock. An unlocked pre-count is only a hint and cannot be used for correctness.
+
+## Implementation details
+
+### Phase 1. Schema And DTO Surface - **Done**
+
+#### What changed
+
+- Added nullable `groups.max_members` (Flyway `V11`) with a non-negative check constraint.
+- Mapped `Group.maxMembers` and included it on `CreateGroupRequest`, `UpdateGroupRequest`, and `GroupResponse`.
+- `UpdateGroupRequest` tracks whether JSON included `maxMembers`, so omitted stays unchanged later while explicit `null`, `0`, and positives remain distinct.
+- Bean Validation rejects `maxMembers < 0` on create and update requests.
+
+#### Rollout, migration, or backward-compatibility notes
+
+- Existing rows keep `max_members = NULL` (unlimited).
 
 ### Phase 2. Create And Update Behavior
 
@@ -297,59 +339,6 @@ Recommended rules:
 - Idempotency test: existing member using join link succeeds even when group is full or over-limit.
 - Concurrency test: many simultaneous join-link requests for a group with `maxMembers = N` never create more than `N` participants when starting from below the limit.
 - Concurrency test: mixed direct adds and join-link joins serialize correctly and obey the insertion rule.
-
-## Concurrency Notes
-
-The member-limit rule is an **insertion rule**, not a permanent `COUNT <= maxMembers` database invariant. After a leader/co-leader lowers `maxMembers` below the current participant count, the group may temporarily satisfy:
-
-```text
-maxMembers > 0 AND COUNT(group_participants WHERE group_id = group.id) > maxMembers
-```
-
-That over-limit state is allowed. Existing members stay. What must never happen is committing a **new** membership row while the group is already at or above a positive limit:
-
-```text
-When maxMembers > 0, a new group_participants insert may commit only if:
-COUNT(group_participants WHERE group_id = group.id) < maxMembers
-
-When maxMembers IS NULL or maxMembers = 0:
-inserts are not limited by capacity
-```
-
-For the first implementation, the insertion rule is protected by the same lock already used for membership lifecycle state:
-
-```text
-transaction starts
-SELECT groups WHERE id = ? FOR UPDATE
-recheck active group / auth / join-link state / ban state
-if user is not already a member:
-    currentCount = COUNT(group_participants WHERE group_id = ?)
-    if maxMembers > 0 and currentCount >= maxMembers:
-        reject
-    insert group_participants row
-transaction commits
-```
-
-This works because all capacity-affecting insert paths wait on the same group row. If 200 users join concurrently and only 10 seats remain, the first 10 transactions that acquire the lock and insert will succeed. Every later transaction will re-count after those commits and fail.
-
-The same rule also covers over-limit groups: if `maxMembers` was lowered to 50 while 80 members remain, every new insert sees `currentCount >= maxMembers` and is rejected until enough members leave/are removed that `count < maxMembers`.
-
-The count must happen after acquiring the lock. An unlocked pre-count is only a hint and cannot be used for correctness.
-
-## Implementation details
-
-### Phase 1. Schema And DTO Surface
-
-#### What changed
-
-- Added nullable `groups.max_members` (Flyway `V11`) with a non-negative check constraint.
-- Mapped `Group.maxMembers` and included it on `CreateGroupRequest`, `UpdateGroupRequest`, and `GroupResponse`.
-- `UpdateGroupRequest` tracks whether JSON included `maxMembers`, so omitted stays unchanged later while explicit `null`, `0`, and positives remain distinct.
-- Bean Validation rejects `maxMembers < 0` on create and update requests.
-
-#### Rollout, migration, or backward-compatibility notes
-
-- Existing rows keep `max_members = NULL` (unlimited).
 
 ## Future Higher-Scale Path
 
