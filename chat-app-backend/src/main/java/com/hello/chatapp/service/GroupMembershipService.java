@@ -459,7 +459,8 @@ public class GroupMembershipService {
      * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
      * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
      *
-     * @param subjectNames extra added-member display names for a batch add; {@code null} otherwise
+     * @param subjectNames extra added-member display names stored in the system-event payload;
+     *        {@code null} otherwise
      */
     private void publishMembershipEvent(
             Group group,

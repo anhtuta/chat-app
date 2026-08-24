@@ -8,6 +8,7 @@ import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.model.SystemEventPayload;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import com.hello.chatapp.storage.S3ObjectStorageProvider;
@@ -101,10 +102,10 @@ class MessageResponseMapperTest {
     }
 
     /**
-     * Batch add-member events expose every added display name on the SYSTEM payload.
+     * Batch add-member events expose every added display name on {@code systemEventPayload}.
      */
     @Test
-    void toResponse_mapsSystemEventSubjectNames() {
+    void toResponse_mapsSystemEventPayloadSubjectNames() {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
@@ -121,10 +122,11 @@ class MessageResponseMapperTest {
         message.setUpdatedBy(actor);
         message.setMessageType(MessageType.SYSTEM);
         message.setContent(SystemEventType.USER_JOINED.name());
-        message.setSystemEventSubjectNames(List.of("Bob", "Carol"));
+        message.setSystemEventPayload(SystemEventPayload.ofSubjectNames(List.of("Bob", "Carol")));
 
         MessageResponse response = mapper.toResponse(message);
 
-        assertThat(response.getSystemEventSubjectNames()).containsExactly("Bob", "Carol");
+        assertThat(response.getSystemEventPayload()).isNotNull();
+        assertThat(response.getSystemEventPayload().getSubjectNames()).containsExactly("Bob", "Carol");
     }
 }

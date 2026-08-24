@@ -322,13 +322,13 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 #### What changed
 
 - `GroupMembershipService.ensureGroupHasCapacityForNewMembers` counts participants under the existing group-row lock and rejects new inserts when a positive `maxMembers` cannot cover the whole batch (`currentCount + newCount > maxMembers`).
-- `addMembers` inserts the whole batch with one multi-row `INSERT`, then publishes a single `USER_JOINED` system message whose `systemEventSubjectNames` lists every added display name.
+- `addMembers` inserts the whole batch with one multi-row `INSERT`, then publishes a single `USER_JOINED` system message whose `systemEventPayload.subjectNames` lists every added display name.
 - `joinByToken` runs the single-seat helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
 - Full-group rejection uses `Group member limit has been reached` (`400`).
 
 #### Rollout, migration, or backward-compatibility notes
 
-- Flyway `V12` adds `messages.system_event_subject_names` for the combined add-members line. Existing events without that column stay single-subject.
+- Flyway `V12` adds `messages.system_event_payload` (`JSONB`) for the combined add-members line (`subjectNames`). Existing events without a payload stay single-subject.
 
 ### Phase 4. Error Contract And Frontend UX
 

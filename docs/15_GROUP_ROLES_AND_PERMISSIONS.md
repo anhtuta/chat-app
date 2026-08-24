@@ -729,7 +729,7 @@ What changed:
   - group archive
 - Kept `messages.content` as the stable `SystemEventType` value.
 - Exposed system-message metadata in `MessageResponse` / `MessageResponseMapper` so the frontend can render inferred text.
-- Batch add-members stores extra subject display names on `messages.system_event_subject_names` so one `USER_JOINED` line can read `Alice has added Bob, Carol`.
+- Batch add-members stores extra subject display names on `messages.system_event_payload` as `{"subjectNames":["Bob","Carol"]}` so one `USER_JOINED` line can read `Alice has added Bob, Carol`.
 - Updated the frontend chat message model/rendering to use structured system-event metadata when available.
 
 Why it changed:
@@ -740,12 +740,12 @@ Why it changed:
 API/contract/config impacts:
 
 - Group message history now includes persisted `SYSTEM` messages for membership and group-profile events.
-- `MessageResponse` now includes `systemEventType`, `systemEventActor`, and optional `systemEventSubjectNames` for structured system-event rendering.
+- `MessageResponse` now includes `systemEventType`, `systemEventActor`, and optional `systemEventPayload` for structured system-event rendering.
 - Group latest-message summaries now use derived system previews like `Member joined` or `Group archived`.
 
 Rollout, migration, and backward-compatibility notes:
 
-- Flyway `V12` adds nullable `messages.system_event_subject_names` (JSON array of display names). Older `USER_JOINED` rows stay null and still render as a single-subject join/add.
+- Flyway `V12` adds nullable `messages.system_event_payload` (`JSONB`). Batch add-members stores `{"subjectNames":[...]}`. Older `USER_JOINED` rows stay null and still render as a single-subject join/add.
 - Legacy transient `[SYSTEM] ...` WebSocket notifications still work; the frontend now prefers structured metadata when present.
 
 ### Phase 6: Message Moderation

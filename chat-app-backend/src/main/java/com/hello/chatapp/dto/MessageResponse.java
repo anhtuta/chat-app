@@ -3,6 +3,7 @@ package com.hello.chatapp.dto;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.model.SystemEventPayload;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -13,7 +14,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * API representation of a chat message, including optional batch system-event subject names.
+ * API representation of a chat message, including optional {@link SystemEventPayload}.
  */
 @Data
 @Builder
@@ -27,7 +28,7 @@ public class MessageResponse {
     private String content;
     private SystemEventType systemEventType;
     private UserResponse systemEventActor;
-    private List<String> systemEventSubjectNames;
+    private SystemEventPayload systemEventPayload;
     private UserResponse updatedBy;
     private LocalDateTime updatedAt;
     private UserResponse deletedBy;
@@ -35,6 +36,10 @@ public class MessageResponse {
     private List<MessageAttachmentResponse> attachments;
     private LocalDateTime timestamp;
 
+    /**
+     * Maps a persisted message for APIs that do not go through {@link MessageResponseMapper}
+     * (no storage-backed attachment URLs).
+     */
     public static MessageResponse fromMessage(Message message) {
         if (message == null) {
             return null;
@@ -47,7 +52,7 @@ public class MessageResponse {
                 .content(resolveContent(message))
                 .systemEventType(resolveSystemEventType(message))
                 .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
-                .systemEventSubjectNames(message.getSystemEventSubjectNames())
+                .systemEventPayload(message.getSystemEventPayload())
                 .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)

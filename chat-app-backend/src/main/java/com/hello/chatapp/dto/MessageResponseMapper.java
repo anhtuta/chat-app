@@ -24,7 +24,7 @@ public class MessageResponseMapper {
     }
 
     /**
-     * Maps a persisted message, including optional {@code systemEventSubjectNames} for batch adds.
+     * Maps a persisted message, including optional {@code systemEventPayload} for batch adds.
      */
     public MessageResponse toResponse(Message message) {
         if (message == null) {
@@ -39,7 +39,7 @@ public class MessageResponseMapper {
                 .content(resolveContent(message))
                 .systemEventType(resolveSystemEventType(message))
                 .systemEventActor(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
-                .systemEventSubjectNames(message.getSystemEventSubjectNames())
+                .systemEventPayload(message.getSystemEventPayload())
                 .updatedBy(message.getUpdatedBy() != null ? UserResponse.fromUser(message.getUpdatedBy()) : null)
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)

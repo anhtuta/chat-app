@@ -50,7 +50,7 @@ public class SystemMessageService {
 
     /**
      * Same as {@link #recordGroupEvent(Group, User, User, SystemEventType)} with optional extra
-     * subject display names for a batch add (one chat line naming every added member).
+     * subject display names stored on {@code system_event_payload.subjectNames}.
      */
     @Transactional
     public Message recordGroupEvent(
