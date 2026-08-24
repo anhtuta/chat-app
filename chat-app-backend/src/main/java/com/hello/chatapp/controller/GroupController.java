@@ -22,6 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * HTTP API for group create, list, details, and profile updates (including {@code maxMembers}).
+ */
 @RestController
 @RequestMapping("/api/groups")
 public class GroupController {
@@ -32,13 +35,17 @@ public class GroupController {
         this.groupService = groupService;
     }
 
+    /**
+     * Creates a group and persists optional {@code maxMembers} from the request.
+     */
     @PostMapping
     public ResponseEntity<GroupResponse> createGroup(@Valid @RequestBody CreateGroupRequest request, HttpSession session) {
         return ResponseEntity.ok(groupService.createGroup(
                 request.getName(),
                 request.getDescription(),
                 getAuthenticatedUser(session),
-                request.getParticipantIds()));
+                request.getParticipantIds(),
+                request.getMaxMembers()));
     }
 
     @GetMapping("/users")
@@ -60,6 +67,9 @@ public class GroupController {
         return ResponseEntity.ok(groupService.getGroupDetails(getAuthenticatedUser(session), groupId));
     }
 
+    /**
+     * Patches group details. Omitted {@code maxMembers} is left unchanged.
+     */
     @PatchMapping("/{groupId}")
     public ResponseEntity<GroupResponse> updateGroup(
             @PathVariable Long groupId,
@@ -69,7 +79,9 @@ public class GroupController {
                 getAuthenticatedUser(session),
                 groupId,
                 request.getName(),
-                request.getDescription()));
+                request.getDescription(),
+                request.getMaxMembers(),
+                request.isMaxMembersPresent()));
     }
 
     @PostMapping("/{groupId}/read")

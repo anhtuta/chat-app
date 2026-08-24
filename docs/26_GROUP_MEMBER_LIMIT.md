@@ -297,14 +297,16 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 
 - Existing rows keep `max_members = NULL` (unlimited).
 
-### Phase 2. Create And Update Behavior
+### Phase 2. Create And Update Behavior - **Done**
 
-- Update `GroupService.createGroup` to accept and persist `maxMembers`.
-- Before inserting any participant rows, compute the distinct set of creator plus `participantIds` and reject the create if that set size exceeds a positive limit.
-- Keep `GroupSeeder` setup-only with unlimited groups, or apply the same capacity validation if it ever creates capped groups.
-- `updateGroupDetails` accepts presence-aware `maxMembers` as a patchable field.
-- Allow lowering below current member count (over-limit state); do not remove members.
-- Record a system event for limit changes only if the product wants visible audit history in chat. TODO: confirm whether max-member changes should create a system message like group name/description updates.
+#### What changed
+
+- `GroupService.createGroup` persists `maxMembers` (`null`/`0` unlimited, positive cap, negatives rejected before any insert).
+- Create computes the distinct set of `{creator} ∪ participantIds` and rejects the whole request when that size exceeds a positive limit (no group or participant rows).
+- `GroupSeeder` still inserts unlimited groups (`max_members` omitted / `NULL`).
+- `updateGroupDetails` applies presence-aware `maxMembers`: omit leaves the current value; explicit `null` or `0` stores unlimited; a positive value sets the cap.
+- Lowering the cap below the current member count is allowed and does not remove members.
+- PATCH may send only `maxMembers`. Limit changes do not write a system message yet (TODO to confirm product intent).
 
 ### Phase 3. Capacity Enforcement In Membership Writes
 
