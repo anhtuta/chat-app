@@ -308,13 +308,14 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 - Lowering the cap below the current member count is allowed and does not remove members.
 - PATCH may send only `maxMembers`. Limit changes do not write a system message yet (TODO to confirm product intent).
 
-### Phase 3. Capacity Enforcement In Membership Writes
+### Phase 3. Capacity Enforcement In Membership Writes - **Done**
 
-- Add a helper in `GroupMembershipService`, for example `ensureGroupHasCapacityForNewMember(Group group)`.
-- Call it in `addMember` after the duplicate-member check and before saving `GroupParticipant`.
-- Call it in `joinByToken` after existing-member idempotency check and before saving `GroupParticipant`.
-- The helper runs while the transaction holds `findByIdForUpdate` on the group row.
-- The helper uses `groupParticipantRepository.countByGroupId(group.getId())` and applies the insertion rule: reject when `maxMembers > 0` and `currentCount >= maxMembers`.
+#### What changed
+
+- `GroupMembershipService.ensureGroupHasCapacityForNewMember` counts participants under the existing group-row lock and rejects new inserts when `maxMembers > 0` and `count >= maxMembers`.
+- `addMember` runs the helper after the duplicate-member check and before saving.
+- `joinByToken` runs the helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
+- Full-group rejection uses `Group member limit has been reached` (`400`).
 
 ### Phase 4. Error Contract And Frontend UX
 

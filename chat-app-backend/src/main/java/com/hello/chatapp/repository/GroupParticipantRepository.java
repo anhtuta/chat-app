@@ -15,6 +15,9 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Persistence for active group membership rows. Each row counts toward group member capacity.
+ */
 @Repository
 public interface GroupParticipantRepository extends JpaRepository<GroupParticipant, Long> {
     List<GroupParticipant> findByGroup(Group group);
@@ -116,6 +119,10 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             FROM GroupParticipant gp
             WHERE gp.group.id = :groupId
             """)
+    /**
+     * Counts active participants for the group. There is no soft-delete participant state today,
+     * so every {@code group_participants} row counts toward member capacity.
+     */
     long countByGroupId(@Param("groupId") Long groupId);
 
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);

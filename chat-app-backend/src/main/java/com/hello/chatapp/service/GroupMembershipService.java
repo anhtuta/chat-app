@@ -40,6 +40,10 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Membership mutations (add, join, kick, ban, leave, roles) for a group.
+ * New inserts apply the member-limit insertion rule while holding the group row lock.
+ */
 @Service
 public class GroupMembershipService {
 
@@ -49,6 +53,7 @@ public class GroupMembershipService {
     private static final int MAX_MEMBER_PAGE_SIZE = 100;
     private static final int MAX_ADDABLE_USERS = 500;
     private static final String ARCHIVE_REASON_LAST_MEMBER_LEFT = "LAST_MEMBER_LEFT";
+    private static final String GROUP_MEMBER_LIMIT_REACHED = "Group member limit has been reached";
 
     private final GroupAuthorizationService groupAuthorizationService;
     private final GroupParticipantRepository groupParticipantRepository;
@@ -117,6 +122,10 @@ public class GroupMembershipService {
                 PageableUtil.of(0, MAX_ADDABLE_USERS));
     }
 
+    /**
+     * Adds a user as {@code MEMBER} after locking the group, authorizing {@code ADD_MEMBERS},
+     * and applying the member-limit insertion rule.
+     */
     @Transactional
     public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
         // Lock before auth so a concurrent demotion cannot leave a former leader authorized to add.
@@ -128,6 +137,8 @@ public class GroupMembershipService {
         if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
             throw new BadRequestException("User is already a member of this group");
         }
+
+        ensureGroupHasCapacityForNewMember(group);
 
         GroupParticipant participant = new GroupParticipant(group, target);
         participant.setRole(GroupRole.MEMBER);
@@ -163,6 +174,10 @@ public class GroupMembershipService {
         return GroupJoinLinkResponse.fromJoinLink(groupJoinLinkRepository.save(joinLink), token);
     }
 
+    /**
+     * Joins via a link token. Existing members are returned without a capacity check.
+     * New members are inserted only when the group is unlimited or {@code count < maxMembers}.
+     */
     @Transactional
     public GroupMemberResponse joinByToken(User user, String token) {
         if (token == null || token.isBlank()) {
@@ -194,6 +209,7 @@ public class GroupMembershipService {
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
                 .map(GroupMemberResponse::fromParticipant)
                 .orElseGet(() -> {
+                    ensureGroupHasCapacityForNewMember(group);
                     GroupParticipant participant = new GroupParticipant(group, user);
                     participant.setRole(GroupRole.MEMBER);
                     GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
@@ -431,6 +447,24 @@ public class GroupMembershipService {
         Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
         return group;
+    }
+
+    /**
+     * Insertion rule: a new participant may be saved only when the group is unlimited
+     * ({@code maxMembers} null or 0) or the current participant count is strictly below a positive cap.
+     * Must run while this transaction holds {@code findByIdForUpdate} on the group row.
+     *
+     * @param group locked active group whose {@code maxMembers} is applied
+     */
+    private void ensureGroupHasCapacityForNewMember(Group group) {
+        Integer maxMembers = group.getMaxMembers();
+        if (maxMembers == null || maxMembers <= 0) {
+            return;
+        }
+        long currentCount = groupParticipantRepository.countByGroupId(group.getId());
+        if (currentCount >= maxMembers) {
+            throw new BadRequestException(GROUP_MEMBER_LIMIT_REACHED);
+        }
     }
 
     /**

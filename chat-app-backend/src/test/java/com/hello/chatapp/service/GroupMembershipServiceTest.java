@@ -51,6 +51,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for membership mutations, including member-limit insertion-rule checks on add and join.
+ */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class GroupMembershipServiceTest {
@@ -281,6 +284,138 @@ class GroupMembershipServiceTest {
         verify(entityManager).refresh(joinLink);
         verify(groupAuthorizationService, never()).requireNotBanned(targetUser, 100L);
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+    }
+
+    /**
+     * Direct add succeeds when a positive cap still has a free seat ({@code count < maxMembers}).
+     */
+    @Test
+    void addMember_succeedsWhenCountIsBelowLimit() {
+        group.setMaxMembers(2);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
+        when(groupParticipantRepository.save(any(GroupParticipant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, actor);
+
+        GroupMemberResponse response = groupMembershipService.addMember(actor, 100L, 2L);
+
+        assertThat(response.getUserId()).isEqualTo(2L);
+        verify(groupParticipantRepository).save(any(GroupParticipant.class));
+    }
+
+    /**
+     * Direct add is rejected when the group is already at the cap; no participant row is saved.
+     */
+    @Test
+    void addMember_rejectsWhenCountIsAtLimit() {
+        group.setMaxMembers(2);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(2L);
+
+        assertThatThrownBy(() -> groupMembershipService.addMember(actor, 100L, 2L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group member limit has been reached");
+
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+    }
+
+    /**
+     * Direct add is rejected in the over-limit state after a leader lowered {@code maxMembers}.
+     */
+    @Test
+    void addMember_rejectsWhenCountIsOverLimit() {
+        group.setMaxMembers(2);
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS)).thenReturn(group);
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(5L);
+
+        assertThatThrownBy(() -> groupMembershipService.addMember(actor, 100L, 2L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group member limit has been reached");
+
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+    }
+
+    /**
+     * Join by link succeeds when a positive cap still has a free seat.
+     */
+    @Test
+    void joinByToken_succeedsWhenCountIsBelowLimit() {
+        group.setMaxMembers(3);
+        GroupJoinLink joinLink = validJoinLink();
+        when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(2L);
+        when(groupParticipantRepository.save(any(GroupParticipant.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubMembershipRealtime(SystemEventType.USER_JOINED, targetUser, targetUser);
+
+        GroupMemberResponse response = groupMembershipService.joinByToken(targetUser, "join-token");
+
+        assertThat(response.getUserId()).isEqualTo(2L);
+        verify(groupParticipantRepository).save(any(GroupParticipant.class));
+    }
+
+    /**
+     * Join by link is rejected when the group is full; no participant row is saved.
+     */
+    @Test
+    void joinByToken_rejectsWhenCountIsAtLimit() {
+        group.setMaxMembers(2);
+        GroupJoinLink joinLink = validJoinLink();
+        when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
+        when(groupParticipantRepository.countByGroupId(100L)).thenReturn(2L);
+
+        assertThatThrownBy(() -> groupMembershipService.joinByToken(targetUser, "join-token"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Group member limit has been reached");
+
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+    }
+
+    /**
+     * An existing member using a join link stays idempotent even when the group is full or over-limit.
+     */
+    @Test
+    void joinByToken_existingMemberSucceedsWhenGroupIsFull() {
+        group.setMaxMembers(1);
+        GroupJoinLink joinLink = validJoinLink();
+        GroupParticipant existing = new GroupParticipant(group, targetUser);
+        existing.setRole(GroupRole.MEMBER);
+        when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(existing));
+
+        GroupMemberResponse response = groupMembershipService.joinByToken(targetUser, "join-token");
+
+        assertThat(response.getUserId()).isEqualTo(2L);
+        verify(groupParticipantRepository, never()).countByGroupId(any());
+        verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
+        verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+    }
+
+    private GroupJoinLink validJoinLink() {
+        GroupJoinLink joinLink = new GroupJoinLink();
+        joinLink.setId(77L);
+        joinLink.setGroup(group);
+        joinLink.setCreatedBy(actor);
+        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
+        return joinLink;
     }
 
     @Test
