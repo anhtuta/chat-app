@@ -2,7 +2,10 @@
 
 ## Intro
 
-The media processing service is a new Micronaut worker service for CPU- and I/O-heavy media work that should not run inside `chat-app-backend`.
+The media processing service is a new Micronaut **worker service** for CPU- and I/O-heavy media work that should not run inside `chat-app-backend`.
+
+- Đây chỉ là 1 worker service, consume message từ RabbitMQ để xử lý.
+- Nó KHÔNG là 1 job framework, 1 job scheduler như Quartz / JobRunr.
 
 The service processes accepted chat media after the final media message is created. It generates media derivatives, extracts technical metadata, and prepares media-derived searchable text so future search can find words inside images, video frames, and spoken audio.
 
@@ -230,6 +233,56 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
   - Jobs must be ordered: verify transcode → switch pointers → delete original; retries must not require a deleted source.
 - Recommendation for our problem: Yes.
 
+### 4. How should processing jobs be run?
+
+This is a **cross-service work queue**: `chat-app-backend` publishes after the media message commits, and `media-processing-service` consumes on another process. That is a different problem from in-app cron or “run this method later in the same cluster.”
+
+#### 4.1. Quartz
+
+- How it works
+  - A scheduler (often in-process, optionally JDBC-clustered) fires jobs on a clock or a simple trigger, using a thread pool in the app that hosts Quartz.
+- Pros
+  - Familiar for recurring cleanup and delayed in-app tasks.
+  - JDBC job store can survive a single JVM restart.
+- Cons
+  - Built for time-based schedules, not “another service, process this MinIO object.”
+  - Long FFmpeg jobs occupy scheduler threads and fight timeout/misfire settings.
+  - Independent scaling of media workers is awkward compared with queue consumers.
+  - Adds a scheduler runtime next to RabbitMQ, which the chat stack already uses.
+- Recommendation for our problem: No for media-processing handoff.
+- When I’d use it: nightly orphan-upload purge or similar cron inside one service, not video transcode dispatch.
+
+#### 4.2. JobRunr
+
+- How it works
+  - Enqueue Java lambdas/jobs into JobRunr’s SQL or Redis store; JobRunr servers execute them with retries and a dashboard.
+- Pros
+  - Real background-job features: retries, delayed jobs, dashboard.
+  - Less custom retry code than a from-scratch scheduler.
+- Cons
+  - Pulls work into **one JobRunr cluster** and a **second persistence backend**, while chat already has RabbitMQ.
+  - Poor fit for a dedicated Micronaut worker that must not share the chat JVM.
+  - Still does not replace object-storage I/O, FFmpeg, or the chat-domain callback contract.
+- Recommendation for our problem: No for media-processing handoff.
+- When I’d use it: delayed/retryable work **inside** a single service (for example a callback retry or a sweeper) after the queue path is stable.
+
+#### 4.3. RabbitMQ work queue (current choice)
+
+- How it works
+  - After commit, `chat-app-backend` publishes a `MediaProcessingJobMessage` (identifiers and storage pointers only).
+  - `media-processing-service` consumes with Micronaut RabbitMQ, bounded concurrency, and handler-level idempotency.
+- Pros
+  - Matches the two-service architecture.
+  - Reuses the existing broker.
+  - Workers scale by adding consumers.
+  - Payloads stay small; media bytes stay in object storage.
+- Cons
+  - Publish after commit can still lose a job if the process dies before the broker ack (no durable outbox yet).
+  - Phase 2 dedup is in-memory, so it is not multi-instance safe.
+  - Broker retries are weaker for inspectable backoff than a job row (`attempt_count`, `next_attempt_at`).
+- Recommendation for our problem: Yes for the first pipeline (Phase 2).
+- Follow-up: add a durable `MediaProcessingJob` (or outbox) row later if lost jobs, cross-pod dedup, or operational redrive matter. That complements RabbitMQ; it does not replace it with Quartz or JobRunr.
+
 ## High Level Architecture/Design
 
 ### Component Diagram / Flowchart / Sequence Diagram
@@ -283,6 +336,8 @@ sequenceDiagram
 
 - `MediaProcessingJob`
   - Durable job identity for one message or attachment processing request.
+  - Not required for the first video pipeline. Phase 2 delivers jobs via RabbitMQ; this table is a later, low-priority hardening step (Phase 13).
+  - Client-visible processing state stays on `MessageMedia`. This row is for enqueue, retry, claim/dedup, and recovery.
   - Suggested fields:
     - `id`
     - `message_id`
@@ -391,10 +446,11 @@ Recommended path:
 8. Add video OCR and speech-to-text before image OCR only if search value for video is more urgent than image search.
 9. Store extracted text in the DB first and emit search-indexing events for `docs/27_SEARCH_FEATURE.md`.
 10. Move to a dedicated search engine when media-derived text makes database search too limited.
+11. Keep media-processing handoff on RabbitMQ. Do not introduce Quartz or JobRunr for transcode dispatch. Add a durable `MediaProcessingJob` table only later (low priority) if lost jobs or multi-instance recovery become operationally important.
 
 ## Implementation details
 
-### Phase 1 - Service Scaffold
+### Phase 1 - Service Scaffold - **Done**
 
 - `media-processing/` has been initialized as a Micronaut project.
 - Current scaffold evidence in the repo:
@@ -405,9 +461,10 @@ Recommended path:
   - `media-processing/README.md`
 - No object-storage integration or video pipeline is implemented yet.
 
-### Phase 2 - Processing job contract and worker wiring
+### Phase 2 - Processing job contract and worker wiring - **Done**
 
-- Initial handoff mechanism chosen: RabbitMQ.
+- Initial handoff mechanism chosen: RabbitMQ (not Quartz or JobRunr).
+- No `MediaProcessingJob` table in this phase; durable job persistence is deferred to Phase 13.
 - Added job contract types for:
   - message type
   - processing targets
@@ -437,7 +494,7 @@ Recommended path:
 - Worker consumer is disabled by default until queue/broker wiring is explicitly enabled in configuration.
 - No actual media processing work happens yet; this phase only establishes the contract and worker entrypoint for future phases.
 
-### Phase 3 - Object storage and video source loading
+### Phase 3 - Object storage and video source loading - **Done**
 
 - Added MinIO object-storage integration in `media-processing-service`.
 - Added service-side storage configuration for:
@@ -467,7 +524,7 @@ Recommended path:
 - Added Javadocs to the Java classes and non-boilerplate methods introduced across implemented Phases 1 through 3.
 - Added `.cursor/rules/java-javadocs.instructions.mdc` so future Java work keeps the same documentation baseline.
 
-### Phase 4 - Video metadata extraction
+### Phase 4 - Video metadata extraction - **Done**
 
 - Added ffprobe-based video metadata extraction against the downloaded local source file.
 - Added configurable metadata-probe settings for:
@@ -589,6 +646,21 @@ Recommended path:
   - optional compression
 - Add image OCR after the video-first priorities are under control.
 - Reuse the same persistence/event patterns established for video.
+
+### Phase 13 - Durable `MediaProcessingJob` table (low priority)
+
+- Priority: **low**. Do this only after the first usable video pipeline (Phases 5–7) works in production-like conditions, and only if RabbitMQ-only handoff is losing jobs, hiding retries, or failing across worker instances.
+- What this phase is for:
+  - persist a `MediaProcessingJob` row as durable job identity (see Core Entities)
+  - write that row in the **same transaction** as the final message / media commit (outbox-style), then publish to RabbitMQ after commit
+  - replace in-memory dedup with a DB claim on `job id` / `media_id` so two worker pods cannot both complete the same job
+  - record `status`, `attempt_count`, `next_attempt_at`, and `last_error` for inspectable backoff and redrive
+  - add a sweeper that re-enqueues rows still pending or stuck in progress after a broker wipe or worker crash
+- What this phase is not:
+  - a replacement for RabbitMQ (the queue stays the delivery path)
+  - a reason to adopt Quartz or JobRunr for transcode dispatch
+  - a change to client-visible media status, which remains on `MessageMedia`
+- Until this phase exists, `PROCESSING_PENDING` on `MessageMedia` plus the queue payload is enough for the first pipeline.
 
 ## Future Higher-Scale Path
 
