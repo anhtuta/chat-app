@@ -9,6 +9,5 @@ alwaysApply: false
 - Add Javadocs to every Java class, interface, enum, record, and nested type you create or modify.
 - Add Javadocs to every non-boilerplate method you create or modify.
 - Skip constructors plus plain getters, setters, `toString()`, `equals()`, and `hashCode()` unless they contain non-obvious behavior.
-- Keep docs concrete: explain the type or method responsibility, important inputs, return values, side effects, and failure behavior when relevant.
 - For test files, add brief Javadocs to the test class and each test method describing the behavior being verified.
-- Do not add filler comments; if the code is obvious, keep the Javadoc short.
+- If the code is obvious, keep the Javadoc short.

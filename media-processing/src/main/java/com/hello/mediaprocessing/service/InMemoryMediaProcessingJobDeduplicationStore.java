@@ -1,8 +1,8 @@
 package com.hello.mediaprocessing.service;
 
 import jakarta.inject.Singleton;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Provides a single-node in-memory idempotency check for duplicate job deliveries.
@@ -10,8 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Singleton
 public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProcessingJobDeduplicationStore {
 
-    private final Set<String> completedJobIds = ConcurrentHashMap.newKeySet();
-    private final Set<String> inProgressJobIds = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, JobState> jobStates = new ConcurrentHashMap<>();
 
     /**
      * Claims a job for processing unless it is already completed or currently in progress.
@@ -22,10 +21,15 @@ public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProces
     @Override
     public boolean tryBeginProcessing(String jobId) {
         // TODO: Replace local in-memory deduplication with a distributed/durable idempotency store before multi-instance rollout.
-        if (completedJobIds.contains(jobId)) {
-            return false;
-        }
-        return inProgressJobIds.add(jobId);
+        AtomicBoolean claimed = new AtomicBoolean(false);
+        jobStates.compute(jobId, (id, current) -> {
+            if (current == JobState.COMPLETED || current == JobState.IN_PROGRESS) {
+                return current;
+            }
+            claimed.set(true);
+            return JobState.IN_PROGRESS;
+        });
+        return claimed.get();
     }
 
     /**
@@ -35,8 +39,7 @@ public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProces
      */
     @Override
     public void markCompleted(String jobId) {
-        completedJobIds.add(jobId);
-        inProgressJobIds.remove(jobId);
+        jobStates.compute(jobId, (id, current) -> JobState.COMPLETED);
     }
 
     /**
@@ -46,6 +49,14 @@ public class InMemoryMediaProcessingJobDeduplicationStore implements MediaProces
      */
     @Override
     public void releaseProcessing(String jobId) {
-        inProgressJobIds.remove(jobId);
+        jobStates.computeIfPresent(jobId, (id, current) -> current == JobState.IN_PROGRESS ? null : current);
+    }
+
+    /**
+     * Lifecycle states tracked for a single processing job id.
+     */
+    private enum JobState {
+        IN_PROGRESS,
+        COMPLETED
     }
 }

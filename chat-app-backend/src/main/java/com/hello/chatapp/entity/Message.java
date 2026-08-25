@@ -7,13 +7,14 @@ import lombok.Setter;
 import java.util.ArrayList;
 import java.util.List;
 import com.hello.chatapp.constant.MessageType;
+import com.hello.chatapp.model.SystemEventPayload;
 import java.time.LocalDateTime;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.CascadeType;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -25,6 +26,8 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * Chat message row ({@code messages}): text, media, and system events.
@@ -64,6 +67,14 @@ public class Message {
     // (for example USER_JOINED) instead of final human-readable text.
     @Column(nullable = true, length = 1000)
     private String content;
+
+    /**
+     * Optional JSON for SYSTEM events that need more than actor + one subject.
+     * Batch add-members stores {@code subjectNames}. Null for ordinary chat and single-subject events.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "system_event_payload")
+    private SystemEventPayload systemEventPayload;
 
     @Column(nullable = false)
     private LocalDateTime timestamp;

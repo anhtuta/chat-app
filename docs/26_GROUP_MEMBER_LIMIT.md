@@ -121,7 +121,7 @@ sequenceDiagram
     GroupService->>DB: persist groups.max_members
 
     Client->>GroupMembershipController: POST /members or /join-links/{token}/join
-    GroupMembershipController->>GroupMembershipService: addMember/joinByToken
+    GroupMembershipController->>GroupMembershipService: addMembers/joinByToken
     GroupMembershipService->>DB: SELECT group FOR UPDATE
     GroupMembershipService->>DB: recheck active/auth/link/ban/existing member
     GroupMembershipService->>DB: COUNT group_participants
@@ -207,14 +207,23 @@ Behavior:
 
 `POST /api/groups/{groupId}/members`
 
+Request:
+
+```json
+{
+  "userIds": [2, 3, 4]
+}
+```
+
 Behavior:
 
 - Lock active group.
 - Authorize `ADD_MEMBERS`.
-- Reject banned target.
-- If target is already a member, keep existing "already a member" behavior.
-- Check capacity under the lock using the insertion rule.
-- Insert member only when unlimited or current count is strictly below `maxMembers`.
+- Deduplicate `userIds`. Reject an empty list.
+- Reject if any target is banned, missing, or already a member. The whole request fails; no partial inserts.
+- Check capacity under the lock for the whole batch: reject when a positive `maxMembers` would be exceeded by `currentCount + newDistinctCount`.
+- Insert all new members in one multi-row `INSERT` when unlimited or the entire batch fits (`currentCount + N <= maxMembers`).
+- Publish one `USER_JOINED` system message naming every added member (not one event per user).
 
 #### Join Link
 
@@ -243,60 +252,6 @@ Recommended rules:
 - Check existing membership before capacity in `joinByToken` so already-member retries stay idempotent even if the group is full or over-limit.
 - Make the PATCH DTO/wrapper presence-aware so omitted `maxMembers` is distinct from explicit `null`.
 - Keep Redis out of the correctness path for the first version.
-
-## Implementation Plan
-
-### Phase 1. Schema And DTO Surface
-
-- Add nullable `max_members` to `groups`.
-- Add `maxMembers` to `Group`.
-- Add optional `maxMembers` to `CreateGroupRequest` and `GroupResponse`.
-- Update `UpdateGroupRequest` (or a PATCH wrapper) to track field presence for `maxMembers` so omission, explicit `null`, `0`, and positive values are distinguishable.
-- Add validation: values below `0` are rejected before persistence; only `null` and `0` mean unlimited.
-- Backward compatibility: existing rows stay `NULL`, so all existing groups remain unlimited.
-
-### Phase 2. Create And Update Behavior
-
-- Update `GroupService.createGroup` to accept and persist `maxMembers`.
-- Before inserting any participant rows, compute the distinct set of creator plus `participantIds` and reject the create if that set size exceeds a positive limit.
-- Keep `GroupSeeder` setup-only with unlimited groups, or apply the same capacity validation if it ever creates capped groups.
-- `updateGroupDetails` accepts presence-aware `maxMembers` as a patchable field.
-- Allow lowering below current member count (over-limit state); do not remove members.
-- Record a system event for limit changes only if the product wants visible audit history in chat. TODO: confirm whether max-member changes should create a system message like group name/description updates.
-
-### Phase 3. Capacity Enforcement In Membership Writes
-
-- Add a helper in `GroupMembershipService`, for example `ensureGroupHasCapacityForNewMember(Group group)`.
-- Call it in `addMember` after the duplicate-member check and before saving `GroupParticipant`.
-- Call it in `joinByToken` after existing-member idempotency check and before saving `GroupParticipant`.
-- The helper runs while the transaction holds `findByIdForUpdate` on the group row.
-- The helper uses `groupParticipantRepository.countByGroupId(group.getId())` and applies the insertion rule: reject when `maxMembers > 0` and `currentCount >= maxMembers`.
-
-### Phase 4. Error Contract And Frontend UX
-
-- Return a clear API error message such as `Group member limit has been reached`.
-- In the group settings UI, show an optional numeric field for maximum members.
-- In add-member UI, optionally disable add actions when current member count is known to be at or above the limit, but keep backend enforcement authoritative.
-- In join-link UI, show the backend error if the group is full.
-
-### Phase 5. Tests
-
-- Unit or integration test: create group with `maxMembers = null` and `0` remains unlimited.
-- Unit or integration test: create/update rejects `maxMembers < 0` before persistence.
-- Integration test: create group rejects initial distinct membership above limit and inserts no partial participant rows.
-- Integration test: update limit as leader/co-leader succeeds; non-privileged member fails.
-- Integration / DTO tests for PATCH `maxMembers`:
-  - omitted → current limit unchanged
-  - explicit `null` → unlimited
-  - `0` → unlimited
-  - positive value → sets limit
-  - negative value → rejected
-- Integration test: lowering `maxMembers` below current count leaves existing members and blocks new inserts until `count < maxMembers`.
-- Integration test: direct add succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
-- Integration test: join by link succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
-- Idempotency test: existing member using join link succeeds even when group is full or over-limit.
-- Concurrency test: many simultaneous join-link requests for a group with `maxMembers = N` never create more than `N` participants when starting from below the limit.
-- Concurrency test: mixed direct adds and join-link joins serialize correctly and obey the insertion rule.
 
 ## Concurrency Notes
 
@@ -335,6 +290,70 @@ This works because all capacity-affecting insert paths wait on the same group ro
 The same rule also covers over-limit groups: if `maxMembers` was lowered to 50 while 80 members remain, every new insert sees `currentCount >= maxMembers` and is rejected until enough members leave/are removed that `count < maxMembers`.
 
 The count must happen after acquiring the lock. An unlocked pre-count is only a hint and cannot be used for correctness.
+
+## Implementation details
+
+### Phase 1. Schema And DTO Surface - **Done**
+
+#### What changed
+
+- Added nullable `groups.max_members` (Flyway `V11`) with a non-negative check constraint.
+- Mapped `Group.maxMembers` and included it on `CreateGroupRequest`, `UpdateGroupRequest`, and `GroupResponse`.
+- `UpdateGroupRequest` tracks whether JSON included `maxMembers`, so omitted stays unchanged later while explicit `null`, `0`, and positives remain distinct.
+- Bean Validation rejects `maxMembers < 0` on create and update requests.
+
+#### Rollout, migration, or backward-compatibility notes
+
+- Existing rows keep `max_members = NULL` (unlimited).
+
+### Phase 2. Create And Update Behavior - **Done**
+
+#### What changed
+
+- `GroupService.createGroup` persists `maxMembers` (`null`/`0` unlimited, positive cap, negatives rejected before any insert).
+- Create computes the distinct set of `{creator} ∪ participantIds` and rejects the whole request when that size exceeds a positive limit (no group or participant rows).
+- `GroupSeeder` still inserts unlimited groups (`max_members` omitted / `NULL`).
+- `updateGroupDetails` applies presence-aware `maxMembers`: omit leaves the current value; explicit `null` or `0` stores unlimited; a positive value sets the cap.
+- Lowering the cap below the current member count is allowed and does not remove members.
+- PATCH may send only `maxMembers`. Limit changes do not write a system message yet (TODO to confirm product intent).
+
+### Phase 3. Capacity Enforcement In Membership Writes - **Done**
+
+#### What changed
+
+- `GroupMembershipService.ensureGroupHasCapacityForNewMembers` counts participants under the existing group-row lock and rejects new inserts when a positive `maxMembers` cannot cover the whole batch (`currentCount + newCount > maxMembers`).
+- `addMembers` inserts the whole batch with one multi-row `INSERT`, then publishes a single `USER_JOINED` system message whose `systemEventPayload.subjectNames` lists every added display name.
+- `joinByToken` runs the single-seat helper only for new members, so existing-member retries stay idempotent when the group is full or over-limit.
+- Full-group rejection uses `Group member limit has been reached` (`400`).
+
+#### Rollout, migration, or backward-compatibility notes
+
+- Flyway `V12` adds `messages.system_event_payload` (`JSONB`) for the combined add-members line (`subjectNames`). Existing events without a payload stay single-subject.
+
+### Phase 4. Error Contract And Frontend UX - **Done**
+
+#### What changed
+
+- Full-group API rejection already uses `Group member limit has been reached` (`400`). Join-by-token and add-members keep showing that server body in the UI.
+- Group details profile can view/edit optional `maxMembers` (blank or `0` = unlimited). PATCH omits the field when it did not change.
+- Create-group dialog accepts the same optional cap and rejects an oversized initial roster before calling the API.
+- Add-member is disabled when the known roster is at or above a positive cap. The add dialog still submits to the backend, which remains authoritative.
+- Join-group page surfaces the backend full-group message (warning severity when the limit message is returned).
+
+#### Why it changed
+
+- Clients need a stable full-group error and a way to set/see the cap without relying only on API tools.
+
+### Phase 5. Tests - **Done**
+
+#### What changed
+
+- Added `GroupMemberLimitIntegrationTest` (Failsafe) covering create/update persistence, leader vs co-leader vs member PATCH, PATCH presence (`omitted` / `null` / `0` / positive / negative), over-limit create with no partial rows, lowering the cap then blocking inserts until `count < maxMembers`, add-member and join-by-token below vs at cap, join-link idempotency when full or over-limit, and two concurrency cases (parallel joins; mixed add + join) that never persist more than `N` participants.
+- Existing unit coverage remains in `GroupServiceTest`, `GroupMembershipServiceTest`, and `GroupMemberLimitDtoTest`. Frontend numeric-input helpers stay in `groupMemberLimit.test.ts`.
+
+#### Why it changed
+
+- Sequential rules were mostly unit-tested; persistence and lock serialization needed an isolated H2 IT so concurrent join/add cannot exceed a positive cap.
 
 ## Future Higher-Scale Path
 

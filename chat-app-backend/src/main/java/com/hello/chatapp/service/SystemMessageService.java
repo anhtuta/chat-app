@@ -7,6 +7,11 @@ import com.hello.chatapp.entity.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
+/**
+ * Writes structured {@code SYSTEM} messages for membership and group-profile events.
+ */
 @Service
 public class SystemMessageService {
 
@@ -40,10 +45,25 @@ public class SystemMessageService {
      */
     @Transactional
     public Message recordGroupEvent(Group group, User subjectUser, User actor, SystemEventType eventType) {
+        return recordGroupEvent(group, subjectUser, actor, eventType, null);
+    }
+
+    /**
+     * Same as {@link #recordGroupEvent(Group, User, User, SystemEventType)} with optional extra
+     * subject display names stored on {@code system_event_payload.subjectNames}.
+     */
+    @Transactional
+    public Message recordGroupEvent(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            List<String> subjectNames) {
         return messageService.saveGroupSystemMessage(
                 group,
                 subjectUser,
                 actor,
-                eventType);
+                eventType,
+                subjectNames);
     }
 }

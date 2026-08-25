@@ -11,6 +11,11 @@ import {
 } from "@mui/material";
 import { getGroupDetails, updateGroupDetails } from "../../services/api";
 import type { ChatGroup } from "../../types/groups";
+import {
+  formatMaxMembersInput,
+  maxMembersEquals,
+  parseMaxMembersInput,
+} from "../../utils/groupMemberLimit";
 import GroupBannedMemberList from "./GroupBannedMemberList";
 import GroupJoinLinksSection from "./GroupJoinLinksSection";
 import GroupMemberList from "./GroupMemberList";
@@ -41,6 +46,7 @@ function GroupDetailsDialog({
   const [groupDetails, setGroupDetails] = useState<ChatGroup | null>(initialGroup);
   const [groupName, setGroupName] = useState(initialGroup?.name || "");
   const [description, setDescription] = useState(initialGroup?.description || "");
+  const [maxMembersInput, setMaxMembersInput] = useState(formatMaxMembersInput(initialGroup?.maxMembers));
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
@@ -58,6 +64,7 @@ function GroupDetailsDialog({
     setGroupDetails(seed);
     setGroupName(seed?.name || "");
     setDescription(seed?.description || "");
+    setMaxMembersInput(formatMaxMembersInput(seed?.maxMembers));
     setError("");
   }, [groupId, open]);
 
@@ -82,6 +89,7 @@ function GroupDetailsDialog({
         }));
         setGroupName(nextGroup.name || "");
         setDescription(nextGroup.description || "");
+        setMaxMembersInput(formatMaxMembersInput(nextGroup.maxMembers));
       })
       .catch((nextError: unknown) => {
         if (isCancelled) {
@@ -109,13 +117,18 @@ function GroupDetailsDialog({
   const normalizedDescription = description.trim();
   const normalizedDescriptionOrNull = normalizedDescription ? normalizedDescription : null;
 
+  const parsedMaxMembers = parseMaxMembersInput(maxMembersInput);
+
   const hasChanges = useMemo(() => {
     if (!groupDetails) {
       return false;
     }
+    const maxMembersChanged = parsedMaxMembers.ok === false
+      || !maxMembersEquals(parsedMaxMembers.value, groupDetails.maxMembers);
     return normalizedName !== (groupDetails.name || "")
-      || normalizedDescriptionOrNull !== (groupDetails.description || null);
-  }, [groupDetails, normalizedDescriptionOrNull, normalizedName]);
+      || normalizedDescriptionOrNull !== (groupDetails.description || null)
+      || maxMembersChanged;
+  }, [groupDetails, normalizedDescriptionOrNull, normalizedName, parsedMaxMembers]);
 
   const handleSave = async () => {
     if (!groupDetails) {
@@ -125,6 +138,11 @@ function GroupDetailsDialog({
       setError("Group name is required");
       return;
     }
+    const parsed = parseMaxMembersInput(maxMembersInput);
+    if (parsed.ok === false) {
+      setError(parsed.message);
+      return;
+    }
 
     setIsSaving(true);
     setError("");
@@ -132,6 +150,9 @@ function GroupDetailsDialog({
       const updatedGroup = await updateGroupDetails(groupDetails.id, {
         name: normalizedName,
         description: normalizedDescriptionOrNull,
+        ...(maxMembersEquals(parsed.value, groupDetails.maxMembers)
+          ? {}
+          : { maxMembers: parsed.value }),
       });
       // PATCH returns group metadata only; keep role/permissions/unread from prior state.
       const mergedGroup: ChatGroup = {
@@ -164,6 +185,7 @@ function GroupDetailsDialog({
         unreadCount: groupDetails?.unreadCount,
       };
       setGroupDetails(mergedGroup);
+      setMaxMembersInput(formatMaxMembersInput(mergedGroup.maxMembers));
       onGroupUpdated?.(mergedGroup);
     } catch (refreshError: unknown) {
       console.error("Error refreshing group details after leadership transfer:", refreshError);
@@ -200,10 +222,12 @@ function GroupDetailsDialog({
               <GroupProfileSection
                 groupName={groupName}
                 description={description}
+                maxMembersInput={maxMembersInput}
                 canManageGroupDetails={canManageGroupDetails}
                 isSaving={isSaving}
                 onGroupNameChange={setGroupName}
                 onDescriptionChange={setDescription}
+                onMaxMembersChange={setMaxMembersInput}
               />
 
               <GroupRolePermissionsSection
@@ -214,6 +238,7 @@ function GroupDetailsDialog({
               <GroupMemberList
                 open={open}
                 groupId={groupId}
+                maxMembers={groupDetails?.maxMembers}
                 currentUsername={currentUsername}
                 currentUserRole={groupDetails?.currentUserRole}
                 currentUserPermissions={permissions}

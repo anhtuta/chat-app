@@ -12,6 +12,9 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * API representation of a group, including optional {@code maxMembers} capacity.
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -20,6 +23,7 @@ public class GroupResponse {
     private Long id;
     private String name;
     private String description;
+    private Integer maxMembers;
     private Long createdById;
     private String createdByUsername;
     private LocalDateTime createdAt;
@@ -38,6 +42,9 @@ public class GroupResponse {
         return fromGroup(group, null, List.of(), unreadCount);
     }
 
+    /**
+     * Maps a persisted group to the API DTO, including {@code maxMembers}.
+     */
     public static GroupResponse fromGroup(
             Group group,
             GroupRole currentUserRole,
@@ -50,6 +57,7 @@ public class GroupResponse {
                 .id(group.getId())
                 .name(group.getName())
                 .description(group.getDescription())
+                .maxMembers(group.getMaxMembers())
                 .createdById(group.getCreatedBy() == null ? null : group.getCreatedBy().getId())
                 .createdByUsername(group.getCreatedBy() == null ? null : group.getCreatedBy().getUsername())
                 .createdAt(group.getCreatedAt())

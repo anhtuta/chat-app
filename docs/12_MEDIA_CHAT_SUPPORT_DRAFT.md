@@ -700,8 +700,12 @@ Suggested Redis keys:
 
 #### Video
 
+- accept only MP4, MOV, and WebM
 - generate poster thumbnail
-- perform compression asynchronously after publish
+- transcode asynchronously after publish to one MP4 / H.264 + AAC asset
+- use that asset for both inline playback and download
+- delete the original object only after the transcoded file is verified and client URLs have switched to it
+- if the source is already H.264 + AAC MP4, keep it as the canonical object instead of storing a second copy
 - capture duration, width, and height metadata
 
 #### Audio
@@ -946,7 +950,7 @@ Recommendation path:
      - show a poster-based video card in the chat bubble instead of raw native controls
      - show filename, duration, and size before playback starts
      - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
-     - play `transcodedUrl` first and keep `contentUrl` as fallback/download
+     - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` and `transcodedUrl` refer to that object, not the original upload
      - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
 12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration

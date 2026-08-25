@@ -17,11 +17,16 @@ import com.hello.chatapp.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Creates and updates groups, including optional member-capacity ({@code maxMembers}) on create/PATCH.
+ */
 @Service
 public class GroupService {
 
@@ -46,11 +51,26 @@ public class GroupService {
         this.systemMessageService = systemMessageService;
     }
 
+    /**
+     * Creates a group, persists {@code maxMembers}, and inserts the creator plus invited participants.
+     * Rejects the whole request (no group or participant rows) when a positive limit is smaller
+     * than the distinct set of {@code {creator} ∪ participantIds}.
+     *
+     * @param maxMembers omitted/{@code null}/{@code 0} means unlimited; values below {@code 0} are rejected
+     */
     @Transactional
-    public GroupResponse createGroup(String name, String description, User creator, List<Long> participantIds) {
-        // Create the group
+    public GroupResponse createGroup(
+            String name,
+            String description,
+            User creator,
+            List<Long> participantIds,
+            Integer maxMembers) {
+        Integer storedMaxMembers = normalizeStoredMaxMembers(maxMembers);
+        validateInitialMembershipFitsLimit(creator, participantIds, storedMaxMembers);
+
         Group group = new Group(normalizeRequiredName(name), creator);
         group.setDescription(normalizeDescription(description));
+        group.setMaxMembers(storedMaxMembers);
         group = groupRepository.save(group);
 
         // Add creator as participant
@@ -59,9 +79,10 @@ public class GroupService {
         groupParticipantRepository.save(creatorParticipant);
 
         // Add other participants
-        for (Long userId : participantIds) {
+        List<Long> invitedIds = participantIds == null ? List.of() : participantIds;
+        for (Long userId : invitedIds) {
             // Skip if trying to add creator again
-            if (userId.equals(creator.getId())) {
+            if (userId == null || userId.equals(creator.getId())) {
                 continue;
             }
 
@@ -110,11 +131,24 @@ public class GroupService {
                 groupAuthorizationService.getPermissions(participant));
     }
 
+    /**
+     * Patches group name, description, and/or {@code maxMembers}.
+     * Omitted {@code maxMembers} leaves the current limit unchanged. Explicit {@code null} or {@code 0}
+     * stores unlimited. Lowering below the current participant count is allowed (over-limit state).
+     *
+     * @param maxMembersPresent {@code true} when the PATCH body included {@code maxMembers}
+     */
     @Transactional
-    public GroupResponse updateGroupDetails(User actor, Long groupId, String name, String description) {
+    public GroupResponse updateGroupDetails(
+            User actor,
+            Long groupId,
+            String name,
+            String description,
+            Integer maxMembers,
+            boolean maxMembersPresent) {
         Long safeGroupId = Objects.requireNonNull(groupId, "groupId must not be null");
-        if (name == null && description == null) {
-            throw new BadRequestException("At least one of name or description must be provided");
+        if (name == null && description == null && !maxMembersPresent) {
+            throw new BadRequestException("At least one of name, description, or maxMembers must be provided");
         }
 
         Group group = groupAuthorizationService.requireActivePermission(
@@ -130,6 +164,9 @@ public class GroupService {
         if (description != null) {
             group.setDescription(normalizeDescription(description));
         }
+        if (maxMembersPresent) {
+            group.setMaxMembers(normalizeStoredMaxMembers(maxMembers));
+        }
 
         Group savedGroup = groupRepository.save(group);
         if (!Objects.equals(group.getName(), originalName)) {
@@ -138,6 +175,7 @@ public class GroupService {
         if (!Objects.equals(group.getDescription(), originalDescription)) {
             systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_DESCRIPTION_UPDATED);
         }
+        // TODO: confirm whether max-member changes should create a system message like group name/description updates.
 
         // Unread/role/permissions are unchanged; clients keep existing values (realtime fan-out: Phase 12).
         // recordGroupEvent → updateLatestMessageIfNewer clears the persistence context
@@ -164,6 +202,42 @@ public class GroupService {
 
         participant.setLastReadMessageId(lastReadMessageId);
         groupParticipantRepository.save(participant);
+    }
+
+    /**
+     * Stores only {@code null}, {@code 0} (unlimited), or a positive cap. Rejects negatives before persistence.
+     */
+    private Integer normalizeStoredMaxMembers(Integer maxMembers) {
+        if (maxMembers == null) {
+            return null;
+        }
+        if (maxMembers < 0) {
+            throw new BadRequestException("maxMembers must not be negative");
+        }
+        return maxMembers;
+    }
+
+    /**
+     * Rejects create when a positive cap is smaller than the distinct invited membership including the creator.
+     */
+    private void validateInitialMembershipFitsLimit(User creator, List<Long> participantIds, Integer maxMembers) {
+        if (maxMembers == null || maxMembers == 0) {
+            return;
+        }
+        Set<Long> distinctMemberIds = new HashSet<>();
+        if (creator != null && creator.getId() != null) {
+            distinctMemberIds.add(creator.getId());
+        }
+        if (participantIds != null) {
+            for (Long participantId : participantIds) {
+                if (participantId != null) {
+                    distinctMemberIds.add(participantId);
+                }
+            }
+        }
+        if (distinctMemberIds.size() > maxMembers) {
+            throw new BadRequestException("Initial membership exceeds the group member limit");
+        }
     }
 
     private String normalizeRequiredName(String name) {

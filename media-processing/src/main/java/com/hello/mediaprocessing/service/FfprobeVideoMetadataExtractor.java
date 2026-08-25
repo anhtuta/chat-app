@@ -101,7 +101,7 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
      *
      * @param stdoutFuture task draining standard output
      * @param stderrFuture task draining standard error
-     * @param timeout maximum time to wait for each reader task
+     * @param timeout shared maximum time to wait for both reader tasks
      * @param lenientDiagnostics when {@code true}, reader timeouts return empty output instead of failing
      * @return captured stdout and stderr from the probe process
      */
@@ -110,9 +110,24 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
             CompletableFuture<String> stderrFuture,
             Duration timeout,
             boolean lenientDiagnostics) {
-        return new ProbeOutput(
-                awaitReader(stdoutFuture, timeout, lenientDiagnostics),
-                awaitReader(stderrFuture, timeout, lenientDiagnostics));
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        String stdout = awaitReader(stdoutFuture, timeout, lenientDiagnostics);
+        String stderr = awaitReader(stderrFuture, remainingDuration(deadlineNanos), lenientDiagnostics);
+        return new ProbeOutput(stdout, stderr);
+    }
+
+    /**
+     * Returns the remaining wait budget before a reader deadline is reached.
+     *
+     * @param deadlineNanos reader deadline in nanoseconds
+     * @return remaining duration, clamped to zero when the budget is exhausted
+     */
+    private Duration remainingDuration(long deadlineNanos) {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return Duration.ZERO;
+        }
+        return Duration.ofNanos(remainingNanos);
     }
 
     /**
@@ -124,8 +139,17 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
      * @return captured stream contents, or an empty string when diagnostics are unavailable
      */
     private String awaitReader(CompletableFuture<String> readerFuture, Duration timeout, boolean lenientDiagnostics) {
+        long waitMillis = Math.max(0L, timeout.toMillis());
+        if (waitMillis == 0L) {
+            readerFuture.cancel(true);
+            if (lenientDiagnostics) {
+                return "";
+            }
+            throw new VideoMetadataExtractionException("Timed out while reading ffprobe output");
+        }
+
         try {
-            return readerFuture.get(Math.max(1L, timeout.toMillis()), TimeUnit.MILLISECONDS);
+            return readerFuture.get(waitMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             readerFuture.cancel(true);
             if (lenientDiagnostics) {

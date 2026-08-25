@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
 import type { ChatGroup, SelectableUser } from "../types/groups";
+import { parseMaxMembersInput, GROUP_MEMBER_LIMIT_REACHED_MESSAGE, isAllowedMaxMembersInput } from "../utils/groupMemberLimit";
 import "./CreateGroupModal.css";
 
 interface CreateGroupModalProps {
@@ -25,6 +26,7 @@ interface CreateGroupModalProps {
 
 function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
   const [groupName, setGroupName] = useState("");
+  const [maxMembersInput, setMaxMembersInput] = useState("");
   const [users, setUsers] = useState<SelectableUser[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,9 +70,27 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
       return;
     }
 
+    const parsedMaxMembers = parseMaxMembersInput(maxMembersInput);
+    if (parsedMaxMembers.ok === false) {
+      setError(parsedMaxMembers.message);
+      return;
+    }
+    if (parsedMaxMembers.value != null && parsedMaxMembers.value > 0) {
+      const initialCount = selectedUserIds.length + 1;
+      if (initialCount > parsedMaxMembers.value) {
+        setError(GROUP_MEMBER_LIMIT_REACHED_MESSAGE);
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
-      const newGroup = await createGroup(groupName.trim(), selectedUserIds);
+      const newGroup = await createGroup(
+        groupName.trim(),
+        selectedUserIds,
+        undefined,
+        parsedMaxMembers.value,
+      );
       onGroupCreated(newGroup);
       onClose();
     } catch (err) {
@@ -101,6 +121,29 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
               onChange={(e) => setGroupName(e.target.value)}
               fullWidth
               required
+              className="create-group-name-field"
+              variant="outlined"
+            />
+
+            <TextField
+              label="Maximum members"
+              type="number"
+              placeholder="Unlimited"
+              value={maxMembersInput}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (isAllowedMaxMembersInput(next)) {
+                  setMaxMembersInput(next);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-", "."].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
+              slotProps={{ htmlInput: { min: 0, step: 1, inputMode: "numeric" } }}
+              fullWidth
+              helperText="Leave blank or 0 for unlimited."
               className="create-group-name-field"
               variant="outlined"
             />

@@ -107,7 +107,15 @@ export async function getGroupDetails(groupId: number | string): Promise<ChatGro
  */
 export async function updateGroupDetails(
   groupId: number | string,
-  { name, description }: { name?: string; description?: string | null },
+  {
+    name,
+    description,
+    maxMembers,
+  }: {
+    name?: string;
+    description?: string | null;
+    maxMembers?: number | null;
+  },
 ): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}`, {
     method: "PATCH",
@@ -118,6 +126,7 @@ export async function updateGroupDetails(
     body: JSON.stringify({
       ...(name !== undefined ? { name } : {}),
       ...(description !== undefined ? { description } : {}),
+      ...(maxMembers !== undefined ? { maxMembers } : {}),
     }),
   });
   if (response.ok) {
@@ -163,24 +172,24 @@ export async function getGroupMembers(
 }
 
 /**
- * Add a user directly to a group as MEMBER.
+ * Add one or more users directly to a group as MEMBER.
  */
-export async function addGroupMember(
+export async function addGroupMembers(
   groupId: number | string,
-  userId: number,
-): Promise<GroupMember> {
+  userIds: number[],
+): Promise<GroupMember[]> {
   const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}/members`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
     credentials: "include",
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ userIds }),
   });
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to add group member");
+  throw new Error((await response.text()) || "Failed to add group members");
 }
 
 /**
@@ -484,6 +493,7 @@ export async function createGroup(
   name: string,
   participantIds: number[],
   description?: string,
+  maxMembers?: number | null,
 ): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups`, {
     method: "POST",
@@ -495,6 +505,7 @@ export async function createGroup(
       name,
       description,
       participantIds,
+      ...(maxMembers !== undefined ? { maxMembers } : {}),
     }),
   });
   if (response.ok) {

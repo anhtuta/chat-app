@@ -1,5 +1,6 @@
 package com.hello.chatapp.repository;
 
+import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
 import com.hello.chatapp.entity.User;
@@ -17,6 +18,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Repository tests for group participant queries and bulk member insert.
+ */
 @DataJpaTest
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -36,6 +40,9 @@ class GroupParticipantRepositoryIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    /**
+     * Archived groups are omitted from a user's participant list.
+     */
     @Test
     void findByUser_excludesArchivedGroups() {
         User creator = userRepository.saveAndFlush(new User("creator-user", "secret", "Creator User"));
@@ -54,5 +61,32 @@ class GroupParticipantRepositoryIntegrationTest {
         assertThat(participants)
                 .extracting(participant -> participant.getGroup().getName())
                 .containsExactly("Active Group");
+    }
+
+    /**
+     * Multi-row insert creates every MEMBER in one statement and is readable afterward.
+     */
+    @Test
+    void insertMembers_insertsAllUsersAsMembersInOneStatement() {
+        User creator = userRepository.saveAndFlush(new User("creator-bulk", "secret", "Creator"));
+        User bob = userRepository.saveAndFlush(new User("bob-bulk", "secret", "Bob"));
+        User carol = userRepository.saveAndFlush(new User("carol-bulk", "secret", "Carol"));
+        Group group = groupRepository.saveAndFlush(new Group("Bulk Group", creator));
+        LocalDateTime joinedAt = LocalDateTime.now().minusMinutes(1);
+
+        int inserted = groupParticipantRepository.insertMembers(
+                group.getId(),
+                List.of(bob.getId(), carol.getId()),
+                joinedAt);
+
+        assertThat(inserted).isEqualTo(2);
+        List<GroupParticipant> saved = groupParticipantRepository.findByGroupIdAndUserIdIn(
+                group.getId(),
+                List.of(bob.getId(), carol.getId()));
+        assertThat(saved).hasSize(2);
+        assertThat(saved)
+                .allMatch(participant -> participant.getRole() == GroupRole.MEMBER)
+                .extracting(participant -> participant.getUser().getUsername())
+                .containsExactlyInAnyOrder("bob-bulk", "carol-bulk");
     }
 }

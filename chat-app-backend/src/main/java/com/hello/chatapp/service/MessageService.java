@@ -7,6 +7,7 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.NotFoundException;
+import com.hello.chatapp.model.SystemEventPayload;
 import com.hello.chatapp.repository.GroupRepository;
 import com.hello.chatapp.repository.MessageRepository;
 import org.slf4j.Logger;
@@ -18,6 +19,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.List;
 
+/**
+ * Persists chat messages, structured system events, and group latest-message previews.
+ */
 @Service
 public class MessageService {
 
@@ -148,6 +152,20 @@ public class MessageService {
             User subjectUser,
             User actor,
             SystemEventType eventType) {
+        return saveGroupSystemMessage(group, subjectUser, actor, eventType, null);
+    }
+
+    /**
+     * Persists a structured {@code SYSTEM} message. Optional {@code subjectNames} become
+     * {@code system_event_payload.subjectNames} for a batch add.
+     */
+    @Transactional
+    public Message saveGroupSystemMessage(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            List<String> subjectNames) {
         Long groupId = Objects.requireNonNull(group.getId());
         SystemEventType safeEventType = Objects.requireNonNull(eventType, "eventType must not be null");
         Group existingGroup = groupRepository.findById(groupId)
@@ -159,6 +177,7 @@ public class MessageService {
         message.setGroup(existingGroup);
         message.setMessageType(MessageType.SYSTEM);
         message.setContent(safeEventType.name());
+        message.setSystemEventPayload(SystemEventPayload.ofSubjectNames(subjectNames));
 
         Message savedMessage = messageRepository.saveAndFlush(message);
         updateLatestMessageSummary(

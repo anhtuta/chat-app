@@ -125,12 +125,10 @@ You can see that both sides of the race now do this first:
 
   ```java
   // GroupMembershipService.java
-  public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
+  public List<GroupMemberResponse> addMembers(User actor, Long groupId, List<Long> userIds) {
       // Lock before auth so a concurrent demotion cannot leave a former leader authorized to add.
       Group group = lockActiveGroup(groupId);
       groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
-      User target = loadUser(userId);
-      groupAuthorizationService.requireNotBanned(target, groupId);
   ```
 
 - `updateMemberRole()` also locks the **same** group row before changing roles:

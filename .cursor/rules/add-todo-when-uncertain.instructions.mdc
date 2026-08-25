@@ -1,5 +1,5 @@
 ---
-description: "Use when generating or modifying code in any language. If any requirement is uncertain, ambiguous, or possibly incomplete, add explicit TODO comments in the generated code to mark assumptions and missing details."
+description: "If any requirement is uncertain, ambiguous, or possibly incomplete, add explicit TODO comments in the generated code to mark assumptions and missing details."
 alwaysApply: true
 ---
 

@@ -37,9 +37,18 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
+/**
+ * Membership mutations (add, join, kick, ban, leave, roles) for a group.
+ * New inserts apply the member-limit insertion rule while holding the group row lock.
+ */
 @Service
 public class GroupMembershipService {
 
@@ -49,6 +58,7 @@ public class GroupMembershipService {
     private static final int MAX_MEMBER_PAGE_SIZE = 100;
     private static final int MAX_ADDABLE_USERS = 500;
     private static final String ARCHIVE_REASON_LAST_MEMBER_LEFT = "LAST_MEMBER_LEFT";
+    private static final String GROUP_MEMBER_LIMIT_REACHED = "Group member limit has been reached";
 
     private final GroupAuthorizationService groupAuthorizationService;
     private final GroupParticipantRepository groupParticipantRepository;
@@ -117,23 +127,61 @@ public class GroupMembershipService {
                 PageableUtil.of(0, MAX_ADDABLE_USERS));
     }
 
+    /**
+     * Adds one or more users as {@code MEMBER} after locking the group, authorizing {@code ADD_MEMBERS},
+     * and applying the member-limit insertion rule to the whole batch.
+     * Duplicate ids are ignored. If any target is banned, already a member, missing, or the batch
+     * would exceed capacity, the request fails and no participant rows are inserted.
+     * Participants are inserted in one SQL statement. One {@code USER_JOINED} system message names
+     * every added member.
+     *
+     * @param userIds users to add; must be non-empty after nulls are removed
+     * @return saved memberships in request order (distinct ids)
+     */
     @Transactional
-    public GroupMemberResponse addMember(User actor, Long groupId, Long userId) {
+    public List<GroupMemberResponse> addMembers(User actor, Long groupId, List<Long> userIds) {
         // Lock before auth so a concurrent demotion cannot leave a former leader authorized to add.
         Group group = lockActiveGroup(groupId);
         groupAuthorizationService.requireActivePermission(actor, groupId, GroupPermission.ADD_MEMBERS);
-        User target = loadUser(userId);
-        groupAuthorizationService.requireNotBanned(target, groupId);
 
-        if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
-            throw new BadRequestException("User is already a member of this group");
+        // Validate input
+        List<Long> distinctUserIds = distinctUserIds(userIds);
+        if (distinctUserIds.isEmpty()) {
+            throw new BadRequestException("At least one userId is required");
+        }
+        if (distinctUserIds.size() > MAX_ADDABLE_USERS) {
+            throw new BadRequestException("At most " + MAX_ADDABLE_USERS + " userIds are allowed");
         }
 
-        GroupParticipant participant = new GroupParticipant(group, target);
-        participant.setRole(GroupRole.MEMBER);
-        GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
-        publishMembershipEvent(group, target, actor, SystemEventType.USER_JOINED, null);
-        return GroupMemberResponse.fromParticipant(savedParticipant);
+        List<User> targets = new ArrayList<>(distinctUserIds.size());
+        for (Long userId : distinctUserIds) {
+            User target = loadUser(userId);
+            groupAuthorizationService.requireNotBanned(target, groupId);
+            if (groupParticipantRepository.findByGroupIdAndUserId(groupId, userId).isPresent()) {
+                throw new BadRequestException("User is already a member of this group");
+            }
+            targets.add(target);
+        }
+
+        ensureGroupHasCapacityForNewMembers(group, targets.size());
+
+        // Save all members to DB
+        LocalDateTime joinedAt = LocalDateTime.now();
+        List<Long> targetIds = targets.stream().map(u -> u.getId()).toList();
+        groupParticipantRepository.insertMembers(groupId, targetIds, joinedAt);
+        List<GroupParticipant> savedParticipants = groupParticipantRepository.findByGroupIdAndUserIdIn(
+                groupId,
+                targetIds);
+        List<GroupMemberResponse> addedMembers = orderParticipants(targetIds, savedParticipants).stream()
+                .map(GroupMemberResponse::fromParticipant)
+                .toList();
+
+        List<String> subjectNames = targets.stream().map(GroupMembershipService::displayName).toList();
+
+        // Use the first target as the subject user but it is not used, because column messages.user_id cannot be NULL,
+        // so we pass first target for dummy value. We should use subjectNames only.
+        publishMembershipEvent(group, targets.getFirst(), actor, SystemEventType.USER_JOINED, null, subjectNames);
+        return addedMembers;
     }
 
     @Transactional(readOnly = true)
@@ -163,6 +211,10 @@ public class GroupMembershipService {
         return GroupJoinLinkResponse.fromJoinLink(groupJoinLinkRepository.save(joinLink), token);
     }
 
+    /**
+     * Joins via a link token. Existing members are returned without a capacity check.
+     * New members are inserted only when the group is unlimited or {@code count < maxMembers}.
+     */
     @Transactional
     public GroupMemberResponse joinByToken(User user, String token) {
         if (token == null || token.isBlank()) {
@@ -194,6 +246,7 @@ public class GroupMembershipService {
         return groupParticipantRepository.findByGroupIdAndUserId(groupId, user.getId())
                 .map(GroupMemberResponse::fromParticipant)
                 .orElseGet(() -> {
+                    ensureGroupHasCapacityForNewMember(group);
                     GroupParticipant participant = new GroupParticipant(group, user);
                     participant.setRole(GroupRole.MEMBER);
                     GroupParticipant savedParticipant = groupParticipantRepository.save(participant);
@@ -403,7 +456,26 @@ public class GroupMembershipService {
             User actor,
             SystemEventType eventType,
             String removedUsername) {
-        Message systemMessage = systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType);
+        publishMembershipEvent(group, subjectUser, actor, eventType, removedUsername, null);
+    }
+
+    /**
+     * Persists a structured membership {@code SYSTEM} message, then schedules realtime delivery
+     * for after the surrounding transaction commits (via {@link GroupMembershipRealtimePublisher}).
+     *
+     * @param subjectNames extra added-member display names stored in the system-event payload;
+     *        {@code null} otherwise
+     */
+    private void publishMembershipEvent(
+            Group group,
+            User subjectUser,
+            User actor,
+            SystemEventType eventType,
+            String removedUsername,
+            List<String> subjectNames) {
+        Message systemMessage = subjectNames == null
+                ? systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType)
+                : systemMessageService.recordGroupEvent(group, subjectUser, actor, eventType, subjectNames);
         membershipRealtimePublisher.publishMembershipChange(
                 group,
                 systemMessage,
@@ -431,6 +503,89 @@ public class GroupMembershipService {
         Group group = lockGroupForLifecycleUpdate(groupId);
         ensureActive(group);
         return group;
+    }
+
+    /**
+     * Insertion rule: a new participant may be saved only when the group is unlimited
+     * ({@code maxMembers} null or 0) or the current participant count is strictly below a positive cap.
+     * Must run while this transaction holds {@code findByIdForUpdate} on the group row.
+     *
+     * @param group locked active group whose {@code maxMembers} is applied
+     */
+    private void ensureGroupHasCapacityForNewMember(Group group) {
+        ensureGroupHasCapacityForNewMembers(group, 1);
+    }
+
+    /**
+     * Same insertion rule as {@link #ensureGroupHasCapacityForNewMember(Group)} for a batch of new rows.
+     * Rejects the whole batch when {@code currentCount + newMemberCount} would exceed a positive cap.
+     *
+     * @param newMemberCount distinct users about to be inserted; ignored when {@code <= 0}
+     */
+    private void ensureGroupHasCapacityForNewMembers(Group group, int newMemberCount) {
+        if (newMemberCount <= 0) {
+            return;
+        }
+        Integer maxMembers = group.getMaxMembers();
+        if (maxMembers == null || maxMembers <= 0) {
+            return;
+        }
+        long currentCount = groupParticipantRepository.countByGroupId(group.getId());
+        if (currentCount + newMemberCount > maxMembers) {
+            throw new BadRequestException(GROUP_MEMBER_LIMIT_REACHED);
+        }
+    }
+
+    /**
+     * Deduplicates ids while preserving request order. Null entries are dropped.
+     */
+    private List<Long> distinctUserIds(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long userId : userIds) {
+            if (userId != null) {
+                distinctIds.add(userId);
+            }
+        }
+        return new ArrayList<>(distinctIds);
+    }
+
+    /**
+     * Reorders bulk-insert results to match the requested user id sequence.
+     */
+    private List<GroupParticipant> orderParticipants(List<Long> userIds, List<GroupParticipant> participants) {
+        Map<Long, GroupParticipant> byUserId = new HashMap<>();
+        for (GroupParticipant participant : participants) {
+            if (participant.getUser() != null) {
+                byUserId.put(participant.getUser().getId(), participant);
+            }
+        }
+        List<GroupParticipant> ordered = new ArrayList<>(userIds.size());
+        for (Long userId : userIds) {
+            GroupParticipant participant = byUserId.get(userId);
+            if (participant != null) {
+                ordered.add(participant);
+            }
+        }
+        return ordered;
+    }
+
+    /**
+     * Display name used in batch {@code USER_JOINED} copy: fullname, else username.
+     */
+    private static String displayName(User user) {
+        if (user == null) {
+            return "Someone";
+        }
+        if (user.getFullname() != null && !user.getFullname().isBlank()) {
+            return user.getFullname();
+        }
+        if (user.getUsername() != null && !user.getUsername().isBlank()) {
+            return user.getUsername();
+        }
+        return "Someone";
     }
 
     /**

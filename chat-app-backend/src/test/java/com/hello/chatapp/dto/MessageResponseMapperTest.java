@@ -8,6 +8,7 @@ import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.User;
+import com.hello.chatapp.model.SystemEventPayload;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import com.hello.chatapp.storage.S3ObjectStorageProvider;
@@ -17,8 +18,14 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Maps {@link Message} rows to API responses, including structured system-event fields.
+ */
 class MessageResponseMapperTest {
 
+    /**
+     * Attachment payloads include a storage-backed content URL.
+     */
     @Test
     void toResponse_addsContentUrlForAttachments() {
         MediaStorageProperties properties = new MediaStorageProperties();
@@ -58,6 +65,9 @@ class MessageResponseMapperTest {
         assertThat(response.getAttachments().getFirst().getContentUrl()).contains("chat-media/media/1/photo.png");
     }
 
+    /**
+     * SYSTEM rows expose event type plus actor (updatedBy) separately from the subject user.
+     */
     @Test
     void toResponse_mapsSystemEventMetadata() {
         MediaStorageProperties properties = new MediaStorageProperties();
@@ -89,5 +99,34 @@ class MessageResponseMapperTest {
         assertThat(response.getSystemEventActor().getUsername()).isEqualTo("alice");
         assertThat(response.getUser()).isNotNull();
         assertThat(response.getUser().getUsername()).isEqualTo("bob");
+    }
+
+    /**
+     * Batch add-member events expose every added display name on {@code systemEventPayload}.
+     */
+    @Test
+    void toResponse_mapsSystemEventPayloadSubjectNames() {
+        MediaStorageProperties properties = new MediaStorageProperties();
+        properties.setProvider(ObjectStorageProviderType.S3);
+
+        MessageResponseMapper mapper = new MessageResponseMapper(
+                new ObjectStorageProviderRegistry(
+                        List.of(new S3ObjectStorageProvider(properties)),
+                        properties));
+
+        User actor = new User("alice", "secret", "Alice");
+        User subject = new User("bob", "secret", "Bob");
+        Message message = new Message();
+        message.setId(13L);
+        message.setUser(subject);
+        message.setUpdatedBy(actor);
+        message.setMessageType(MessageType.SYSTEM);
+        message.setContent(SystemEventType.USER_JOINED.name());
+        message.setSystemEventPayload(SystemEventPayload.ofSubjectNames(List.of("Bob", "Carol")));
+
+        MessageResponse response = mapper.toResponse(message);
+
+        assertThat(response.getSystemEventPayload()).isNotNull();
+        assertThat(response.getSystemEventPayload().getSubjectNames()).containsExactly("Bob", "Carol");
     }
 }

@@ -22,13 +22,19 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
   - `IMAGE`
   - `VIDEO`
   - later `AUDIO` when speech-to-text is added
+- Accept only these video containers for chat video messages:
+  - MP4 (`video/mp4`)
+  - MOV (`video/quicktime`)
+  - WebM (`video/webm`)
+- Reject other video containers at upload validation using server-detected type, not only the client-declared MIME type.
 - Generate image derivatives:
   - thumbnail
   - preview image
   - optional compressed display copy
 - Generate video derivatives:
   - poster thumbnail
-  - optional transcoded preview
+  - one normalized transcoded playback/download asset (MP4 / H.264 + AAC)
+- After a verified transcode succeeds, use that asset for both inline playback and download, then delete the original video object to save storage.
 - Extract technical metadata:
   - detected MIME type
   - width
@@ -62,6 +68,8 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
 - The service must use service credentials to read/write object storage.
 - The service should have bounded worker concurrency to protect CPU, memory, object storage, and database load.
 - Processing failures should be observable with logs, metrics, and dead-letter/failure state.
+- Do not delete the original video until the transcoded object exists, probes successfully, and `chat-app-backend` has switched client URLs to it.
+- If transcode fails, keep the original object and mark media `PROCESSING_FAILED`.
 - OCR/transcription output must respect media retention and deletion policies.
 - OCR/transcription provider choice must consider privacy, cost, and Vietnamese-language quality.
 - Search indexing from extracted media text can be eventually consistent.
@@ -75,8 +83,9 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
    - Chat clients can render a better video card after processing finishes.
 
 2. Video playback optimization
-   - User sends a large video.
-   - The service writes a chat-friendly playback asset with lower bitrate and more predictable codec/container choices.
+   - User sends an MP4, MOV, or WebM video.
+   - The service writes one chat-friendly MP4 (H.264 + AAC).
+   - After that object is verified, clients play and download it; the original upload is deleted.
    - Later the service can emit multiple renditions for adaptive playback.
 
 3. Image thumbnail and preview generation
@@ -190,6 +199,36 @@ The main goal is to keep `chat-app-backend` responsible for chat-domain workflow
 - Cons
   - More moving parts than DB-only search.
 - Recommendation for our problem: Yes as the long-term path.
+
+### 3. Should the original video be kept after transcode?
+
+#### 3.1. Keep original as download/fallback forever
+
+- How it works
+  - Clients play `transcodedUrl` and download/fallback via `contentUrl` pointing at the original upload.
+- Pros
+  - Highest fidelity for users who want the camera/HEVC/VP9 original.
+  - If transcode quality is poor, download still has the source.
+- Cons
+  - Stores two full videos per message until retention expiry.
+  - Chat download of MOV/WebM/HEVC is worse for recipients than a normalized MP4.
+- Recommendation for our problem: No.
+
+#### 3.2. Replace original with the transcoded MP4 after success
+
+- How it works
+  - Worker writes and probes one H.264 + AAC MP4.
+  - `chat-app-backend` switches play and download URLs to that object.
+  - Then the original object is deleted.
+  - If the source is already H.264 + AAC MP4, skip a second copy and keep that object as the canonical file.
+  - If transcode fails, keep the original and set `PROCESSING_FAILED`.
+- Pros
+  - One video blob per message after processing (plus a small poster).
+  - Recipients always get a chat-friendly file.
+- Cons
+  - Lossy re-encode vs HEVC/VP9 originals.
+  - Jobs must be ordered: verify transcode → switch pointers → delete original; retries must not require a deleted source.
+- Recommendation for our problem: Yes.
 
 ## High Level Architecture/Design
 
@@ -336,10 +375,12 @@ Recommended path:
 2. Treat the new `media-processing/` Micronaut project as the service scaffold that Phase 1 already established.
 3. Prioritize video processing before broader media-search enrichment.
 4. Build the first usable video pipeline in this order:
+   - accept only MP4, MOV, and WebM uploads
    - consume post-commit processing jobs
    - extract video metadata
    - generate poster thumbnails
-   - write a normalized/transcoded playback asset
+   - write a normalized/transcoded playback-and-download asset (MP4 / H.264 + AAC)
+   - switch client URLs to that asset, then delete the original unless it already was that asset
    - expose derivative URLs/status back to `chat-app-backend`
 5. After the first usable video pipeline works, add the contract needed for a better frontend video player in `docs/12_MEDIA_CHAT_SUPPORT_DRAFT.md`.
 6. Add adaptive video outputs later:
@@ -473,15 +514,19 @@ Recommended path:
 
 ### Phase 6 - First usable transcoded playback asset
 
-- Produce a normalized/transcoded playback asset for chat video playback.
+- Produce a normalized/transcoded asset used for both chat playback and download.
+- Input allowlist:
+  - MP4, MOV, WebM only
 - Choose the initial output target:
   - one normalized MP4/H.264 + AAC file
 - Optimize for:
   - reliable browser playback
   - smaller bandwidth than the original upload
   - acceptable startup time for chat use
-- Store the derived playback object and expose a field that `chat-app-backend` can map to `transcodedUrl`.
-- Keep the original object available as fallback/download until deletion/retention rules say otherwise.
+- Store the derived object and expose a field that `chat-app-backend` can map to both playback and download URLs (`transcodedUrl` / `contentUrl` after switch).
+- Fast path: if ffprobe shows the source is already H.264 + AAC in MP4, do not write a duplicate object; that object stays canonical.
+- After the transcoded (or canonical) object is verified and the backend has switched pointers, delete the original upload when it is a different object.
+- If transcode or verification fails, do not delete the original.
 
 ### Phase 7 - Chat-backend integration contract
 
@@ -493,11 +538,12 @@ Recommended path:
 - Update the shared contract so `chat-app-backend` can republish message updates after video processing finishes.
 - Ensure the backend can expose these fields to the frontend:
   - poster thumbnail URL
-  - transcoded playback URL
+  - playback/download URL for the canonical video object (after success, this is the transcoded MP4, not the original MOV/WebM)
   - duration
   - width
   - height
   - processing status
+- After a successful switch, `contentUrl` and `transcodedUrl` may point at the same object; do not keep a second full-size original.
 
 ### Phase 8 - Frontend video-player dependency contract
 
@@ -525,7 +571,7 @@ Recommended path:
 - Add HLS/adaptive streaming if video size and playback quality require it.
 - Produce playlist/manifests and segment outputs.
 - Decide how `chat-app-backend` exposes adaptive playback URLs to the frontend.
-- Keep original download and simpler fallback playback available for unsupported clients.
+- Keep the single canonical MP4 (and later a simple MP4 rendition) as download/fallback for clients that cannot use HLS.
 
 ### Phase 11 - Video search enrichment
 

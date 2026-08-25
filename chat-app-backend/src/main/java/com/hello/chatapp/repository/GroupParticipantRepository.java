@@ -15,8 +15,12 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Persistence for active group membership rows. Each row counts toward group member capacity.
+ */
 @Repository
-public interface GroupParticipantRepository extends JpaRepository<GroupParticipant, Long> {
+public interface GroupParticipantRepository
+        extends JpaRepository<GroupParticipant, Long>, GroupParticipantBulkInsertRepository {
     List<GroupParticipant> findByGroup(Group group);
 
     @Query("""
@@ -111,11 +115,28 @@ public interface GroupParticipantRepository extends JpaRepository<GroupParticipa
             @Param("groupId") Long groupId,
             @Param("userId") Long userId);
 
+    /**
+     * Loads inserted members with user and group for API mapping after a bulk insert.
+     */
+    @Query("""
+            SELECT gp FROM GroupParticipant gp
+            JOIN FETCH gp.user
+            JOIN FETCH gp.group
+            WHERE gp.group.id = :groupId AND gp.user.id IN :userIds
+            """)
+    List<GroupParticipant> findByGroupIdAndUserIdIn(
+            @Param("groupId") Long groupId,
+            @Param("userIds") List<Long> userIds);
+
     @Query("""
             SELECT COUNT(gp)
             FROM GroupParticipant gp
             WHERE gp.group.id = :groupId
             """)
+    /**
+     * Counts active participants for the group. There is no soft-delete participant state today,
+     * so every {@code group_participants} row counts toward member capacity.
+     */
     long countByGroupId(@Param("groupId") Long groupId);
 
     Optional<GroupParticipant> findByGroupAndUser(Group group, User user);

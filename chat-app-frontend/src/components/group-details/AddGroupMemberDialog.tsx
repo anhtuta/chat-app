@@ -14,8 +14,9 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { addGroupMember, getAddableGroupUsers } from "../../services/api";
+import { addGroupMembers, getAddableGroupUsers } from "../../services/api";
 import type { SelectableUser } from "../../types/groups";
+import { GROUP_MEMBER_LIMIT_REACHED_MESSAGE } from "../../utils/groupMemberLimit";
 import "../CreateGroupModal.css";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 
@@ -25,6 +26,7 @@ const ADDABLE_USERS_CAP = 500;
 interface AddGroupMemberDialogProps {
   open: boolean;
   groupId: number | string;
+  remainingSeats?: number | null;
   onClose: () => void;
   onMembersAdded: () => void;
 }
@@ -32,6 +34,7 @@ interface AddGroupMemberDialogProps {
 function AddGroupMemberDialog({
   open,
   groupId,
+  remainingSeats = null,
   onClose,
   onMembersAdded,
 }: AddGroupMemberDialogProps) {
@@ -100,54 +103,37 @@ function AddGroupMemberDialog({
       if (previous.includes(userId)) {
         return previous.filter((id) => id !== userId);
       }
+      if (remainingSeats !== null && previous.length >= remainingSeats) {
+        return previous;
+      }
       return [...previous, userId];
     });
   };
+
+  const selectionAtSeatCap = remainingSeats !== null && selectedUserIds.length >= remainingSeats;
 
   const handleSubmit = async () => {
     if (!selectedUserIds.length) {
       setError("Select at least one user to add");
       return;
     }
+    if (remainingSeats !== null && selectedUserIds.length > remainingSeats) {
+      setError(GROUP_MEMBER_LIMIT_REACHED_MESSAGE);
+      return;
+    }
 
     setIsSubmitting(true);
     setError("");
 
-    const failedUserIds: number[] = [];
-    let addedCount = 0;
-    let lastError: unknown;
-
-    for (const userId of selectedUserIds) {
-      try {
-        await addGroupMember(groupId, userId);
-        addedCount += 1;
-      } catch (submitError: unknown) {
-        console.error("Error adding group member:", submitError);
-        failedUserIds.push(userId);
-        lastError = submitError;
-      }
-    }
-
-    setIsSubmitting(false);
-
-    if (addedCount > 0) {
-      // Parent member list must refresh even when later adds fail.
+    try {
+      await addGroupMembers(groupId, selectedUserIds);
       onMembersAdded();
-      setUsers((previous) => previous.filter((user) => failedUserIds.includes(user.id)));
-    }
-
-    if (failedUserIds.length === 0) {
       onClose();
-      return;
-    }
-
-    // Keep only failed users selected so retry does not re-add successes.
-    setSelectedUserIds(failedUserIds);
-    if (addedCount > 0) {
-      const detail = lastError instanceof Error && lastError.message ? `: ${lastError.message}` : "";
-      setError(`Added ${addedCount} member(s), but ${failedUserIds.length} failed${detail}`);
-    } else {
-      setError(toErrorMessage(lastError, "Failed to add group member"));
+    } catch (submitError: unknown) {
+      console.error("Error adding group members:", submitError);
+      setError(toErrorMessage(submitError, "Failed to add group members"));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -159,6 +145,14 @@ function AddGroupMemberDialog({
           {error ? (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
+            </Alert>
+          ) : null}
+
+          {remainingSeats !== null ? (
+            <Alert severity={remainingSeats === 0 ? "warning" : "info"} sx={{ mb: 2 }}>
+              {remainingSeats === 0
+                ? GROUP_MEMBER_LIMIT_REACHED_MESSAGE
+                : `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} left. The server still enforces the limit.`}
             </Alert>
           ) : null}
 
@@ -190,6 +184,7 @@ function AddGroupMemberDialog({
                       control={
                         <Checkbox
                           checked={selectedUserIds.includes(user.id)}
+                          disabled={remainingSeats === 0 || (selectionAtSeatCap && !selectedUserIds.includes(user.id))}
                           onChange={() => toggleUser(user.id)}
                           onClick={(event) => event.stopPropagation()}
                         />
@@ -229,7 +224,7 @@ function AddGroupMemberDialog({
           <Button
             onClick={handleSubmit}
             variant="contained"
-            disabled={isLoadingUsers || isSubmitting || selectedUserIds.length === 0}
+            disabled={isLoadingUsers || isSubmitting || selectedUserIds.length === 0 || remainingSeats === 0}
           >
             {isSubmitting ? "Adding..." : "Add"}
           </Button>

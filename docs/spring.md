@@ -380,7 +380,7 @@ Before that phase, update returned the still-managed group and lazy load worked.
 
 Same pattern as `createGroup`: re-fetch with `findByIdWithCreator` before building the response.
 
-The same clear also hits `MessageModerationService` after `refreshGroupLatestMessage` (edit/delete of the latest group message). Mapping `savedMessage` *after* that call can `LazyInitializationException` on lazy `user` / `updatedBy` / `deletedBy` / `group` / `attachments`. Fix there: build `MessageResponse` **before** calling `refreshGroupLatestMessage`.
+The same clear also hits `MessageModerationService` after `refreshGroupLatestMessage` (edit/delete of the latest group message). Mapping `savedMessage` _after_ that call can `LazyInitializationException` on lazy `user` / `updatedBy` / `deletedBy` / `group` / `attachments`. Fix there: build `MessageResponse` **before** calling `refreshGroupLatestMessage`.
 
 ## The difference between Throttle/Buffering vs. Debounce
 
@@ -633,3 +633,24 @@ Notes:
 
 - `group` is **not** in the entity graph here (unlike `findWithMediaById`), so `groups` is not joined — only the FK `group_id` is filtered.
 - Hibernate may emit aliases/`DISTINCT` and, for the `attachments` bag, sometimes a **second** select instead of one join (to avoid cartesian product with `LIMIT 1`). The SQL above is the logical equivalent, not a guaranteed single Hibernate plan.
+
+## Spring Data's repository fragment pattern
+
+Use it to combine standard Spring Data JPA methods with custom behavior. Steps:
+
+1. defining a custom interface
+2. writing its implementation using a strict naming convention
+3. extending both interfaces from your main repository
+
+Example:
+
+1. [GroupParticipantBulkInsertRepository](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantBulkInsertRepository.java)
+2. [GroupParticipantRepositoryImpl](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantRepositoryImpl.java)
+3. [GroupParticipantRepository](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantRepository.java)
+
+How it works?
+
+- Spring Data JPA will automatically detect the `GroupParticipantRepositoryImpl` fragment class and merge it behind a single proxy
+- You can inject `GroupParticipantRepository` anywhere in your application and seamlessly use both standard and custom methods
+
+Ref: Google AI

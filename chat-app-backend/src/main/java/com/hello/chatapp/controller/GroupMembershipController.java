@@ -28,6 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * HTTP API for group membership, bans, join links, and leadership transfer.
+ */
 @RestController
 @RequestMapping("/api/groups")
 public class GroupMembershipController {
@@ -66,15 +69,18 @@ public class GroupMembershipController {
         return ResponseEntity.ok(users);
     }
 
+    /**
+     * Adds one or more users as {@code MEMBER} in a single request.
+     */
     @PostMapping("/{groupId}/members")
-    public ResponseEntity<GroupMemberResponse> addMember(
+    public ResponseEntity<List<GroupMemberResponse>> addMembers(
             @PathVariable Long groupId,
             @Valid @RequestBody AddGroupMemberRequest request,
             HttpSession session) {
-        return ResponseEntity.ok(groupMembershipService.addMember(
+        return ResponseEntity.ok(groupMembershipService.addMembers(
                 getAuthenticatedUser(session),
                 groupId,
-                request.getUserId()));
+                request.getUserIds()));
     }
 
     @DeleteMapping("/{groupId}/members/{userId}")
