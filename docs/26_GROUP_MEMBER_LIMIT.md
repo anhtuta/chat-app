@@ -344,24 +344,16 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 
 - Clients need a stable full-group error and a way to set/see the cap without relying only on API tools.
 
-### Phase 5. Tests
+### Phase 5. Tests - **Done**
 
-- Unit or integration test: create group with `maxMembers = null` and `0` remains unlimited.
-- Unit or integration test: create/update rejects `maxMembers < 0` before persistence.
-- Integration test: create group rejects initial distinct membership above limit and inserts no partial participant rows.
-- Integration test: update limit as leader/co-leader succeeds; non-privileged member fails.
-- Integration / DTO tests for PATCH `maxMembers`:
-  - omitted → current limit unchanged
-  - explicit `null` → unlimited
-  - `0` → unlimited
-  - positive value → sets limit
-  - negative value → rejected
-- Integration test: lowering `maxMembers` below current count leaves existing members and blocks new inserts until `count < maxMembers`.
-- Integration test: direct add succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
-- Integration test: join by link succeeds when `count < maxMembers` and fails when `count >= maxMembers`.
-- Idempotency test: existing member using join link succeeds even when group is full or over-limit.
-- Concurrency test: many simultaneous join-link requests for a group with `maxMembers = N` never create more than `N` participants when starting from below the limit.
-- Concurrency test: mixed direct adds and join-link joins serialize correctly and obey the insertion rule.
+#### What changed
+
+- Added `GroupMemberLimitIntegrationTest` (Failsafe) covering create/update persistence, leader vs co-leader vs member PATCH, PATCH presence (`omitted` / `null` / `0` / positive / negative), over-limit create with no partial rows, lowering the cap then blocking inserts until `count < maxMembers`, add-member and join-by-token below vs at cap, join-link idempotency when full or over-limit, and two concurrency cases (parallel joins; mixed add + join) that never persist more than `N` participants.
+- Existing unit coverage remains in `GroupServiceTest`, `GroupMembershipServiceTest`, and `GroupMemberLimitDtoTest`. Frontend numeric-input helpers stay in `groupMemberLimit.test.ts`.
+
+#### Why it changed
+
+- Sequential rules were mostly unit-tested; persistence and lock serialization needed an isolated H2 IT so concurrent join/add cannot exceed a positive cap.
 
 ## Future Higher-Scale Path
 
