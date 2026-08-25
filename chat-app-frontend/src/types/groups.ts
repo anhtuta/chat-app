@@ -6,6 +6,7 @@ export interface ChatGroup {
   id: number;
   name: string;
   description?: string | null;
+  maxMembers?: number | null;
   latestMessage?: string | null;
   latestMessageSender?: string | null;
   latestMessageAt?: string | null;

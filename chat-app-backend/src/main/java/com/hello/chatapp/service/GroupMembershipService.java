@@ -165,6 +165,7 @@ public class GroupMembershipService {
 
         ensureGroupHasCapacityForNewMembers(group, targets.size());
 
+        // Save all members to DB
         LocalDateTime joinedAt = LocalDateTime.now();
         List<Long> targetIds = targets.stream().map(u -> u.getId()).toList();
         groupParticipantRepository.insertMembers(groupId, targetIds, joinedAt);
@@ -176,6 +177,9 @@ public class GroupMembershipService {
                 .toList();
 
         List<String> subjectNames = targets.stream().map(GroupMembershipService::displayName).toList();
+
+        // Use the first target as the subject user but it is not used, because column messages.user_id cannot be NULL,
+        // so we pass first target for dummy value. We should use subjectNames only.
         publishMembershipEvent(group, targets.getFirst(), actor, SystemEventType.USER_JOINED, null, subjectNames);
         return addedMembers;
     }

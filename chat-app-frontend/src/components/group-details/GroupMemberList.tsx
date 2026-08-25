@@ -16,6 +16,11 @@ import { GROUP_ROLES } from "../../constant/groupRoles";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 import GroupMemberListItem from "./GroupMemberListItem";
 import AddGroupMemberDialog from "./AddGroupMemberDialog";
+import {
+  GROUP_MEMBER_LIMIT_REACHED_MESSAGE,
+  isGroupAtOrOverMemberLimit,
+  remainingMemberSeats,
+} from "../../utils/groupMemberLimit";
 
 const MEMBER_PAGE_SIZE = 100;
 const SEARCH_DEBOUNCE_MS = 400;
@@ -24,6 +29,7 @@ const SCROLL_LOAD_THRESHOLD_PX = 48;
 interface GroupMemberListProps {
   groupId: number | string | null | undefined;
   open: boolean;
+  maxMembers?: number | null;
   currentUsername?: string | null;
   currentUserRole?: string | null;
   currentUserPermissions?: string[];
@@ -34,6 +40,7 @@ interface GroupMemberListProps {
 function GroupMemberList({
   groupId,
   open,
+  maxMembers,
   currentUsername,
   currentUserRole,
   currentUserPermissions = [],
@@ -46,6 +53,7 @@ function GroupMemberList({
   const [page, setPage] = useState(0);
   const [hasNext, setHasNext] = useState(false);
   const [totalElements, setTotalElements] = useState(0);
+  const [rosterCount, setRosterCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +86,7 @@ function GroupMemberList({
     setPage(0);
     setHasNext(false);
     setTotalElements(0);
+    setRosterCount(0);
 
     getGroupMembers(groupId, { q: debouncedSearch, page: 0, size: MEMBER_PAGE_SIZE })
       .then((response) => {
@@ -88,6 +97,9 @@ function GroupMemberList({
         setPage(response.page ?? 0);
         setHasNext(Boolean(response.hasNext));
         setTotalElements(response.totalElements ?? 0);
+        if (!debouncedSearch) {
+          setRosterCount(response.totalElements ?? 0);
+        }
       })
       .catch((nextError: unknown) => {
         if (isCancelled || requestId !== requestIdRef.current) {
@@ -173,6 +185,12 @@ function GroupMemberList({
     setReloadToken((previous) => previous + 1);
   };
 
+  const atMemberLimit = isGroupAtOrOverMemberLimit(rosterCount, maxMembers);
+  const remainingSeats = remainingMemberSeats(rosterCount, maxMembers);
+  const addButtonTitle = atMemberLimit
+    ? GROUP_MEMBER_LIMIT_REACHED_MESSAGE
+    : "Add members";
+
   return (
     <div className="group-member-list-wrapper group-details-section">
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.5 }}>
@@ -185,7 +203,9 @@ function GroupMemberList({
             variant="outlined"
             startIcon={<PersonAddAlt1OutlinedIcon />}
             onClick={() => setAddDialogOpen(true)}
-            title="Add members"
+            disabled={atMemberLimit}
+            title={addButtonTitle}
+            aria-label={addButtonTitle}
           >
             Add
           </Button>
@@ -205,6 +225,9 @@ function GroupMemberList({
 
         <Typography variant="subtitle2" className="group-details-section-subtitle">
           Roster ({isLoading ? "…" : `${members.length}${totalElements > members.length ? ` of ${totalElements}` : ""}`})
+          {remainingSeats !== null && !isLoading
+            ? ` · ${atMemberLimit ? GROUP_MEMBER_LIMIT_REACHED_MESSAGE : `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} left`}`
+            : ""}
         </Typography>
 
         {error ? (
@@ -229,10 +252,12 @@ function GroupMemberList({
                   onMemberKickedOut={(userId) => {
                     setMembers((previous) => previous.filter((item) => item.userId !== userId));
                     setTotalElements((previous) => Math.max(0, previous - 1));
+                    setRosterCount((previous) => Math.max(0, previous - 1));
                   }}
                   onMemberBanned={(userId) => {
                     setMembers((previous) => previous.filter((item) => item.userId !== userId));
                     setTotalElements((previous) => Math.max(0, previous - 1));
+                    setRosterCount((previous) => Math.max(0, previous - 1));
                     onMemberBanned?.();
                   }}
                   onMemberRoleUpdated={(updatedMember) => {
@@ -285,6 +310,7 @@ function GroupMemberList({
         <AddGroupMemberDialog
           open={addDialogOpen}
           groupId={groupId}
+          remainingSeats={remainingSeats}
           onClose={() => setAddDialogOpen(false)}
           onMembersAdded={refreshMembers}
         />

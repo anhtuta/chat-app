@@ -330,12 +330,19 @@ The count must happen after acquiring the lock. An unlocked pre-count is only a 
 
 - Flyway `V12` adds `messages.system_event_payload` (`JSONB`) for the combined add-members line (`subjectNames`). Existing events without a payload stay single-subject.
 
-### Phase 4. Error Contract And Frontend UX
+### Phase 4. Error Contract And Frontend UX - **Done**
 
-- Return a clear API error message such as `Group member limit has been reached`.
-- In the group settings UI, show an optional numeric field for maximum members.
-- In add-member UI, optionally disable add actions when current member count is known to be at or above the limit, but keep backend enforcement authoritative.
-- In join-link UI, show the backend error if the group is full.
+#### What changed
+
+- Full-group API rejection already uses `Group member limit has been reached` (`400`). Join-by-token and add-members keep showing that server body in the UI.
+- Group details profile can view/edit optional `maxMembers` (blank or `0` = unlimited). PATCH omits the field when it did not change.
+- Create-group dialog accepts the same optional cap and rejects an oversized initial roster before calling the API.
+- Add-member is disabled when the known roster is at or above a positive cap. The add dialog still submits to the backend, which remains authoritative.
+- Join-group page surfaces the backend full-group message (warning severity when the limit message is returned).
+
+#### Why it changed
+
+- Clients need a stable full-group error and a way to set/see the cap without relying only on API tools.
 
 ### Phase 5. Tests
 

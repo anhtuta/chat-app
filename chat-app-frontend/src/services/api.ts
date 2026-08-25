@@ -107,7 +107,15 @@ export async function getGroupDetails(groupId: number | string): Promise<ChatGro
  */
 export async function updateGroupDetails(
   groupId: number | string,
-  { name, description }: { name?: string; description?: string | null },
+  {
+    name,
+    description,
+    maxMembers,
+  }: {
+    name?: string;
+    description?: string | null;
+    maxMembers?: number | null;
+  },
 ): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups/${groupId}`, {
     method: "PATCH",
@@ -118,6 +126,7 @@ export async function updateGroupDetails(
     body: JSON.stringify({
       ...(name !== undefined ? { name } : {}),
       ...(description !== undefined ? { description } : {}),
+      ...(maxMembers !== undefined ? { maxMembers } : {}),
     }),
   });
   if (response.ok) {
@@ -484,6 +493,7 @@ export async function createGroup(
   name: string,
   participantIds: number[],
   description?: string,
+  maxMembers?: number | null,
 ): Promise<ChatGroup> {
   const response = await fetch(`${API_BASE_URL}/api/groups`, {
     method: "POST",
@@ -495,6 +505,7 @@ export async function createGroup(
       name,
       description,
       participantIds,
+      ...(maxMembers !== undefined ? { maxMembers } : {}),
     }),
   });
   if (response.ok) {

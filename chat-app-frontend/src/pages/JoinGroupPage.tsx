@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { joinGroupByToken } from "../services/api";
+import { GROUP_MEMBER_LIMIT_REACHED_MESSAGE } from "../utils/groupMemberLimit";
 import "./auth.css";
 
 interface JoinGroupPageProps {
@@ -111,12 +112,15 @@ function JoinGroupPage({ isAuthenticated }: JoinGroupPageProps) {
                 Join a group
               </Typography>
               <Typography variant="body1" color="textSecondary">
-                Use a join link token shared by a group member.
+                Use a join link token shared by a group member. If the group is full, you will see the server message.
               </Typography>
             </Box>
 
             {error ? (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert
+                severity={error.includes(GROUP_MEMBER_LIMIT_REACHED_MESSAGE) ? "warning" : "error"}
+                sx={{ mb: 2 }}
+              >
                 {error}
               </Alert>
             ) : null}

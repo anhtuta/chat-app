@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { addGroupMembers, getAddableGroupUsers } from "../../services/api";
 import type { SelectableUser } from "../../types/groups";
+import { GROUP_MEMBER_LIMIT_REACHED_MESSAGE } from "../../utils/groupMemberLimit";
 import "../CreateGroupModal.css";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 
@@ -25,6 +26,7 @@ const ADDABLE_USERS_CAP = 500;
 interface AddGroupMemberDialogProps {
   open: boolean;
   groupId: number | string;
+  remainingSeats?: number | null;
   onClose: () => void;
   onMembersAdded: () => void;
 }
@@ -32,6 +34,7 @@ interface AddGroupMemberDialogProps {
 function AddGroupMemberDialog({
   open,
   groupId,
+  remainingSeats = null,
   onClose,
   onMembersAdded,
 }: AddGroupMemberDialogProps) {
@@ -100,13 +103,22 @@ function AddGroupMemberDialog({
       if (previous.includes(userId)) {
         return previous.filter((id) => id !== userId);
       }
+      if (remainingSeats !== null && previous.length >= remainingSeats) {
+        return previous;
+      }
       return [...previous, userId];
     });
   };
 
+  const selectionAtSeatCap = remainingSeats !== null && selectedUserIds.length >= remainingSeats;
+
   const handleSubmit = async () => {
     if (!selectedUserIds.length) {
       setError("Select at least one user to add");
+      return;
+    }
+    if (remainingSeats !== null && selectedUserIds.length > remainingSeats) {
+      setError(GROUP_MEMBER_LIMIT_REACHED_MESSAGE);
       return;
     }
 
@@ -133,6 +145,14 @@ function AddGroupMemberDialog({
           {error ? (
             <Alert severity="error" sx={{ mb: 2 }}>
               {error}
+            </Alert>
+          ) : null}
+
+          {remainingSeats !== null ? (
+            <Alert severity={remainingSeats === 0 ? "warning" : "info"} sx={{ mb: 2 }}>
+              {remainingSeats === 0
+                ? GROUP_MEMBER_LIMIT_REACHED_MESSAGE
+                : `${remainingSeats} seat${remainingSeats === 1 ? "" : "s"} left. The server still enforces the limit.`}
             </Alert>
           ) : null}
 
@@ -164,6 +184,7 @@ function AddGroupMemberDialog({
                       control={
                         <Checkbox
                           checked={selectedUserIds.includes(user.id)}
+                          disabled={remainingSeats === 0 || (selectionAtSeatCap && !selectedUserIds.includes(user.id))}
                           onChange={() => toggleUser(user.id)}
                           onClick={(event) => event.stopPropagation()}
                         />
@@ -203,7 +224,7 @@ function AddGroupMemberDialog({
           <Button
             onClick={handleSubmit}
             variant="contained"
-            disabled={isLoadingUsers || isSubmitting || selectedUserIds.length === 0}
+            disabled={isLoadingUsers || isSubmitting || selectedUserIds.length === 0 || remainingSeats === 0}
           >
             {isSubmitting ? "Adding..." : "Add"}
           </Button>
