@@ -4,6 +4,8 @@
 
 Auth in this app is **server-side HTTP sessions** backed by **Redis** (Spring Session), not JWT. The browser holds only an **opaque session cookie** (`CHATAPP_SESSION` by default in this app); Spring Security restores the principal from that session on each HTTP request.
 
+Failed login/register is **4xx JSON** (`ErrorResponse`), not `AuthResponse`. See [`36_API_ERROR_RESPONSE.md`](./36_API_ERROR_RESPONSE.md).
+
 This doc covers **login auth** for HTTP APIs and WebSocket/STOMP. It does **not** cover group roles/permissions in depth (see [`15_GROUP_ROLES_AND_PERMISSIONS.md`](./15_GROUP_ROLES_AND_PERMISSIONS.md)).
 
 ## Summary

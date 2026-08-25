@@ -3,7 +3,7 @@
  * In development: requests are proxied via "proxy" in package.json
  * In production: requests go directly to the backend
  */
-import type { AuthCheckResponse, LoginResponse, RegisterResponse } from "../types/auth";
+import type { AuthCheckResponse, LoginResponse, RegisterResponse, ApiErrorResponse } from "../types/auth";
 import type {
   ChatMessage,
   CompleteMediaAttachmentInput,
@@ -13,6 +13,7 @@ import type {
   RequestMultipartPartUrlsResponse,
 } from "../types/chat";
 import type { ChatGroup, GroupBan, GroupJoinLink, GroupMember, GroupMemberPage, GroupRole, SelectableUser } from "../types/groups";
+import { messageFromApiError } from "../utils/apiError";
 
 const API_BASE_URL = "";
 
@@ -38,7 +39,7 @@ export async function checkAuth(): Promise<AuthCheckResponse> {
 /**
  * Login
  */
-export async function login(username: string, password: string): Promise<LoginResponse> {
+export async function login(username: string, password: string): Promise<LoginResponse | ApiErrorResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: {
@@ -53,7 +54,7 @@ export async function login(username: string, password: string): Promise<LoginRe
 /**
  * Register
  */
-export async function register(username: string, password: string): Promise<RegisterResponse> {
+export async function register(username: string, password: string): Promise<RegisterResponse | ApiErrorResponse> {
   const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
     method: "POST",
     headers: {
@@ -99,7 +100,7 @@ export async function getGroupDetails(groupId: number | string): Promise<ChatGro
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to load group details");
+  throw new Error(await readErrorMessage(response, "Failed to load group details"));
 }
 
 /**
@@ -132,7 +133,7 @@ export async function updateGroupDetails(
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to update group details");
+  throw new Error(await readErrorMessage(response, "Failed to update group details"));
 }
 
 /**
@@ -168,7 +169,7 @@ export async function getGroupMembers(
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to load group members");
+  throw new Error(await readErrorMessage(response, "Failed to load group members"));
 }
 
 /**
@@ -189,7 +190,7 @@ export async function addGroupMembers(
   if (response.ok) {
     return response.json();
   }
-  throw new Error((await response.text()) || "Failed to add group members");
+  throw new Error(await readErrorMessage(response, "Failed to add group members"));
 }
 
 /**
@@ -206,7 +207,7 @@ export async function kickGroupMember(
   if (response.ok) {
     return;
   }
-  throw new Error(await response.text() || "Failed to remove group member");
+  throw new Error(await readErrorMessage(response, "Failed to remove group member"));
 }
 
 /**
@@ -229,7 +230,7 @@ export async function updateGroupMemberRole(
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to update member role");
+  throw new Error(await readErrorMessage(response, "Failed to update member role"));
 }
 
 /**
@@ -251,7 +252,7 @@ export async function transferGroupLeadership(
   if (response.ok) {
     return;
   }
-  throw new Error(await response.text() || "Failed to transfer leadership");
+  throw new Error(await readErrorMessage(response, "Failed to transfer leadership"));
 }
 
 /**
@@ -276,7 +277,7 @@ export async function banGroupMember(
   if (response.ok) {
     return;
   }
-  throw new Error(await response.text() || "Failed to ban group member");
+  throw new Error(await readErrorMessage(response, "Failed to ban group member"));
 }
 
 /**
@@ -289,7 +290,7 @@ export async function getGroupBans(groupId: number | string): Promise<GroupBan[]
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to load banned users");
+  throw new Error(await readErrorMessage(response, "Failed to load banned users"));
 }
 
 /**
@@ -306,7 +307,7 @@ export async function unbanGroupMember(
   if (response.ok) {
     return;
   }
-  throw new Error(await response.text() || "Failed to unban group member");
+  throw new Error(await readErrorMessage(response, "Failed to unban group member"));
 }
 
 /**
@@ -324,7 +325,7 @@ export async function leaveGroup(groupId: number | string): Promise<void> {
   }
   // Prefer body text so business-rule 403s (e.g. transfer leadership first) surface in the UI
   // instead of the generic auth redirect in handleErrorResponse.
-  throw new Error(await response.text() || "Failed to leave group");
+  throw new Error(await readErrorMessage(response, "Failed to leave group"));
 }
 
 /**
@@ -337,7 +338,7 @@ export async function getGroupJoinLinks(groupId: number | string): Promise<Group
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to load join links");
+  throw new Error(await readErrorMessage(response, "Failed to load join links"));
 }
 
 /**
@@ -361,7 +362,7 @@ export async function createGroupJoinLink(
   if (response.ok) {
     return response.json();
   }
-  throw new Error(await response.text() || "Failed to create join link");
+  throw new Error(await readErrorMessage(response, "Failed to create join link"));
 }
 
 /**
@@ -378,7 +379,7 @@ export async function revokeGroupJoinLink(
   if (response.ok) {
     return;
   }
-  throw new Error(await response.text() || "Failed to revoke join link");
+  throw new Error(await readErrorMessage(response, "Failed to revoke join link"));
 }
 
 /**
@@ -403,7 +404,7 @@ export async function joinGroupByToken(token: string): Promise<GroupMember> {
   }
   // Prefer body text so business-rule 403s (e.g. banned) surface in the UI
   // instead of the generic auth redirect in handleErrorResponse.
-  throw new Error(await response.text() || "Failed to join group");
+  throw new Error(await readErrorMessage(response, "Failed to join group"));
 }
 
 /**
@@ -511,8 +512,7 @@ export async function createGroup(
   if (response.ok) {
     return response.json();
   }
-  const error = await response.text();
-  throw new Error(error || "Failed to create group");
+  throw new Error(await readErrorMessage(response, "Failed to create group"));
 }
 
 /**
@@ -705,23 +705,18 @@ export function uploadFileToPresignedUrl(
   return uploadBlobToPresignedUrl(url, file, options);
 }
 
-function handleErrorResponse(response: Response): never {
+async function handleErrorResponse(response: Response): Promise<never> {
   if (response.status === 403) {
     window.location.href = "/login";
   }
-  throw new Error(`API error: ${response.status} ${response.statusText}`);
+  throw new Error(await readErrorMessage(response, `API error: ${response.status} ${response.statusText}`));
 }
 
 async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
-  if (response.status === 403) {
-    window.location.href = "/login";
-    return fallbackMessage;
-  }
-
   try {
-    const errorText = await response.text();
-    return errorText || fallbackMessage;
-  } catch (error) {
+    const body: unknown = await response.json();
+    return messageFromApiError(body, fallbackMessage);
+  } catch {
     return fallbackMessage;
   }
 }

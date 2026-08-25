@@ -12,6 +12,7 @@ import {
     Stack,
 } from "@mui/material";
 import { register } from "../services/api";
+import { toUserErrorMessage } from "../utils/apiError";
 
 function RegisterPage() {
     const navigate = useNavigate();
@@ -47,13 +48,13 @@ function RegisterPage() {
         setLoading(true);
         try {
             const result = await register(username.trim(), password);
-            if (result.success) {
+            if ("success" in result && result.success) {
                 navigate("/login", { replace: true });
             } else {
                 setError(result.message || "Registration failed");
             }
         } catch (err) {
-            setError("An error occurred. Please try again.");
+            setError(toUserErrorMessage(err, "An error occurred. Please try again."));
         } finally {
             setLoading(false);
         }
