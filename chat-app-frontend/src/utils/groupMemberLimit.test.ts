@@ -1,5 +1,6 @@
 import {
   formatMaxMembersInput,
+  isAllowedMaxMembersInput,
   isGroupAtOrOverMemberLimit,
   isUnlimitedMaxMembers,
   maxMembersEquals,
@@ -48,6 +49,15 @@ describe("groupMemberLimit", () => {
     expect(formatMaxMembersInput(null)).toBe("");
     expect(formatMaxMembersInput(0)).toBe("");
     expect(formatMaxMembersInput(8)).toBe("8");
+  });
+
+  it("allows only empty or whole non-negative digits in the field", () => {
+    expect(isAllowedMaxMembersInput("")).toBe(true);
+    expect(isAllowedMaxMembersInput("0")).toBe(true);
+    expect(isAllowedMaxMembersInput("42")).toBe(true);
+    expect(isAllowedMaxMembersInput("-1")).toBe(false);
+    expect(isAllowedMaxMembersInput("1.5")).toBe(false);
+    expect(isAllowedMaxMembersInput("e")).toBe(false);
   });
 
   it("equates stored 0 and null as unlimited", () => {

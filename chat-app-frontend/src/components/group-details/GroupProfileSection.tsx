@@ -1,5 +1,6 @@
 import React from "react";
 import { Stack, TextField, Typography } from "@mui/material";
+import { isAllowedMaxMembersInput } from "../../utils/groupMemberLimit";
 import { groupDetailsTextFieldSx } from "./groupDetailsFieldSx";
 
 interface GroupProfileSectionProps {
@@ -53,8 +54,20 @@ function GroupProfileSection({
         />
         <TextField
           label="Maximum members"
+          type="number"
           value={maxMembersInput}
-          onChange={(event) => onMaxMembersChange(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (isAllowedMaxMembersInput(next)) {
+              onMaxMembersChange(next);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (["e", "E", "+", "-", "."].includes(event.key)) {
+              event.preventDefault();
+            }
+          }}
+          slotProps={{ htmlInput: { min: 0, step: 1, inputMode: "numeric" } }}
           fullWidth
           placeholder="Unlimited"
           disabled={!canManageGroupDetails || isSaving}

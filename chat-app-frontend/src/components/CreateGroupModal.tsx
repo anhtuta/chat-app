@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
 import type { ChatGroup, SelectableUser } from "../types/groups";
-import { parseMaxMembersInput, GROUP_MEMBER_LIMIT_REACHED_MESSAGE } from "../utils/groupMemberLimit";
+import { parseMaxMembersInput, GROUP_MEMBER_LIMIT_REACHED_MESSAGE, isAllowedMaxMembersInput } from "../utils/groupMemberLimit";
 import "./CreateGroupModal.css";
 
 interface CreateGroupModalProps {
@@ -127,9 +127,21 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
 
             <TextField
               label="Maximum members"
+              type="number"
               placeholder="Unlimited"
               value={maxMembersInput}
-              onChange={(e) => setMaxMembersInput(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (isAllowedMaxMembersInput(next)) {
+                  setMaxMembersInput(next);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-", "."].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
+              slotProps={{ htmlInput: { min: 0, step: 1, inputMode: "numeric" } }}
               fullWidth
               helperText="Leave blank or 0 for unlimited."
               className="create-group-name-field"

@@ -64,6 +64,11 @@ export function formatMaxMembersInput(maxMembers: number | null | undefined): st
   return String(maxMembers);
 }
 
+/** Empty (unlimited) or non-negative whole digits only. */
+export function isAllowedMaxMembersInput(raw: string): boolean {
+  return raw === "" || /^\d+$/.test(raw);
+}
+
 /** Treats stored {@code null} and {@code 0} as the same unlimited value. */
 export function maxMembersEquals(
   left: number | null | undefined,
