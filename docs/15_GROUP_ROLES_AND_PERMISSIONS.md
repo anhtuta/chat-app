@@ -1133,16 +1133,35 @@ What should change:
 
 #### Task 12.5: Access Revocation For Removed Or Banned Users
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Ensure kicked or banned users stop receiving:
-  - personal group-summary updates for that group
-  - further useful realtime delivery on `/topic/group.{groupId}` for that group
-- Validate subscribe/send authorization continues to reject removed/banned users via `GroupAuthorizationService`.
-- Validate message edit/delete authorization rejects removed/banned users even for their own old group messages (`requireCanEditMessage` / `requireCanDeleteMessage` require membership).
-- Keep this task focused on revocation semantics so Tasks 12.1-12.4 can reuse one clear rule instead of ad hoc per-event cleanup.
+- Kept personal group-summary revocation on the existing membership path:
+  - buffered member fan-out already resolves recipients from the current `group_participants` table at flush time, so removed/banned users no longer receive future updates for that group
+  - immediate personal `removed=true` updates still tell the target client to drop the group locally
+- Added `GroupTopicAccessRevocationInterceptor` on the WebSocket outbound channel:
+  - re-checks `READ_MESSAGES` against `GroupAuthorizationService.requirePermission(...)` for every outbound `/topic/group.{groupId}` frame
+  - drops delivery for users who were removed or banned after they had already subscribed
+- Frontend cleanup:
+  - when a personal `removed` update targets the currently open group, `ChatPage` now unsubscribes that group topic immediately before navigating back to public
+- Existing guards remain the source of truth and were kept intact:
+  - subscribe validation still checks `READ_MESSAGES` on the inbound `SUBSCRIBE` path
+  - send validation still checks `SEND_MESSAGES` before accepting group messages
+  - message edit/delete authorization still requires active membership through `GroupAuthorizationService`
+
+Why it changed:
+
+- Membership changes in Tasks 12.1-12.3 already removed users from future summary fan-out, but an already-open group-topic subscription could still keep receiving chat traffic until the client voluntarily unsubscribed.
+
+API/contract/config impacts:
+
+- No REST API changes.
+- Added a WebSocket outbound access-revocation interceptor for group-topic deliveries.
+
+Rollout, migration, and backward-compatibility notes:
+
+- This is backwards-compatible for clients: removed users still receive the same `removed=true` personal update, but the server now also stops honoring stale group-topic subscriptions for them.
 
 #### Task 12.6: Archived Group Realtime Guards
 

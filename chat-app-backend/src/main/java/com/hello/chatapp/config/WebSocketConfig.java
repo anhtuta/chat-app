@@ -1,5 +1,6 @@
 package com.hello.chatapp.config;
 
+import com.hello.chatapp.interceptor.GroupTopicAccessRevocationInterceptor;
 import com.hello.chatapp.interceptor.RabbitMQSubscriptionInterceptor;
 import com.hello.chatapp.interceptor.WebSocketHandshakeInterceptor;
 import com.hello.chatapp.interceptor.WebSocketSecurityChannelInterceptor;
@@ -27,6 +28,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Autowired
     private RabbitMQSubscriptionInterceptor rabbitMQSubscriptionInterceptor;
 
+    @Autowired
+    private GroupTopicAccessRevocationInterceptor groupTopicAccessRevocationInterceptor;
+
     @Override
     public void configureClientInboundChannel(@NonNull ChannelRegistration registration) {
         // Add both interceptors: security first, then RabbitMQ subscription tracking
@@ -50,6 +54,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // --> delivers to /user/alice/queue/group-updates
         // The client subscribes to /user/queue/group-updates and Spring rewrites it automatically.
         config.setUserDestinationPrefix("/user");
+    }
+
+    @Override
+    public void configureClientOutboundChannel(@NonNull ChannelRegistration registration) {
+        registration.interceptors(groupTopicAccessRevocationInterceptor);
     }
 
     // STOMP stands for Simple Text Oriented Messaging Protocol. It is a messaging protocol that defines

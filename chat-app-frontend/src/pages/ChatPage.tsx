@@ -154,6 +154,8 @@ function ChatPage({
       if (groupSummaryUpdate.removed) {
         setGroups((prev) => prev.filter((group) => Number(group.id) !== updatedGroupId));
         if (currentChatIdRef.current === updatedGroupId) {
+          currentUnsubscribeRef.current?.();
+          currentUnsubscribeRef.current = null;
           navigate("/group/public");
         }
         return;
