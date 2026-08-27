@@ -70,6 +70,7 @@ function ChatPage({
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showGroupDetailsDialog, setShowGroupDetailsDialog] = useState(false);
   const [roleChangeSignal, setRoleChangeSignal] = useState(0);
+  const [profileChangeSignal, setProfileChangeSignal] = useState(0);
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef<Unsubscribe | null>(null);
@@ -110,6 +111,15 @@ function ChatPage({
       message.systemEventType === SYSTEM_EVENT_TYPES.USER_PROMOTED
       || message.systemEventType === SYSTEM_EVENT_TYPES.USER_DEMOTED
       || message.systemEventType === SYSTEM_EVENT_TYPES.LEADERSHIP_TRANSFERRED
+    )
+  );
+
+  const isProfileChangeSystemMessage = (message: ChatMessage | null | undefined): boolean => (
+    message?.messageType === "SYSTEM"
+    && (
+      message.systemEventType === SYSTEM_EVENT_TYPES.GROUP_NAME_UPDATED
+      || message.systemEventType === SYSTEM_EVENT_TYPES.GROUP_DESCRIPTION_UPDATED
+      || message.systemEventType === SYSTEM_EVENT_TYPES.GROUP_ARCHIVED
     )
   );
 
@@ -276,6 +286,9 @@ function ChatPage({
         setMessages((prev) => upsertMessage(prev, message));
         if (chatId !== "public" && isRoleChangeSystemMessage(message)) {
           setRoleChangeSignal((previous) => previous + 1);
+        }
+        if (chatId !== "public" && isProfileChangeSystemMessage(message)) {
+          setProfileChangeSignal((previous) => previous + 1);
         }
       }
     });
@@ -498,6 +511,7 @@ function ChatPage({
             onGroupUpdated={handleGroupUpdated}
             onGroupLeft={handleGroupLeft}
             roleChangeSignal={roleChangeSignal}
+            profileChangeSignal={profileChangeSignal}
           />
         ) : null}
         {showCreateGroupModal && (

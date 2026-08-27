@@ -92,4 +92,27 @@ describe("groupSummaryUpdates", () => {
       currentUserPermissions: ["SEND_MESSAGES"],
     });
   });
+
+  it("updates name and description from a newer group profile event", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      {
+        groupId: 1,
+        name: "Alpha Prime",
+        description: "Renamed team",
+        latestMessage: "Group name updated",
+        latestMessageSender: "System",
+        latestMessageAt: "2026-08-01T12:30:00Z",
+      },
+      "public",
+    );
+
+    expect(nextGroups[0]).toMatchObject({
+      id: 1,
+      name: "Alpha Prime",
+      description: "Renamed team",
+      latestMessage: "Group name updated",
+      unreadCount: 3,
+    });
+  });
 });

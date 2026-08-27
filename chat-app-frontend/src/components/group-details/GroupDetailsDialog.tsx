@@ -30,6 +30,7 @@ interface GroupDetailsDialogProps {
   initialGroup: ChatGroup | null;
   currentUsername?: string | null;
   roleChangeSignal?: number;
+  profileChangeSignal?: number;
   onClose: () => void;
   onGroupUpdated?: (group: ChatGroup) => void;
   onGroupLeft?: (groupId: number | string) => void;
@@ -41,6 +42,7 @@ function GroupDetailsDialog({
   initialGroup,
   currentUsername,
   roleChangeSignal = 0,
+  profileChangeSignal = 0,
   onClose,
   onGroupUpdated,
   onGroupLeft,
@@ -68,7 +70,7 @@ function GroupDetailsDialog({
     setDescription(seed?.description || "");
     setMaxMembersInput(formatMaxMembersInput(seed?.maxMembers));
     setError("");
-  }, [groupId, open]);
+  }, [groupId, open, profileChangeSignal]);
 
   useEffect(() => {
     if (!open || groupId === null || groupId === undefined) {

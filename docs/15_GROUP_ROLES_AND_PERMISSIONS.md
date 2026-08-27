@@ -1088,18 +1088,36 @@ Rollout, migration, and backward-compatibility notes:
 
 #### Task 12.3: Group Profile Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when group profile metadata changes:
-  - group name
-  - group description
-  - archive (when triggered by last-member leave or explicit archive paths already in the product)
-- Online clients should update without refresh:
-  - sidebar group name / ordering cues where relevant
-  - open group details / header
-  - open group chat when the corresponding structured `SYSTEM` message is created
+- Added `GroupProfileRealtimePublisher` to publish profile-related structured `SYSTEM` messages after commit:
+  - group name change
+  - group description change
+  - archive continues to flow through the existing last-member leave path from Task 12.1, which already emits `GROUP_ARCHIVED`
+- Extended `GroupSummaryUpdate` profile fan-out to include both current `name` and `description`, so sidebar rows and open chat headers can refresh from personal-topic updates.
+- Wired `GroupService.updateGroupDetails(...)` so successful name/description mutations now:
+  - persist the structured `SYSTEM` message
+  - publish that chat line to `/topic/group.{groupId}`
+  - fan out a buffered summary/profile refresh to all current members
+- Frontend live update behavior:
+  - `ChatPage` detects profile-change system events (`GROUP_NAME_UPDATED`, `GROUP_DESCRIPTION_UPDATED`, `GROUP_ARCHIVED`)
+  - the sidebar/current chat header update from incoming `GroupSummaryUpdate`
+  - `GroupDetailsDialog` automatically refetches the selected group when a live profile change arrives, so the open details view updates without a manual refresh
+
+Why it changed:
+
+- Phase 10 group profile editing already persisted the correct state, but online clients still kept stale names/descriptions until the next reload.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal/group-summary websocket payloads for profile events now include current `description` alongside `name` and latest-message preview fields.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore the `description` field remain compatible; they will still receive the chat/system event and updated latest preview, but their open detail/sidebar text may stay stale until refresh.
 
 #### Task 12.4: Message Moderation Notifications
 

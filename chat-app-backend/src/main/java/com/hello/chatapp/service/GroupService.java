@@ -7,6 +7,7 @@ import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.dto.GroupUnreadCountDto;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
+import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.NotFoundException;
@@ -36,19 +37,22 @@ public class GroupService {
     private final MessageRepository messageRepository;
     private final GroupAuthorizationService groupAuthorizationService;
     private final SystemMessageService systemMessageService;
+    private final GroupProfileRealtimePublisher groupProfileRealtimePublisher;
 
     public GroupService(GroupRepository groupRepository,
             GroupParticipantRepository groupParticipantRepository,
             UserRepository userRepository,
             MessageRepository messageRepository,
             GroupAuthorizationService groupAuthorizationService,
-            SystemMessageService systemMessageService) {
+            SystemMessageService systemMessageService,
+            GroupProfileRealtimePublisher groupProfileRealtimePublisher) {
         this.groupRepository = groupRepository;
         this.groupParticipantRepository = groupParticipantRepository;
         this.userRepository = userRepository;
         this.messageRepository = messageRepository;
         this.groupAuthorizationService = groupAuthorizationService;
         this.systemMessageService = systemMessageService;
+        this.groupProfileRealtimePublisher = groupProfileRealtimePublisher;
     }
 
     /**
@@ -170,10 +174,26 @@ public class GroupService {
 
         Group savedGroup = groupRepository.save(group);
         if (!Objects.equals(group.getName(), originalName)) {
-            systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_NAME_UPDATED);
+            Message systemMessage = systemMessageService.recordGroupEvent(
+                    savedGroup,
+                    actor,
+                    actor,
+                    SystemEventType.GROUP_NAME_UPDATED);
+            groupProfileRealtimePublisher.publishGroupProfileChange(
+                    savedGroup,
+                    systemMessage,
+                    SystemEventType.GROUP_NAME_UPDATED.latestPreview());
         }
         if (!Objects.equals(group.getDescription(), originalDescription)) {
-            systemMessageService.recordGroupEvent(savedGroup, actor, actor, SystemEventType.GROUP_DESCRIPTION_UPDATED);
+            Message systemMessage = systemMessageService.recordGroupEvent(
+                    savedGroup,
+                    actor,
+                    actor,
+                    SystemEventType.GROUP_DESCRIPTION_UPDATED);
+            groupProfileRealtimePublisher.publishGroupProfileChange(
+                    savedGroup,
+                    systemMessage,
+                    SystemEventType.GROUP_DESCRIPTION_UPDATED.latestPreview());
         }
         // TODO: confirm whether max-member changes should create a system message like group name/description updates.
 

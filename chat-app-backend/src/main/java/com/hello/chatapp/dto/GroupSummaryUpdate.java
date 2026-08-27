@@ -109,6 +109,29 @@ public class GroupSummaryUpdate {
     }
 
     /**
+     * Builds a profile-aware sidebar update for a structured group metadata event.
+     * Includes current name and description so open detail/header views can refresh live.
+     *
+     * @return update with {@code removed=false}
+     */
+    public static GroupSummaryUpdate forGroupProfileEvent(
+            Long groupId,
+            String groupName,
+            String groupDescription,
+            String latestMessagePreview,
+            LocalDateTime latestMessageAt) {
+        return GroupSummaryUpdate.builder()
+                .groupId(groupId)
+                .name(groupName)
+                .description(groupDescription)
+                .latestMessage(latestMessagePreview)
+                .latestMessageSender("System")
+                .latestMessageAt(latestMessageAt)
+                .removed(false)
+                .build();
+    }
+
+    /**
      * Copies sidebar-relevant fields from a full {@link GroupResponse}
      * (name, description, latest message, unread, role, permissions).
      *
