@@ -1234,15 +1234,23 @@ Why this task exists:
 
 #### Task 13.2: Backend Integration Tests - Role Lifecycle
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Add DB-backed tests for:
+- Added `GroupRoleLifecycleIntegrationTest` as a DB-backed role lifecycle suite.
+- Covered persisted role defaults:
   - creator becomes `LEADER`
-  - invited members and join-link joiners become `MEMBER`
-  - exactly-one-leader invariant during transfer
-  - transfer to any current member
+  - invited members become `MEMBER`
+  - join-link joiners become `MEMBER`
+- Covered leadership transfer invariants:
+  - exactly one `LEADER` remains after each transfer
+  - leadership can move to any current member role path exercised in the suite (`MEMBER`, `ELDER`, `CO_LEADER`)
+  - the previous leader is demoted to `MEMBER` on transfer
+
+Why this task exists:
+
+- Unit tests lock the static permission matrix; this integration slice proves the real persisted role transitions and single-leader invariant against the database.
 
 #### Task 13.3: Backend Integration Tests - Membership Revocation
 

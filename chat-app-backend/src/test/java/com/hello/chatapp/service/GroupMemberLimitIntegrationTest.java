@@ -436,6 +436,12 @@ class GroupMemberLimitIntegrationTest {
         GroupMembershipRealtimePublisher groupMembershipRealtimePublisher() {
             return mock(GroupMembershipRealtimePublisher.class);
         }
+
+        /** No-op profile publisher so group-service tests do not require STOMP beans. */
+        @Bean
+        GroupProfileRealtimePublisher groupProfileRealtimePublisher() {
+            return mock(GroupProfileRealtimePublisher.class);
+        }
     }
 
     /**
