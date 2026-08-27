@@ -25,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * Unit tests for the group role/permission matrix and authorization gates.
+ */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class GroupAuthorizationServiceTest {
@@ -56,6 +59,39 @@ class GroupAuthorizationServiceTest {
         otherUser.setUsername("bob");
     }
 
+    /**
+     * The static permission matrix should stay stable for every supported role.
+     */
+    @Test
+    void getPermissions_returnsExpectedMatrixForEachRole() {
+        assertThat(groupAuthorizationService.getPermissions(GroupRole.LEADER))
+                .containsExactly(GroupPermission.values());
+        assertThat(groupAuthorizationService.getPermissions(GroupRole.CO_LEADER))
+                .containsExactly(
+                        GroupPermission.READ_MESSAGES,
+                        GroupPermission.SEND_MESSAGES,
+                        GroupPermission.CREATE_JOIN_LINK,
+                        GroupPermission.ADD_MEMBERS,
+                        GroupPermission.KICK_MEMBERS,
+                        GroupPermission.BAN_MEMBERS,
+                        GroupPermission.UNBAN_MEMBERS,
+                        GroupPermission.MANAGE_ROLES,
+                        GroupPermission.MANAGE_GROUP_DETAILS,
+                        GroupPermission.EDIT_ANY_TEXT_MESSAGE,
+                        GroupPermission.DELETE_ANY_MESSAGE);
+        assertThat(groupAuthorizationService.getPermissions(GroupRole.ELDER))
+                .containsExactly(
+                        GroupPermission.READ_MESSAGES,
+                        GroupPermission.SEND_MESSAGES,
+                        GroupPermission.CREATE_JOIN_LINK,
+                        GroupPermission.ADD_MEMBERS,
+                        GroupPermission.KICK_MEMBERS);
+        assertThat(groupAuthorizationService.getPermissions(GroupRole.MEMBER))
+                .containsExactly(
+                        GroupPermission.READ_MESSAGES,
+                        GroupPermission.SEND_MESSAGES);
+    }
+
     @Test
     void requirePermission_allowsMemberToReadMessages() {
         GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
@@ -72,6 +108,44 @@ class GroupAuthorizationServiceTest {
         stubMembership(actor, participant);
 
         assertThatThrownBy(() -> groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You do not have permission to manage_group_details");
+    }
+
+    /**
+     * Co-leaders inherit most elevated permissions but cannot transfer leadership.
+     */
+    @Test
+    void requirePermission_rejectsCoLeaderTransferringLeadership() {
+        GroupParticipant participant = buildParticipant(group, actor, GroupRole.CO_LEADER);
+        stubMembership(actor, participant);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requirePermission(
+                actor, 100L, GroupPermission.TRANSFER_LEADERSHIP))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You do not have permission to transfer_leadership");
+    }
+
+    /**
+     * Elders can create join links, add members, and kick, but not ban or edit group settings.
+     */
+    @Test
+    void requirePermission_appliesRepresentativeElderMatrix() {
+        GroupParticipant participant = buildParticipant(group, actor, GroupRole.ELDER);
+        stubMembership(actor, participant);
+
+        assertThat(groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.CREATE_JOIN_LINK))
+                .isSameAs(group);
+        assertThat(groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.ADD_MEMBERS))
+                .isSameAs(group);
+        assertThat(groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.KICK_MEMBERS))
+                .isSameAs(group);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requirePermission(actor, 100L, GroupPermission.BAN_MEMBERS))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You do not have permission to ban_members");
+        assertThatThrownBy(() -> groupAuthorizationService.requirePermission(
+                actor, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessage("You do not have permission to manage_group_details");
     }
@@ -129,6 +203,49 @@ class GroupAuthorizationServiceTest {
         stubMembership(otherUser, targetParticipant);
 
         groupAuthorizationService.requireCanManageTarget(actor, 100L, otherUser, GroupPermission.KICK_MEMBERS);
+    }
+
+    /**
+     * Same-rank management is allowed when the actor has the required permission.
+     */
+    @Test
+    void requireCanManageTarget_allowsCoLeaderManagingCoLeader() {
+        GroupParticipant actorParticipant = buildParticipant(group, actor, GroupRole.CO_LEADER);
+        GroupParticipant targetParticipant = buildParticipant(group, otherUser, GroupRole.CO_LEADER);
+        stubMembership(actor, actorParticipant);
+        stubMembership(otherUser, targetParticipant);
+
+        groupAuthorizationService.requireCanManageTarget(actor, 100L, otherUser, GroupPermission.MANAGE_ROLES);
+    }
+
+    /**
+     * Lower-ranked actors cannot manage a higher-ranked target even when they hold the action permission.
+     */
+    @Test
+    void requireCanManageTarget_rejectsElderManagingCoLeader() {
+        GroupParticipant actorParticipant = buildParticipant(group, actor, GroupRole.ELDER);
+        GroupParticipant targetParticipant = buildParticipant(group, otherUser, GroupRole.CO_LEADER);
+        stubMembership(actor, actorParticipant);
+        stubMembership(otherUser, targetParticipant);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanManageTarget(
+                actor, 100L, otherUser, GroupPermission.KICK_MEMBERS))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You cannot manage a member with a higher role than yours");
+    }
+
+    /**
+     * Self-targeted management stays forbidden even for highly privileged roles.
+     */
+    @Test
+    void requireCanManageTarget_rejectsSelfManagement() {
+        GroupParticipant actorParticipant = buildParticipant(group, actor, GroupRole.LEADER);
+        stubMembership(actor, actorParticipant);
+
+        assertThatThrownBy(() -> groupAuthorizationService.requireCanManageTarget(
+                actor, 100L, actor, GroupPermission.KICK_MEMBERS))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessage("You cannot perform this action on yourself");
     }
 
     @Test
@@ -224,6 +341,14 @@ class GroupAuthorizationServiceTest {
         assertThatThrownBy(() -> groupAuthorizationService.requireUserTopicAccess(actor, "charlie"))
                 .isInstanceOf(ForbiddenException.class)
                 .hasMessage("You can only subscribe to your own user topic");
+    }
+
+    /**
+     * Personal group-summary topics are allowed when the destination username matches the actor.
+     */
+    @Test
+    void requireUserTopicAccess_allowsOwnUsername() {
+        groupAuthorizationService.requireUserTopicAccess(actor, "alice");
     }
 
     private void stubMembership(User user, GroupParticipant participant) {

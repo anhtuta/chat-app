@@ -1187,7 +1187,7 @@ Why this phase exists:
 
 ### Phase 13: Tests
 
-Status: Planned.
+Status: In progress.
 
 What should change:
 
@@ -1212,6 +1212,118 @@ What should change:
   - join-link creation/revocation/join
   - message edit/delete actions
   - realtime sidebar/chat updates after Phase 12 lands
+
+Task breakdown:
+
+#### Task 13.1: Backend Unit Tests - Authorization Matrix
+
+Status: Implemented.
+
+What changed:
+
+- Expanded `GroupAuthorizationServiceTest` as the fast permission-matrix layer:
+  - exact permission sets for `LEADER`, `CO_LEADER`, `ELDER`, `MEMBER`
+  - representative runtime checks for transfer-leadership denial on `CO_LEADER`
+  - elder allow/deny checks for join links, add, kick vs ban/manage-group-details
+  - same-rank target-management allow and higher-rank rejection
+  - self-management rejection and own-user-topic allow path
+
+Why this task exists:
+
+- This is the cheapest place to lock the static role rules before adding slower DB/WebSocket/E2E coverage.
+
+#### Task 13.2: Backend Integration Tests - Role Lifecycle
+
+Status: Planned.
+
+What should change:
+
+- Add DB-backed tests for:
+  - creator becomes `LEADER`
+  - invited members and join-link joiners become `MEMBER`
+  - exactly-one-leader invariant during transfer
+  - transfer to any current member
+
+#### Task 13.3: Backend Integration Tests - Membership Revocation
+
+Status: Planned.
+
+What should change:
+
+- Add DB-backed tests for:
+  - kick -> re-add / rejoin by valid link
+  - ban -> cannot re-add / cannot join by link
+  - unban restores eligibility
+  - removed/banned users lose message edit/delete rights
+
+#### Task 13.4: Backend Integration Tests - Archive And History
+
+Status: Planned.
+
+What should change:
+
+- Add DB-backed tests for:
+  - last-member leave archives the group
+  - messages remain queryable after archive
+  - structured `SYSTEM` messages are returned in history for membership, role, profile, and archive events
+
+#### Task 13.5: WebSocket Integration Smoke Tests
+
+Status: Planned.
+
+What should change:
+
+- Add small broker-level tests for:
+  - subscribe allowed for members
+  - subscribe rejected for non-members / banned users
+  - send allowed for members
+  - send rejected after removal / ban
+  - personal topic username validation
+
+#### Task 13.6: Frontend Unit Tests - Realtime Merge And Visibility Helpers
+
+Status: Planned.
+
+What should change:
+
+- Extend frontend utility tests for:
+  - sidebar summary merge behavior
+  - role visibility helpers
+  - moderation visibility helpers
+  - any pure helper logic added while finishing Phases 7-12
+
+#### Task 13.7: E2E - Group Settings And Role Visibility
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - group settings edit flow
+  - member-list visibility by role
+  - leadership-transfer UI happy path
+
+#### Task 13.8: E2E - Membership And Join Links
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - add / kick / ban / unban flows
+  - join-link create / revoke / join
+  - kicked vs banned user behavior from the UI
+
+#### Task 13.9: E2E - Moderation And Realtime Smoke
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - text edit / delete actions
+  - membership / role / profile realtime smoke flows across two online clients
+  - sidebar/header/chat updates without refresh
 
 ## Future Higher-Scale Path
 
