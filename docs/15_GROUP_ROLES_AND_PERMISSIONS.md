@@ -1254,15 +1254,22 @@ Why this task exists:
 
 #### Task 13.3: Backend Integration Tests - Membership Revocation
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Add DB-backed tests for:
-  - kick -> re-add / rejoin by valid link
-  - ban -> cannot re-add / cannot join by link
-  - unban restores eligibility
-  - removed/banned users lose message edit/delete rights
+- Added `GroupMembershipRevocationIntegrationTest` as a DB-backed kick/ban/unban suite.
+- Covered eligibility after membership changes:
+  - kick removes the participant row and allows both leader re-add and join-link rejoin
+  - ban removes the participant, persists a ban row, and blocks both re-add and join-by-link
+  - unban deletes the ban row and restores both add and join-link eligibility
+- Covered lost mutation rights:
+  - kicked and banned authors cannot edit or delete their own prior group messages
+  - the original message content and delete metadata stay unchanged
+
+Why this task exists:
+
+- Role-lifecycle ITs prove persisted roles; this slice proves revocation actually blocks re-entry and leftover message mutation against the database.
 
 #### Task 13.4: Backend Integration Tests - Archive And History
 
