@@ -7,6 +7,7 @@ import com.hello.chatapp.dto.GroupBanResponse;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
+import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
 import com.hello.chatapp.entity.GroupJoinLink;
@@ -352,7 +353,13 @@ public class GroupMembershipService {
             SystemEventType eventType = role.getRank() < previousRole.getRank()
                     ? SystemEventType.USER_PROMOTED
                     : SystemEventType.USER_DEMOTED;
-            systemMessageService.recordGroupEvent(group, target, actor, eventType);
+            Message systemMessage = systemMessageService.recordGroupEvent(group, target, actor, eventType);
+            membershipRealtimePublisher.publishMembershipChange(
+                    group,
+                    systemMessage,
+                    eventType.latestPreview(),
+                    null,
+                    Map.of(target.getUsername(), buildAccessSummaryUpdate(group, systemMessage, eventType, role)));
         }
         return GroupMemberResponse.fromParticipant(savedParticipant);
     }
@@ -374,8 +381,20 @@ public class GroupMembershipService {
 
         newLeader.setRole(GroupRole.LEADER);
         groupParticipantRepository.save(newLeader);
-        systemMessageService.recordGroupEvent(group, newLeader.getUser(), actor,
+        Message systemMessage = systemMessageService.recordGroupEvent(group, newLeader.getUser(), actor,
                 SystemEventType.LEADERSHIP_TRANSFERRED);
+        membershipRealtimePublisher.publishMembershipChange(
+                group,
+                systemMessage,
+                SystemEventType.LEADERSHIP_TRANSFERRED.latestPreview(),
+                null,
+                Map.of(
+                        actor.getUsername(),
+                        buildAccessSummaryUpdate(
+                                group, systemMessage, SystemEventType.LEADERSHIP_TRANSFERRED, GroupRole.MEMBER),
+                        newLeader.getUser().getUsername(),
+                        buildAccessSummaryUpdate(
+                                group, systemMessage, SystemEventType.LEADERSHIP_TRANSFERRED, GroupRole.LEADER)));
     }
 
     @Transactional
@@ -481,6 +500,24 @@ public class GroupMembershipService {
                 systemMessage,
                 eventType.latestPreview(),
                 removedUsername);
+    }
+
+    /**
+     * Builds a personal topic update that keeps the sidebar preview aligned with the new system
+     * message while refreshing the recipient's own role and permission set immediately.
+     */
+    private GroupSummaryUpdate buildAccessSummaryUpdate(
+            Group group,
+            Message systemMessage,
+            SystemEventType eventType,
+            GroupRole role) {
+        return GroupSummaryUpdate.forSystemEventWithAccess(
+                Objects.requireNonNull(group.getId(), "group.id must not be null"),
+                group.getName(),
+                eventType.latestPreview(),
+                systemMessage.getTimestamp(),
+                role,
+                groupAuthorizationService.getPermissions(role));
     }
 
     private User loadUser(Long userId) {

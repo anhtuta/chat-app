@@ -6,8 +6,10 @@ import ChatArea from "../components/ChatArea";
 import CreateGroupModal from "../components/CreateGroupModal";
 import GroupDetailsDialog from "../components/group-details/GroupDetailsDialog";
 import { getGroups, getPublicMessages, getGroupMessages, markGroupAsRead } from "../services/api";
+import { SYSTEM_EVENT_TYPES } from "../constant/systemEventTypes";
 import { useWebSocket } from "../context/WebSocketProvider";
 import { buildLatestMessagePreviewFromMessage } from "../utils/messageModeration";
+import { applyGroupSummaryUpdate } from "../utils/groupSummaryUpdates";
 import type { ChatMessage } from "../types/chat";
 import type { ChatGroup } from "../types/groups";
 import type { ThemeId, ThemeOption } from "../types/theme";
@@ -67,6 +69,7 @@ function ChatPage({
   const [hasMoreGroupMessages, setHasMoreGroupMessages] = useState(true);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [showGroupDetailsDialog, setShowGroupDetailsDialog] = useState(false);
+  const [roleChangeSignal, setRoleChangeSignal] = useState(0);
 
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef<Unsubscribe | null>(null);
@@ -100,6 +103,15 @@ function ChatPage({
     nextMessages[existingIndex] = incomingMessage;
     return nextMessages;
   };
+
+  const isRoleChangeSystemMessage = (message: ChatMessage | null | undefined): boolean => (
+    message?.messageType === "SYSTEM"
+    && (
+      message.systemEventType === SYSTEM_EVENT_TYPES.USER_PROMOTED
+      || message.systemEventType === SYSTEM_EVENT_TYPES.USER_DEMOTED
+      || message.systemEventType === SYSTEM_EVENT_TYPES.LEADERSHIP_TRANSFERRED
+    )
+  );
 
   useEffect(() => {
     const title = currentChatName.length > MAX_TITLE_LENGTH ? currentChatName.substring(0, MAX_TITLE_LENGTH) + "..." : currentChatName;
@@ -137,52 +149,7 @@ function ChatPage({
         return;
       }
 
-      setGroups((prev) => {
-        const groupIndex = prev.findIndex((group) => Number(group.id) === updatedGroupId);
-        if (groupIndex === -1) {
-          // New membership (add/join) may arrive before the joiner has this group locally.
-          if (!groupSummaryUpdate.name && !groupSummaryUpdate.latestMessage) {
-            return prev;
-          }
-          const insertedGroup: ChatGroup = {
-            id: updatedGroupId,
-            name: groupSummaryUpdate.name || `Group ${updatedGroupId}`,
-            description: groupSummaryUpdate.description ?? null,
-            latestMessage: groupSummaryUpdate.latestMessage,
-            latestMessageSender: groupSummaryUpdate.latestMessageSender,
-            latestMessageAt: groupSummaryUpdate.latestMessageAt,
-            unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : 1,
-            currentUserRole: groupSummaryUpdate.currentUserRole ?? null,
-            currentUserPermissions: groupSummaryUpdate.currentUserPermissions,
-          };
-          return [insertedGroup, ...prev];
-        }
-
-        const currentGroup = prev[groupIndex];
-        const incomingTimestamp = toEpochMillis(groupSummaryUpdate.latestMessageAt);
-        const currentTimestamp = toEpochMillis(currentGroup.latestMessageAt);
-
-        // Guard against out-of-order delivery: ignore stale group-summary updates.
-        if (incomingTimestamp < currentTimestamp) {
-          return prev;
-        }
-
-        const updatedGroup: ChatGroup = {
-          ...currentGroup,
-          name: groupSummaryUpdate.name || currentGroup.name,
-          description: groupSummaryUpdate.description ?? currentGroup.description,
-          latestMessage: groupSummaryUpdate.latestMessage,
-          latestMessageSender: groupSummaryUpdate.latestMessageSender,
-          latestMessageAt: groupSummaryUpdate.latestMessageAt,
-          unreadCount: currentChatIdRef.current === updatedGroupId ? 0 : (Number(currentGroup.unreadCount || 0) + 1),
-        };
-
-        return [
-          updatedGroup,
-          ...prev.slice(0, groupIndex),
-          ...prev.slice(groupIndex + 1),
-        ];
-      });
+      setGroups((prev) => applyGroupSummaryUpdate(prev, groupSummaryUpdate, currentChatIdRef.current));
     });
 
     return () => setGroupUpdatesHandler(null);
@@ -307,6 +274,9 @@ function ChatPage({
     const unsubscribe = subscribeSingleGroup(topicPath, (message) => {
       if (currentChatIdRef.current === chatId) {
         setMessages((prev) => upsertMessage(prev, message));
+        if (chatId !== "public" && isRoleChangeSystemMessage(message)) {
+          setRoleChangeSignal((previous) => previous + 1);
+        }
       }
     });
     currentUnsubscribeRef.current = unsubscribe;
@@ -527,6 +497,7 @@ function ChatPage({
             onClose={() => setShowGroupDetailsDialog(false)}
             onGroupUpdated={handleGroupUpdated}
             onGroupLeft={handleGroupLeft}
+            roleChangeSignal={roleChangeSignal}
           />
         ) : null}
         {showCreateGroupModal && (

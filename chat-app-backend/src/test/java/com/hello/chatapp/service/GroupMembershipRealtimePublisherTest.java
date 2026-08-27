@@ -1,5 +1,7 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.constant.GroupPermission;
+import com.hello.chatapp.constant.GroupRole;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
@@ -17,6 +19,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,6 +29,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+/**
+ * Unit tests for post-commit membership realtime fan-out behavior.
+ */
 @SuppressWarnings("null")
 @ExtendWith(MockitoExtension.class)
 class GroupMembershipRealtimePublisherTest {
@@ -71,6 +78,9 @@ class GroupMembershipRealtimePublisherTest {
         }
     }
 
+    /**
+     * Outside a transaction, the group topic and personal removal update should publish immediately.
+     */
     @Test
     void publishMembershipChange_withoutActiveTransaction_publishesImmediately() {
         publisher.publishMembershipChange(group, systemMessage, "Member removed", "bob");
@@ -87,6 +97,32 @@ class GroupMembershipRealtimePublisherTest {
         verify(groupSummaryUpdatePublisher).publishToUser("bob", GroupSummaryUpdate.removed(100L));
     }
 
+    /**
+     * Personal role-refresh updates should bypass the buffered member fan-out.
+     */
+    @Test
+    void publishMembershipChange_withPersonalUpdates_publishesImmediateAccessRefresh() {
+        GroupSummaryUpdate accessUpdate = GroupSummaryUpdate.forSystemEventWithAccess(
+                100L,
+                "Backend Team",
+                "Member promoted",
+                systemMessage.getTimestamp(),
+                GroupRole.CO_LEADER,
+                List.of(GroupPermission.MANAGE_ROLES));
+
+        publisher.publishMembershipChange(
+                group,
+                systemMessage,
+                "Member promoted",
+                null,
+                Map.of("bob", accessUpdate));
+
+        verify(groupSummaryUpdatePublisher).publishToUser("bob", accessUpdate);
+    }
+
+    /**
+     * With an active transaction, publishing should wait until the commit hook fires.
+     */
     @Test
     void publishMembershipChange_withActiveTransaction_waitsUntilAfterCommit() {
         TransactionSynchronizationManager.initSynchronization();
@@ -108,6 +144,9 @@ class GroupMembershipRealtimePublisherTest {
         }
     }
 
+    /**
+     * Only structured SYSTEM messages may travel through this publisher.
+     */
     @Test
     void publishMembershipChange_withNonSystemMessage_throwsIllegalArgumentException() {
         systemMessage.setMessageType(MessageType.TEXT);

@@ -82,6 +82,33 @@ public class GroupSummaryUpdate {
     }
 
     /**
+     * Same as {@link #forSystemEvent(Long, String, String, LocalDateTime)} but also carries the
+     * recipient's refreshed role and permissions.
+     *
+     * @param currentUserRole effective role for the recipient after the change
+     * @param currentUserPermissions effective permission set for the recipient after the change
+     * @return update with {@code removed=false}
+     */
+    public static GroupSummaryUpdate forSystemEventWithAccess(
+            Long groupId,
+            String groupName,
+            String latestMessagePreview,
+            LocalDateTime latestMessageAt,
+            GroupRole currentUserRole,
+            List<GroupPermission> currentUserPermissions) {
+        return GroupSummaryUpdate.builder()
+                .groupId(groupId)
+                .name(groupName)
+                .latestMessage(latestMessagePreview)
+                .latestMessageSender("System")
+                .latestMessageAt(latestMessageAt)
+                .currentUserRole(currentUserRole)
+                .currentUserPermissions(currentUserPermissions == null ? List.of() : List.copyOf(currentUserPermissions))
+                .removed(false)
+                .build();
+    }
+
+    /**
      * Copies sidebar-relevant fields from a full {@link GroupResponse}
      * (name, description, latest message, unread, role, permissions).
      *

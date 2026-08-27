@@ -1056,17 +1056,35 @@ Rollout, migration, and backward-compatibility notes:
 
 #### Task 12.2: Role Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when roles change:
+- Extended `GroupMembershipService` role mutations to publish realtime updates after commit for:
   - promote / demote (`PATCH .../role`)
   - leadership transfer
-- Online clients should update without refresh:
-  - member-role visibility where the roster is open
-  - current-user role/permissions when the actor or target is affected
-  - open group chat when the corresponding structured `SYSTEM` message is created
+- Reused `GroupMembershipRealtimePublisher` for role events so each mutation now delivers:
+  - structured `SYSTEM` chat messages on `/topic/group.{groupId}`
+  - the usual buffered sidebar latest-preview refresh for all members
+  - immediate personal group-summary updates for affected users carrying authoritative `currentUserRole` and `currentUserPermissions`
+- Extended backend/frontend `GroupSummaryUpdate` handling to merge role/permission payloads without double-counting unread when the same latest-message timestamp arrives twice (immediate personal update, then buffered group fan-out).
+- Open group details now update without manual refresh:
+  - `ChatPage` watches incoming structured role-change system messages
+  - `GroupMemberList` reloads automatically when the roster is open for that group
+  - `GroupDetailsDialog` merges live access changes from the parent group state so moderation/settings controls react immediately
+
+Why it changed:
+
+- Phase 8-10 role-management UI already worked over REST, but online clients still kept stale roster chips and stale self-permissions until a reload.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal `GroupSummaryUpdate` payloads may now include `currentUserRole` and `currentUserPermissions` for affected users during role changes.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore the new personal access fields remain compatible; they still receive the role-change system message but may keep stale controls until refresh.
 
 #### Task 12.3: Group Profile Change Notifications
 
