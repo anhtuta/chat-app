@@ -1131,7 +1131,7 @@ What should change:
 - Online clients in the open chat should upsert the moderated message (edited state or deleted placeholder) without refresh.
 - When the moderated message is the group's latest message, fan out an updated group-summary preview on the personal topic path.
 
-#### Task 12.5: Access Revocation For Removed Or Banned Users
+#### Task 12.5: Access Revocation For Removed Or Banned Users (client-driven revocation).
 
 Status: Implemented.
 
@@ -1140,9 +1140,6 @@ What changed:
 - Kept personal group-summary revocation on the existing membership path:
   - buffered member fan-out already resolves recipients from the current `group_participants` table at flush time, so removed/banned users no longer receive future updates for that group
   - immediate personal `removed=true` updates still tell the target client to drop the group locally
-- Added `GroupTopicAccessRevocationInterceptor` on the WebSocket outbound channel:
-  - re-checks `READ_MESSAGES` against `GroupAuthorizationService.requirePermission(...)` for every outbound `/topic/group.{groupId}` frame
-  - drops delivery for users who were removed or banned after they had already subscribed
 - Frontend cleanup:
   - when a personal `removed` update targets the currently open group, `ChatPage` now unsubscribes that group topic immediately before navigating back to public
 - Existing guards remain the source of truth and were kept intact:
@@ -1153,15 +1150,17 @@ What changed:
 Why it changed:
 
 - Membership changes in Tasks 12.1-12.3 already removed users from future summary fan-out, but an already-open group-topic subscription could still keep receiving chat traffic until the client voluntarily unsubscribed.
+- A stricter server-side outbound revocation interceptor was drafted, but its registration is intentionally commented out in `chat-app-backend/src/main/java/com/hello/chatapp/config/WebSocketConfig.java` for now because it would add per-message authorization work on the outbound hot path. Keep it available for future re-enable if correctness/security needs outweigh that cost.
 
 API/contract/config impacts:
 
 - No REST API changes.
-- Added a WebSocket outbound access-revocation interceptor for group-topic deliveries.
+- No active server-side outbound revocation filter today; the drafted interceptor remains in the codebase but commented out in config for future use.
 
 Rollout, migration, and backward-compatibility notes:
 
-- This is backwards-compatible for clients: removed users still receive the same `removed=true` personal update, but the server now also stops honoring stale group-topic subscriptions for them.
+- This is backwards-compatible for clients: removed users still receive the same `removed=true` personal update and the current UI unsubscribes immediately when that group is open.
+- Remaining trade-off: if a stale or non-cooperative client keeps an old `/topic/group.{id}` subscription alive, the server does not currently re-check every outbound frame. Re-enable the commented interceptor if stricter immediate revocation becomes necessary.
 
 #### Task 12.6: Archived Group Realtime Guards
 
