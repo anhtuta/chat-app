@@ -96,8 +96,7 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
       onClose();
     } catch (err) {
       console.error("Error creating group:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      setError("Error creating group: " + message);
+      setError(toUserErrorMessage(err, "Error creating group"));
     } finally {
       setIsLoading(false);
     }

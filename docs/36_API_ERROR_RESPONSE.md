@@ -20,7 +20,7 @@ HTTP APIs returned JSON on success but **plain strings** on most 4xx failures. T
 
 ### 2. One `ErrorResponse` JSON for all HTTP failures (selected)
 
-- How it works: keep resource-shaped 2xx bodies. `GlobalExceptionHandler` always returns `{ timestamp, status, error, message, path }`. FE reads `message`.
+- How it works: keep resource-shaped 2xx bodies. Controller exceptions and Spring Security auth failures both return `{ timestamp, status, error, message, path }`. FE reads `message`.
 - Pros: small contract change; matches the existing 500 shape; HTTP status stays the machine-readable case (`401` vs `409`).
 - Cons: clients must parse JSON on errors (they should anyway).
 - Recommendation for our problem: Yes
@@ -33,8 +33,16 @@ Do **not** wrap successful responses. Add `ErrorResponse` and use it from every 
 
 - Added `com.hello.chatapp.dto.ErrorResponse` with `timestamp`, `status`, `error` (HTTP reason phrase), `message` (user-facing), `path`.
 - `GlobalExceptionHandler` returns `ResponseEntity<ErrorResponse>` for 400/401/403/404/409/500. 500 still uses a generic message (no JDBC/Hibernate leakage).
-- SPA: `login`/`register` return `response.json()` as-is. Other APIs use `response.json()` and read `ErrorResponse.message`.
+- `SecurityConfig` now writes the same `ErrorResponse` JSON for protected `/api/**` requests rejected before controllers run (for example missing session cookie).
+- SPA: `login`/`register` return `response.json()` as-is. Other APIs use `response.json()` and read `ErrorResponse.message`. Only `401` triggers login redirect; `403` stays in-app so business-rule messages are visible.
 - Tests: `GlobalExceptionHandlerTest` asserts JSON fields; `apiError.test.ts` covers FE parsing.
+
+Why it changed (why AI fixed it):
+
+- Protected `/api/**` requests rejected by Spring Security could still bypass `GlobalExceptionHandler`, so they were not guaranteed to return the shared JSON `ErrorResponse`.
+  - I fixed that in `chat-app-backend/src/main/java/com/hello/chatapp/config/SecurityConfig.java` by wiring JSON `401/403` handlers through a shared writer in `chat-app-backend/src/main/java/com/hello/chatapp/config/ApiErrorResponseWriter.java`.
+- The shared frontend path in `chat-app-frontend/src/services/api.ts` still redirected on every `403`, which would swallow valid business-rule errors like “banned”, “not a member”, or “transfer leadership first”.
+  - It now redirects only on `401`, so `403` messages stay visible to the user.
 
 ## Examples (after the fix)
 
@@ -51,6 +59,18 @@ Wrong password:
 ```
 
 Login page shows **Invalid username or password**.
+
+Protected API without a session:
+
+```json
+{
+  "timestamp": "2026-08-25T16:05:00Z",
+  "status": 401,
+  "error": "Unauthorized",
+  "message": "User is not authenticated",
+  "path": "/api/groups"
+}
+```
 
 ## Lesson (look back here)
 

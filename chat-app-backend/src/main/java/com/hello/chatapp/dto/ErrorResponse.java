@@ -26,13 +26,20 @@ public class ErrorResponse {
     /**
      * Builds an error body for the given HTTP status, user-facing message, and request path.
      */
-    public static ErrorResponse of(HttpStatus status, String message, HttpServletRequest request) {
+    public static ErrorResponse of(HttpStatus status, String message, String path) {
         return ErrorResponse.builder()
                 .timestamp(Instant.now())
                 .status(status.value())
                 .error(status.getReasonPhrase())
                 .message(message)
-                .path(request.getRequestURI())
+                .path(path)
                 .build();
+    }
+
+    /**
+     * Builds an error body for the given HTTP status, user-facing message, and request path.
+     */
+    public static ErrorResponse of(HttpStatus status, String message, HttpServletRequest request) {
+        return of(status, message, request.getRequestURI());
     }
 }

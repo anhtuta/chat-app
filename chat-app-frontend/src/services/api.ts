@@ -706,7 +706,7 @@ export function uploadFileToPresignedUrl(
 }
 
 async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 403) {
+  if (response.status === 401) {
     window.location.href = "/login";
   }
   throw new Error(await readErrorMessage(response, `API error: ${response.status} ${response.statusText}`));

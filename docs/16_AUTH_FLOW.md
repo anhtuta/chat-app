@@ -14,6 +14,7 @@ This doc covers **login auth** for HTTP APIs and WebSocket/STOMP. It does **not*
 - Cookie name is configured as `CHATAPP_SESSION` in `application.yaml`
 - Login sets `SecurityContext` + session attrs (`SPRING_SECURITY_CONTEXT`, `user`)
 - FE sends the cookie (`credentials: "include"`); Spring Security restores auth and requires `.authenticated()` on `/api/**` and `/ws/**`
+- Unauthenticated protected HTTP requests now return **401 `ErrorResponse` JSON** instead of a framework default HTML/plain response
 - Single app role `ROLE_USER` is assigned but not checked with `hasRole`
 - HTTP controllers resolve the current user from `session.getAttribute("user")`
 - WebSocket auth is a **handshake-time snapshot** of that same `user`, then checked from **WebSocket session attributes** on each STOMP command — not re-validated against Redis on every frame
