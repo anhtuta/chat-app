@@ -1311,15 +1311,21 @@ Why this task exists:
 
 #### Task 13.6: Frontend Unit Tests - Realtime Merge And Visibility Helpers
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Extend frontend utility tests for:
-  - sidebar summary merge behavior
-  - role visibility helpers
-  - moderation visibility helpers
-  - any pure helper logic added while finishing Phases 7-12
+- Extended `groupSummaryUpdates.test.ts` for sidebar merge:
+  - `removed=true` drops the group
+  - unknown groups without name/preview are ignored
+  - access-only updates merge role/permissions without unread or reorder
+  - newer inactive previews move the chat to the front and increment unread
+  - newer previews on the open chat keep unread at 0
+- Extended `groupRoles.test.ts` for visibility:
+  - same-rank co-leader management
+  - unknown actor roles treated as `MEMBER`
+- Extended `messageModeration.test.ts` for media/system sidebar previews.
+- Extracted `formatStructuredSystemMessage` into `systemEventCopy.ts` and added unit tests for membership, role, profile, and archive copy.
 
 #### Task 13.7: E2E - Group Settings And Role Visibility
 

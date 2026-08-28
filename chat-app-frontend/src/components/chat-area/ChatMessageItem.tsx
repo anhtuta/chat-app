@@ -19,12 +19,11 @@ import {
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { deleteMessage, updateMessage } from "../../services/api";
 import { canDeleteMessage, canEditMessage } from "../../utils/messageModeration";
+import { formatStructuredSystemMessage } from "../../utils/systemEventCopy";
 import { formatAbsoluteTimeVi, formatRelativeTime } from "../../utils/dateUtils";
-import { SYSTEM_EVENT_TYPES } from "../../constant/systemEventTypes";
 import type {
   ChatAttachment,
   ChatMessage,
-  ChatUser,
   LocalUploadState,
   MessageType,
   ProcessingIndicator,
@@ -71,56 +70,6 @@ interface FormattedChatBubble {
 }
 
 type FormattedMessage = FormattedSystemMessage | FormattedChatBubble;
-
-function getDisplayUserName(user: ChatUser | null | undefined): string {
-  if (!user) {
-    return "Someone";
-  }
-  return user.fullname || user.username || "Someone";
-}
-
-function formatNameList(names: string[]): string {
-  return names.filter((name) => name && name.trim()).join(", ") || "Someone";
-}
-
-function formatStructuredSystemMessage(message: ChatMessage): string {
-  const actorName = getDisplayUserName(message.systemEventActor);
-  const subjectName = getDisplayUserName(message.user);
-  const subjectNames = message.systemEventPayload?.subjectNames;
-  const addedNames =
-    subjectNames && subjectNames.length > 0
-      ? formatNameList(subjectNames)
-      : subjectName;
-
-  switch (message.systemEventType) {
-    case SYSTEM_EVENT_TYPES.USER_JOINED:
-      return actorName === subjectName && (!subjectNames || subjectNames.length <= 1)
-        ? `${subjectName} has joined the group`
-        : `${actorName} has added ${addedNames}`;
-    case SYSTEM_EVENT_TYPES.USER_LEFT:
-      return `${subjectName} has left the group`;
-    case SYSTEM_EVENT_TYPES.USER_KICKED:
-      return `${subjectName} has been kicked out of the group by ${actorName}`;
-    case SYSTEM_EVENT_TYPES.USER_BANNED:
-      return `${subjectName} has been banned by ${actorName}`;
-    case SYSTEM_EVENT_TYPES.USER_UNBANNED:
-      return `${subjectName} has been unbanned by ${actorName}`;
-    case SYSTEM_EVENT_TYPES.USER_PROMOTED:
-      return `${actorName} promoted ${subjectName}`;
-    case SYSTEM_EVENT_TYPES.USER_DEMOTED:
-      return `${actorName} demoted ${subjectName}`;
-    case SYSTEM_EVENT_TYPES.LEADERSHIP_TRANSFERRED:
-      return `${actorName} transferred leadership to ${subjectName}`;
-    case SYSTEM_EVENT_TYPES.GROUP_NAME_UPDATED:
-      return `${actorName} updated the group name`;
-    case SYSTEM_EVENT_TYPES.GROUP_DESCRIPTION_UPDATED:
-      return `${actorName} updated the group description`;
-    case SYSTEM_EVENT_TYPES.GROUP_ARCHIVED:
-      return `${actorName} archived the group`;
-    default:
-      return message.content || "System event";
-  }
-}
 
 function formatMessage(message: DisplayChatMessage, username: string | null): FormattedMessage {
   if (message.messageType === MESSAGE_TYPES.SYSTEM && message.systemEventType) {

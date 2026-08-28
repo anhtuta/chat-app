@@ -115,4 +115,89 @@ describe("groupSummaryUpdates", () => {
       unreadCount: 3,
     });
   });
+
+  it("drops a group when removed is true", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      { groupId: 1, removed: true },
+      1,
+    );
+
+    expect(nextGroups).toHaveLength(1);
+    expect(nextGroups[0].id).toBe(2);
+  });
+
+  it("ignores an unknown group that has no name and no latest message", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      {
+        groupId: 99,
+        currentUserRole: GROUP_ROLES.MEMBER,
+        currentUserPermissions: ["SEND_MESSAGES"],
+      },
+      "public",
+    );
+
+    expect(nextGroups).toBe(baseGroups);
+  });
+
+  it("merges access fields without bumping unread when latest-message fields are omitted", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      {
+        groupId: 1,
+        currentUserRole: GROUP_ROLES.ELDER,
+        currentUserPermissions: ["SEND_MESSAGES", "KICK_MEMBERS"],
+      },
+      "public",
+    );
+
+    expect(nextGroups[0]).toMatchObject({
+      id: 1,
+      name: "Alpha",
+      latestMessage: "Older",
+      unreadCount: 2,
+      currentUserRole: GROUP_ROLES.ELDER,
+      currentUserPermissions: ["SEND_MESSAGES", "KICK_MEMBERS"],
+    });
+    expect(nextGroups[1].id).toBe(2);
+  });
+
+  it("moves a newer inactive chat to the front and increments unread", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      {
+        groupId: 1,
+        latestMessage: "Hello",
+        latestMessageSender: "bob",
+        latestMessageAt: "2026-08-01T12:00:00Z",
+      },
+      "public",
+    );
+
+    expect(nextGroups.map((group) => group.id)).toEqual([1, 2]);
+    expect(nextGroups[0]).toMatchObject({
+      latestMessage: "Hello",
+      unreadCount: 3,
+    });
+  });
+
+  it("keeps unread at zero when the active chat receives a newer preview", () => {
+    const nextGroups = applyGroupSummaryUpdate(
+      baseGroups,
+      {
+        groupId: 1,
+        latestMessage: "While open",
+        latestMessageSender: "bob",
+        latestMessageAt: "2026-08-01T12:00:00Z",
+      },
+      1,
+    );
+
+    expect(nextGroups[0]).toMatchObject({
+      id: 1,
+      latestMessage: "While open",
+      unreadCount: 0,
+    });
+  });
 });
