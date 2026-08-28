@@ -1273,14 +1273,22 @@ Why this task exists:
 
 #### Task 13.4: Backend Integration Tests - Archive And History
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Add DB-backed tests for:
-  - last-member leave archives the group
-  - messages remain queryable after archive
-  - structured `SYSTEM` messages are returned in history for membership, role, profile, and archive events
+- Added `GroupArchiveHistoryIntegrationTest` as a DB-backed archive and history suite.
+- Covered last-member leave:
+  - the group is archived with reason `LAST_MEMBER_LEFT`
+  - the leaver is recorded as `archivedBy`
+  - participant rows are gone and the group disappears from the user's group list
+- Covered history after archive:
+  - ordinary chat content remains queryable through `MessageHistoryService`
+  - structured `SYSTEM` rows are returned for membership (`USER_JOINED`, `USER_LEFT`), role (`USER_PROMOTED`, `LEADERSHIP_TRANSFERRED`), profile (`GROUP_NAME_UPDATED`, `GROUP_DESCRIPTION_UPDATED`), and archive (`GROUP_ARCHIVED`)
+
+Why this task exists:
+
+- Membership revocation ITs prove kick/ban eligibility; this slice proves last-member leave actually archives the group without deleting chat or system-event history.
 
 #### Task 13.5: WebSocket Integration Smoke Tests
 

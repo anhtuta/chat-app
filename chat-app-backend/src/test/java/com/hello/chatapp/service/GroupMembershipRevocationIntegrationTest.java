@@ -185,6 +185,7 @@ class GroupMembershipRevocationIntegrationTest {
      * Kicked and banned authors cannot edit or delete messages they previously sent in the group.
      */
     @Test
+    @SuppressWarnings("null")
     void kickedAndBannedUsers_cannotEditOrDeleteOwnGroupMessages() {
         User leader = persistUser("mod-leader");
         User kicked = persistUser("mod-kicked");
