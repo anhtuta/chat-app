@@ -1292,16 +1292,22 @@ Why this task exists:
 
 #### Task 13.5: WebSocket Integration Smoke Tests
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Add small broker-level tests for:
-  - subscribe allowed for members
-  - subscribe rejected for non-members / banned users
-  - send allowed for members
-  - send rejected after removal / ban
-  - personal topic username validation
+- Added `WebSocketGroupAccessIntegrationTest` as a DB-backed inbound STOMP smoke suite (real membership/auth, mocked broker/Rabbit beans).
+- Covered subscribe:
+  - members may subscribe to `/topic/group.{id}`
+  - non-members and banned users are rejected with `SecurityException`
+  - personal `/topic/user.{username}.group-updates` allows only the authenticated username
+- Covered send:
+  - members may send through `WebSocketController.sendGroupMessage`
+  - kicked and banned users are rejected even if they still hold a STOMP session
+
+Why this task exists:
+
+- Persistence ITs prove kick/ban rows; this slice proves the live subscribe/send gates that actually sit on the WebSocket path, without requiring a running SockJS/Rabbit broker.
 
 #### Task 13.6: Frontend Unit Tests - Realtime Merge And Visibility Helpers
 
