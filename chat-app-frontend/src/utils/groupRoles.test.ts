@@ -139,5 +139,27 @@ describe("groupRoles", () => {
         }),
       ).toBe(false);
     });
+
+    it("allows same-rank co-leaders to manage each other", () => {
+      expect(
+        canPreviewManageTarget({
+          ...baseArgs,
+          actorRole: GROUP_ROLES.CO_LEADER,
+          targetRole: GROUP_ROLES.CO_LEADER,
+          requiredPermission: "KICK_MEMBERS",
+        }),
+      ).toBe(true);
+    });
+
+    it("treats an unknown actor role as MEMBER so they cannot manage elders", () => {
+      expect(
+        canPreviewManageTarget({
+          ...baseArgs,
+          actorRole: "ADMIN",
+          actorPermissions: ["KICK_MEMBERS"],
+          targetRole: GROUP_ROLES.ELDER,
+        }),
+      ).toBe(false);
+    });
   });
 });

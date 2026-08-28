@@ -24,3 +24,12 @@ export interface RegisterResponse {
   fullname?: string | null;
   message?: string;
 }
+
+/** HTTP error body from backend `ErrorResponse`. */
+export interface ApiErrorResponse {
+  timestamp?: string;
+  status?: number;
+  error?: string;
+  message?: string;
+  path?: string;
+}

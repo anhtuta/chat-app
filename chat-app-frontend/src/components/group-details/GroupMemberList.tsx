@@ -33,6 +33,7 @@ interface GroupMemberListProps {
   currentUsername?: string | null;
   currentUserRole?: string | null;
   currentUserPermissions?: string[];
+  roleChangeSignal?: number;
   onMemberBanned?: () => void;
   onLeadershipTransferred?: () => void;
 }
@@ -44,6 +45,7 @@ function GroupMemberList({
   currentUsername,
   currentUserRole,
   currentUserPermissions = [],
+  roleChangeSignal = 0,
   onMemberBanned,
   onLeadershipTransferred,
 }: GroupMemberListProps) {
@@ -117,7 +119,7 @@ function GroupMemberList({
     return () => {
       isCancelled = true;
     };
-  }, [debouncedSearch, groupId, open, reloadToken]);
+  }, [debouncedSearch, groupId, open, reloadToken, roleChangeSignal]);
 
   useEffect(() => {
     if (!open) {

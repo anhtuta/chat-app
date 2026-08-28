@@ -4,6 +4,8 @@
 
 Auth in this app is **server-side HTTP sessions** backed by **Redis** (Spring Session), not JWT. The browser holds only an **opaque session cookie** (`CHATAPP_SESSION` by default in this app); Spring Security restores the principal from that session on each HTTP request.
 
+Failed login/register is **4xx JSON** (`ErrorResponse`), not `AuthResponse`. See [`36_API_ERROR_RESPONSE.md`](./36_API_ERROR_RESPONSE.md).
+
 This doc covers **login auth** for HTTP APIs and WebSocket/STOMP. It does **not** cover group roles/permissions in depth (see [`15_GROUP_ROLES_AND_PERMISSIONS.md`](./15_GROUP_ROLES_AND_PERMISSIONS.md)).
 
 ## Summary
@@ -12,6 +14,7 @@ This doc covers **login auth** for HTTP APIs and WebSocket/STOMP. It does **not*
 - Cookie name is configured as `CHATAPP_SESSION` in `application.yaml`
 - Login sets `SecurityContext` + session attrs (`SPRING_SECURITY_CONTEXT`, `user`)
 - FE sends the cookie (`credentials: "include"`); Spring Security restores auth and requires `.authenticated()` on `/api/**` and `/ws/**`
+- Unauthenticated protected HTTP requests now return **401 `ErrorResponse` JSON** instead of a framework default HTML/plain response
 - Single app role `ROLE_USER` is assigned but not checked with `hasRole`
 - HTTP controllers resolve the current user from `session.getAttribute("user")`
 - WebSocket auth is a **handshake-time snapshot** of that same `user`, then checked from **WebSocket session attributes** on each STOMP command — not re-validated against Redis on every frame

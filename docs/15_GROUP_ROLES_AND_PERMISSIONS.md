@@ -1056,32 +1056,68 @@ Rollout, migration, and backward-compatibility notes:
 
 #### Task 12.2: Role Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when roles change:
+- Extended `GroupMembershipService` role mutations to publish realtime updates after commit for:
   - promote / demote (`PATCH .../role`)
   - leadership transfer
-- Online clients should update without refresh:
-  - member-role visibility where the roster is open
-  - current-user role/permissions when the actor or target is affected
-  - open group chat when the corresponding structured `SYSTEM` message is created
+- Reused `GroupMembershipRealtimePublisher` for role events so each mutation now delivers:
+  - structured `SYSTEM` chat messages on `/topic/group.{groupId}`
+  - the usual buffered sidebar latest-preview refresh for all members
+  - immediate personal group-summary updates for affected users carrying authoritative `currentUserRole` and `currentUserPermissions`
+- Extended backend/frontend `GroupSummaryUpdate` handling to merge role/permission payloads without double-counting unread when the same latest-message timestamp arrives twice (immediate personal update, then buffered group fan-out).
+- Open group details now update without manual refresh:
+  - `ChatPage` watches incoming structured role-change system messages
+  - `GroupMemberList` reloads automatically when the roster is open for that group
+  - `GroupDetailsDialog` merges live access changes from the parent group state so moderation/settings controls react immediately
+
+Why it changed:
+
+- Phase 8-10 role-management UI already worked over REST, but online clients still kept stale roster chips and stale self-permissions until a reload.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal `GroupSummaryUpdate` payloads may now include `currentUserRole` and `currentUserPermissions` for affected users during role changes.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore the new personal access fields remain compatible; they still receive the role-change system message but may keep stale controls until refresh.
 
 #### Task 12.3: Group Profile Change Notifications
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Publish realtime updates when group profile metadata changes:
-  - group name
-  - group description
-  - archive (when triggered by last-member leave or explicit archive paths already in the product)
-- Online clients should update without refresh:
-  - sidebar group name / ordering cues where relevant
-  - open group details / header
-  - open group chat when the corresponding structured `SYSTEM` message is created
+- Added `GroupProfileRealtimePublisher` to publish profile-related structured `SYSTEM` messages after commit:
+  - group name change
+  - group description change
+  - archive continues to flow through the existing last-member leave path from Task 12.1, which already emits `GROUP_ARCHIVED`
+- Extended `GroupSummaryUpdate` profile fan-out to include both current `name` and `description`, so sidebar rows and open chat headers can refresh from personal-topic updates.
+- Wired `GroupService.updateGroupDetails(...)` so successful name/description mutations now:
+  - persist the structured `SYSTEM` message
+  - publish that chat line to `/topic/group.{groupId}`
+  - fan out a buffered summary/profile refresh to all current members
+- Frontend live update behavior:
+  - `ChatPage` detects profile-change system events (`GROUP_NAME_UPDATED`, `GROUP_DESCRIPTION_UPDATED`, `GROUP_ARCHIVED`)
+  - the sidebar/current chat header update from incoming `GroupSummaryUpdate`
+  - `GroupDetailsDialog` automatically refetches the selected group when a live profile change arrives, so the open details view updates without a manual refresh
+
+Why it changed:
+
+- Phase 10 group profile editing already persisted the correct state, but online clients still kept stale names/descriptions until the next reload.
+
+API/contract/config impacts:
+
+- No new REST endpoints.
+- Personal/group-summary websocket payloads for profile events now include current `description` alongside `name` and latest-message preview fields.
+
+Rollout, migration, and backward-compatibility notes:
+
+- Older clients that ignore the `description` field remain compatible; they will still receive the chat/system event and updated latest preview, but their open detail/sidebar text may stay stale until refresh.
 
 #### Task 12.4: Message Moderation Notifications
 
@@ -1095,18 +1131,36 @@ What should change:
 - Online clients in the open chat should upsert the moderated message (edited state or deleted placeholder) without refresh.
 - When the moderated message is the group's latest message, fan out an updated group-summary preview on the personal topic path.
 
-#### Task 12.5: Access Revocation For Removed Or Banned Users
+#### Task 12.5: Access Revocation For Removed Or Banned Users (client-driven revocation).
 
-Status: Planned.
+Status: Implemented.
 
-What should change:
+What changed:
 
-- Ensure kicked or banned users stop receiving:
-  - personal group-summary updates for that group
-  - further useful realtime delivery on `/topic/group.{groupId}` for that group
-- Validate subscribe/send authorization continues to reject removed/banned users via `GroupAuthorizationService`.
-- Validate message edit/delete authorization rejects removed/banned users even for their own old group messages (`requireCanEditMessage` / `requireCanDeleteMessage` require membership).
-- Keep this task focused on revocation semantics so Tasks 12.1-12.4 can reuse one clear rule instead of ad hoc per-event cleanup.
+- Kept personal group-summary revocation on the existing membership path:
+  - buffered member fan-out already resolves recipients from the current `group_participants` table at flush time, so removed/banned users no longer receive future updates for that group
+  - immediate personal `removed=true` updates still tell the target client to drop the group locally
+- Frontend cleanup:
+  - when a personal `removed` update targets the currently open group, `ChatPage` now unsubscribes that group topic immediately before navigating back to public
+- Existing guards remain the source of truth and were kept intact:
+  - subscribe validation still checks `READ_MESSAGES` on the inbound `SUBSCRIBE` path
+  - send validation still checks `SEND_MESSAGES` before accepting group messages
+  - message edit/delete authorization still requires active membership through `GroupAuthorizationService`
+
+Why it changed:
+
+- Membership changes in Tasks 12.1-12.3 already removed users from future summary fan-out, but an already-open group-topic subscription could still keep receiving chat traffic until the client voluntarily unsubscribed.
+- A stricter server-side outbound revocation interceptor was drafted, but its registration is intentionally commented out in `chat-app-backend/src/main/java/com/hello/chatapp/config/WebSocketConfig.java` for now because it would add per-message authorization work on the outbound hot path. Keep it available for future re-enable if correctness/security needs outweigh that cost.
+
+API/contract/config impacts:
+
+- No REST API changes.
+- No active server-side outbound revocation filter today; the drafted interceptor remains in the codebase but commented out in config for future use.
+
+Rollout, migration, and backward-compatibility notes:
+
+- This is backwards-compatible for clients: removed users still receive the same `removed=true` personal update and the current UI unsubscribes immediately when that group is open.
+- Remaining trade-off: if a stale or non-cooperative client keeps an old `/topic/group.{id}` subscription alive, the server does not currently re-check every outbound frame. Re-enable the commented interceptor if stricter immediate revocation becomes necessary.
 
 #### Task 12.6: Archived Group Realtime Guards
 
@@ -1133,7 +1187,7 @@ Why this phase exists:
 
 ### Phase 13: Tests
 
-Status: Planned.
+Status: In progress.
 
 What should change:
 
@@ -1158,6 +1212,153 @@ What should change:
   - join-link creation/revocation/join
   - message edit/delete actions
   - realtime sidebar/chat updates after Phase 12 lands
+
+Task breakdown:
+
+#### Task 13.1: Backend Unit Tests - Authorization Matrix
+
+Status: Implemented.
+
+What changed:
+
+- Expanded `GroupAuthorizationServiceTest` as the fast permission-matrix layer:
+  - exact permission sets for `LEADER`, `CO_LEADER`, `ELDER`, `MEMBER`
+  - representative runtime checks for transfer-leadership denial on `CO_LEADER`
+  - elder allow/deny checks for join links, add, kick vs ban/manage-group-details
+  - same-rank target-management allow and higher-rank rejection
+  - self-management rejection and own-user-topic allow path
+
+Why this task exists:
+
+- This is the cheapest place to lock the static role rules before adding slower DB/WebSocket/E2E coverage.
+
+#### Task 13.2: Backend Integration Tests - Role Lifecycle
+
+Status: Implemented.
+
+What changed:
+
+- Added `GroupRoleLifecycleIntegrationTest` as a DB-backed role lifecycle suite.
+- Covered persisted role defaults:
+  - creator becomes `LEADER`
+  - invited members become `MEMBER`
+  - join-link joiners become `MEMBER`
+- Covered leadership transfer invariants:
+  - exactly one `LEADER` remains after each transfer
+  - leadership can move to any current member role path exercised in the suite (`MEMBER`, `ELDER`, `CO_LEADER`)
+  - the previous leader is demoted to `MEMBER` on transfer
+
+Why this task exists:
+
+- Unit tests lock the static permission matrix; this integration slice proves the real persisted role transitions and single-leader invariant against the database.
+
+#### Task 13.3: Backend Integration Tests - Membership Revocation
+
+Status: Implemented.
+
+What changed:
+
+- Added `GroupMembershipRevocationIntegrationTest` as a DB-backed kick/ban/unban suite.
+- Covered eligibility after membership changes:
+  - kick removes the participant row and allows both leader re-add and join-link rejoin
+  - ban removes the participant, persists a ban row, and blocks both re-add and join-by-link
+  - unban deletes the ban row and restores both add and join-link eligibility
+- Covered lost mutation rights:
+  - kicked and banned authors cannot edit or delete their own prior group messages
+  - the original message content and delete metadata stay unchanged
+
+Why this task exists:
+
+- Role-lifecycle ITs prove persisted roles; this slice proves revocation actually blocks re-entry and leftover message mutation against the database.
+
+#### Task 13.4: Backend Integration Tests - Archive And History
+
+Status: Implemented.
+
+What changed:
+
+- Added `GroupArchiveHistoryIntegrationTest` as a DB-backed archive and history suite.
+- Covered last-member leave:
+  - the group is archived with reason `LAST_MEMBER_LEFT`
+  - the leaver is recorded as `archivedBy`
+  - participant rows are gone and the group disappears from the user's group list
+- Covered history after archive:
+  - ordinary chat content remains queryable through `MessageHistoryService`
+  - structured `SYSTEM` rows are returned for membership (`USER_JOINED`, `USER_LEFT`), role (`USER_PROMOTED`, `LEADERSHIP_TRANSFERRED`), profile (`GROUP_NAME_UPDATED`, `GROUP_DESCRIPTION_UPDATED`), and archive (`GROUP_ARCHIVED`)
+
+Why this task exists:
+
+- Membership revocation ITs prove kick/ban eligibility; this slice proves last-member leave actually archives the group without deleting chat or system-event history.
+
+#### Task 13.5: WebSocket Integration Smoke Tests
+
+Status: Implemented.
+
+What changed:
+
+- Added `WebSocketGroupAccessIntegrationTest` as a DB-backed inbound STOMP smoke suite (real membership/auth, mocked broker/Rabbit beans).
+- Covered subscribe:
+  - members may subscribe to `/topic/group.{id}`
+  - non-members and banned users are rejected with `SecurityException`
+  - personal `/topic/user.{username}.group-updates` allows only the authenticated username
+- Covered send:
+  - members may send through `WebSocketController.sendGroupMessage`
+  - kicked and banned users are rejected even if they still hold a STOMP session
+
+Why this task exists:
+
+- Persistence ITs prove kick/ban rows; this slice proves the live subscribe/send gates that actually sit on the WebSocket path, without requiring a running SockJS/Rabbit broker.
+
+#### Task 13.6: Frontend Unit Tests - Realtime Merge And Visibility Helpers
+
+Status: Implemented.
+
+What changed:
+
+- Extended `groupSummaryUpdates.test.ts` for sidebar merge:
+  - `removed=true` drops the group
+  - unknown groups without name/preview are ignored
+  - access-only updates merge role/permissions without unread or reorder
+  - newer inactive previews move the chat to the front and increment unread
+  - newer previews on the open chat keep unread at 0
+- Extended `groupRoles.test.ts` for visibility:
+  - same-rank co-leader management
+  - unknown actor roles treated as `MEMBER`
+- Extended `messageModeration.test.ts` for media/system sidebar previews.
+- Extracted `formatStructuredSystemMessage` into `systemEventCopy.ts` and added unit tests for membership, role, profile, and archive copy.
+
+#### Task 13.7: E2E - Group Settings And Role Visibility
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - group settings edit flow
+  - member-list visibility by role
+  - leadership-transfer UI happy path
+
+#### Task 13.8: E2E - Membership And Join Links
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - add / kick / ban / unban flows
+  - join-link create / revoke / join
+  - kicked vs banned user behavior from the UI
+
+#### Task 13.9: E2E - Moderation And Realtime Smoke
+
+Status: Planned.
+
+What should change:
+
+- Add Playwright coverage for:
+  - text edit / delete actions
+  - membership / role / profile realtime smoke flows across two online clients
+  - sidebar/header/chat updates without refresh
 
 ## Future Higher-Scale Path
 

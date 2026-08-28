@@ -12,6 +12,7 @@ import {
     Stack,
 } from "@mui/material";
 import { login } from "../services/api";
+import { toUserErrorMessage } from "../utils/apiError";
 
 interface LoginPageProps {
     onLoginSuccess: (username: string, fullname?: string | null) => void;
@@ -41,14 +42,14 @@ function LoginPage({ onLoginSuccess, redirectTo = null }: LoginPageProps) {
         setLoading(true);
         try {
             const result = await login(username.trim(), password);
-            if (result.success) {
+            if ("success" in result && result.success) {
                 onLoginSuccess(result.username ?? username.trim(), result.fullname ?? null);
                 navigate(redirectTo || "/group/public", { replace: true });
             } else {
                 setError(result.message || "Login failed");
             }
         } catch (err) {
-            setError("An error occurred. Please try again.");
+            setError(toUserErrorMessage(err, "An error occurred. Please try again."));
         } finally {
             setLoading(false);
         }

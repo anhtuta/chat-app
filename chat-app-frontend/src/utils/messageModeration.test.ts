@@ -110,6 +110,25 @@ describe("messageModeration", () => {
         messageType: MESSAGE_TYPES.IMAGE,
         attachments: [{ originalFilename: "a.jpg" }],
       }))).toBe("Photo");
+      expect(buildLatestMessagePreviewFromMessage(buildMessage({
+        messageType: MESSAGE_TYPES.IMAGE,
+        attachments: [{ originalFilename: "a.jpg" }, { originalFilename: "b.jpg" }],
+      }))).toBe("Photos");
+      expect(buildLatestMessagePreviewFromMessage(buildMessage({
+        messageType: MESSAGE_TYPES.VIDEO,
+      }))).toBe("Video");
+      expect(buildLatestMessagePreviewFromMessage(buildMessage({
+        messageType: MESSAGE_TYPES.AUDIO,
+      }))).toBe("Audio");
+      expect(buildLatestMessagePreviewFromMessage(buildMessage({
+        messageType: MESSAGE_TYPES.FILE,
+        attachments: [{ originalFilename: "notes.pdf" }],
+      }))).toBe("notes.pdf");
+      expect(buildLatestMessagePreviewFromMessage(buildMessage({
+        messageType: MESSAGE_TYPES.SYSTEM,
+        content: "Member joined",
+      }))).toBe("Member joined");
+      expect(buildLatestMessagePreviewFromMessage(null)).toBeNull();
     });
   });
 });

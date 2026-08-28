@@ -7,6 +7,7 @@ import com.hello.chatapp.dto.GroupBanResponse;
 import com.hello.chatapp.dto.GroupJoinLinkResponse;
 import com.hello.chatapp.dto.GroupMemberPageResponse;
 import com.hello.chatapp.dto.GroupMemberResponse;
+import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupBan;
 import com.hello.chatapp.entity.GroupJoinLink;
@@ -37,6 +38,7 @@ import org.springframework.data.domain.Pageable;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -607,6 +609,53 @@ class GroupMembershipServiceTest {
         verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.UNBAN_MEMBERS);
     }
 
+    /**
+     * Role changes should create a system message and immediately refresh the target's own access payload.
+     */
+    @Test
+    void updateMemberRole_publishesRealtimeAccessRefreshForTarget() {
+        GroupParticipant targetParticipant = new GroupParticipant(group, targetUser);
+        targetParticipant.setRole(GroupRole.ELDER);
+        List<GroupPermission> coLeaderPermissions = List.of(
+                GroupPermission.READ_MESSAGES,
+                GroupPermission.SEND_MESSAGES,
+                GroupPermission.MANAGE_ROLES);
+
+        when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(targetUser));
+        when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(targetParticipant));
+        when(groupParticipantRepository.save(targetParticipant)).thenReturn(targetParticipant);
+        when(systemMessageService.recordGroupEvent(group, targetUser, actor, SystemEventType.USER_PROMOTED))
+                .thenReturn(systemMessage);
+        when(groupAuthorizationService.getPermissions(GroupRole.CO_LEADER)).thenReturn(coLeaderPermissions);
+
+        GroupMemberResponse response = groupMembershipService.updateMemberRole(actor, 100L, 2L, GroupRole.CO_LEADER);
+
+        assertThat(response.getRole()).isEqualTo(GroupRole.CO_LEADER);
+        verify(groupAuthorizationService).requireCanManageTarget(actor, 100L, targetUser, GroupPermission.MANAGE_ROLES);
+        verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.USER_PROMOTED);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, GroupSummaryUpdate>> personalUpdatesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                eq(group),
+                eq(systemMessage),
+                eq(SystemEventType.USER_PROMOTED.latestPreview()),
+                isNull(),
+                personalUpdatesCaptor.capture());
+
+        GroupSummaryUpdate targetUpdate = personalUpdatesCaptor.getValue().get("bob");
+        assertThat(targetUpdate).isNotNull();
+        assertThat(targetUpdate.getCurrentUserRole()).isEqualTo(GroupRole.CO_LEADER);
+        assertThat(targetUpdate.getCurrentUserPermissions()).containsExactlyElementsOf(coLeaderPermissions);
+        assertThat(targetUpdate.getLatestMessage()).isEqualTo(SystemEventType.USER_PROMOTED.latestPreview());
+        assertThat(targetUpdate.getLatestMessageSender()).isEqualTo("System");
+        assertThat(targetUpdate.getLatestMessageAt()).isEqualTo(systemMessage.getTimestamp());
+    }
+
+    /**
+     * Leadership transfer should refresh access for both the old and new leader immediately.
+     */
     @Test
     void transferLeadership_demotesCurrentLeaderBeforePromotingNewLeader() {
         GroupParticipant currentLeader = new GroupParticipant(group, actor);
@@ -614,12 +663,20 @@ class GroupMembershipServiceTest {
 
         GroupParticipant newLeader = new GroupParticipant(group, targetUser);
         newLeader.setRole(GroupRole.MEMBER);
+        List<GroupPermission> memberPermissions = List.of(
+                GroupPermission.READ_MESSAGES,
+                GroupPermission.SEND_MESSAGES);
+        List<GroupPermission> leaderPermissions = List.of(GroupPermission.values());
 
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         when(groupAuthorizationService.requireMember(actor, 100L)).thenReturn(currentLeader);
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.of(newLeader));
         when(groupParticipantRepository.saveAndFlush(currentLeader)).thenReturn(currentLeader);
         when(groupParticipantRepository.save(newLeader)).thenReturn(newLeader);
+        when(systemMessageService.recordGroupEvent(group, targetUser, actor, SystemEventType.LEADERSHIP_TRANSFERRED))
+                .thenReturn(systemMessage);
+        when(groupAuthorizationService.getPermissions(GroupRole.MEMBER)).thenReturn(memberPermissions);
+        when(groupAuthorizationService.getPermissions(GroupRole.LEADER)).thenReturn(leaderPermissions);
 
         groupMembershipService.transferLeadership(actor, 100L, 2L);
 
@@ -632,6 +689,24 @@ class GroupMembershipServiceTest {
         repositoryInOrder.verify(groupParticipantRepository).saveAndFlush(currentLeader);
         repositoryInOrder.verify(groupParticipantRepository).save(newLeader);
         verify(systemMessageService).recordGroupEvent(group, targetUser, actor, SystemEventType.LEADERSHIP_TRANSFERRED);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, GroupSummaryUpdate>> personalUpdatesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(membershipRealtimePublisher).publishMembershipChange(
+                eq(group),
+                eq(systemMessage),
+                eq(SystemEventType.LEADERSHIP_TRANSFERRED.latestPreview()),
+                isNull(),
+                personalUpdatesCaptor.capture());
+
+        Map<String, GroupSummaryUpdate> personalUpdates = personalUpdatesCaptor.getValue();
+        assertThat(personalUpdates).hasSize(2);
+        assertThat(personalUpdates.get("alice").getCurrentUserRole()).isEqualTo(GroupRole.MEMBER);
+        assertThat(personalUpdates.get("alice").getCurrentUserPermissions())
+                .containsExactlyElementsOf(memberPermissions);
+        assertThat(personalUpdates.get("bob").getCurrentUserRole()).isEqualTo(GroupRole.LEADER);
+        assertThat(personalUpdates.get("bob").getCurrentUserPermissions())
+                .containsExactlyElementsOf(leaderPermissions);
     }
 
     @Test

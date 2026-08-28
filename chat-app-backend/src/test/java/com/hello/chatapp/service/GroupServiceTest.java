@@ -6,6 +6,7 @@ import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.dto.GroupResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.GroupParticipant;
+import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.exception.BadRequestException;
 import com.hello.chatapp.exception.ForbiddenException;
@@ -57,6 +58,9 @@ class GroupServiceTest {
 
     @Mock
     private SystemMessageService systemMessageService;
+
+    @Mock
+    private GroupProfileRealtimePublisher groupProfileRealtimePublisher;
 
     @InjectMocks
     private GroupService groupService;
@@ -282,10 +286,21 @@ class GroupServiceTest {
      */
     @Test
     void updateGroupDetails_updatesNameAndClearsBlankDescription() {
+        Message groupNameUpdatedMessage = new Message();
+        groupNameUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
+        groupNameUpdatedMessage.setTimestamp(LocalDateTime.now());
+        Message groupDescriptionUpdatedMessage = new Message();
+        groupDescriptionUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
+        groupDescriptionUpdatedMessage.setTimestamp(LocalDateTime.now().plusSeconds(1));
+
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenReturn(group);
         when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(groupRepository.findByIdWithCreator(100L)).thenReturn(Optional.of(group));
+        when(systemMessageService.recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED))
+                .thenReturn(groupNameUpdatedMessage);
+        when(systemMessageService.recordGroupEvent(group, member, member, SystemEventType.GROUP_DESCRIPTION_UPDATED))
+                .thenReturn(groupDescriptionUpdatedMessage);
 
         GroupResponse response = groupService.updateGroupDetails(member, 100L, "  API Team  ", "   ", null, false);
 
@@ -299,6 +314,14 @@ class GroupServiceTest {
         assertThat(response.getUnreadCount()).isZero();
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED);
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_DESCRIPTION_UPDATED);
+        verify(groupProfileRealtimePublisher).publishGroupProfileChange(
+                group,
+                groupNameUpdatedMessage,
+                SystemEventType.GROUP_NAME_UPDATED.latestPreview());
+        verify(groupProfileRealtimePublisher).publishGroupProfileChange(
+                group,
+                groupDescriptionUpdatedMessage,
+                SystemEventType.GROUP_DESCRIPTION_UPDATED.latestPreview());
         verify(groupRepository).findByIdWithCreator(100L);
     }
 
@@ -324,16 +347,26 @@ class GroupServiceTest {
      */
     @Test
     void updateGroupDetails_omittedMaxMembers_leavesLimitUnchanged() {
+        Message groupNameUpdatedMessage = new Message();
+        groupNameUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
+        groupNameUpdatedMessage.setTimestamp(LocalDateTime.now());
+
         group.setMaxMembers(100);
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenReturn(group);
         when(groupRepository.save(any(Group.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(groupRepository.findByIdWithCreator(100L)).thenReturn(Optional.of(group));
+        when(systemMessageService.recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED))
+                .thenReturn(groupNameUpdatedMessage);
 
         groupService.updateGroupDetails(member, 100L, "API Team", null, null, false);
 
         assertThat(group.getMaxMembers()).isEqualTo(100);
         verify(systemMessageService).recordGroupEvent(group, member, member, SystemEventType.GROUP_NAME_UPDATED);
+        verify(groupProfileRealtimePublisher).publishGroupProfileChange(
+                group,
+                groupNameUpdatedMessage,
+                SystemEventType.GROUP_NAME_UPDATED.latestPreview());
     }
 
     /**
@@ -352,6 +385,7 @@ class GroupServiceTest {
         assertThat(group.getMaxMembers()).isNull();
         assertThat(response.getMaxMembers()).isNull();
         verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+        verify(groupProfileRealtimePublisher, never()).publishGroupProfileChange(any(), any(), any());
     }
 
     /**
@@ -369,6 +403,7 @@ class GroupServiceTest {
 
         assertThat(group.getMaxMembers()).isZero();
         verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+        verify(groupProfileRealtimePublisher, never()).publishGroupProfileChange(any(), any(), any());
     }
 
     /**
@@ -384,6 +419,7 @@ class GroupServiceTest {
         groupService.updateGroupDetails(member, 100L, null, null, 50, true);
 
         assertThat(group.getMaxMembers()).isEqualTo(50);
+        verify(groupProfileRealtimePublisher, never()).publishGroupProfileChange(any(), any(), any());
     }
 
     /**
@@ -402,6 +438,7 @@ class GroupServiceTest {
         assertThat(group.getMaxMembers()).isEqualTo(1);
         verify(groupParticipantRepository, never()).save(any());
         verify(systemMessageService, never()).recordGroupEvent(any(), any(), any(), any());
+        verify(groupProfileRealtimePublisher, never()).publishGroupProfileChange(any(), any(), any());
     }
 
     /**

@@ -124,10 +124,10 @@ These are lost updates on `messages`: **time of check** = unlocked load + in-mem
 - Added Flyway `V10__add_messages_version.sql`: `messages.version INTEGER NOT NULL DEFAULT 0` (existing rows backfill to 0). Java type is `Integer` (nullable on new transient instances).
 - Added JPA `@Version` on `Message.version`. Left new in-memory instances `null` so Hibernate treats them as transient. `updated_at` stays business edit time.
   - Tức là KHÔNG init giá trị cho cột version = 0 (để nó = `null`), nếu không khi insert, Hibernate sẽ tưởng đây là đang update.
-- `GlobalExceptionHandler` maps `OptimisticLockingFailureException` to HTTP **409** with a stable string (no Hibernate details). The losing TX rolls back, including any `message_edit_history` insert.
+- `GlobalExceptionHandler` maps `OptimisticLockingFailureException` to HTTP **409** with `ErrorResponse` JSON and a stable `message` (no Hibernate details). The losing TX rolls back, including any `message_edit_history` insert.
 - `MessageModerationService` is unchanged: `save` still flushes the versioned row; conflict surfaces at flush/commit.
 - Tests: `GlobalExceptionHandlerTest` (409 body), `MessageModerationServiceTest` (edit/delete propagate lock failure).
-- FE: no If-Match/`version` field yet. Existing `handleErrorResponse` shows the 409 body; reload-and-retry is still optional.
+- FE: no If-Match/`version` field yet. The 409 `ErrorResponse.message` is shown; reload-and-retry is still optional. See [`36_API_ERROR_RESPONSE.md`](./36_API_ERROR_RESPONSE.md).
 
 Why it changed: concurrent edit/delete on the same row was last-write-wins and could skip history versions.
 

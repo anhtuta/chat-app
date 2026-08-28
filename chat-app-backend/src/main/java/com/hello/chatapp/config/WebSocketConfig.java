@@ -52,6 +52,24 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         config.setUserDestinationPrefix("/user");
     }
 
+    /*
+     * Disabled for now on purpose:
+     *
+     * @Autowired
+     * private GroupTopicAccessRevocationInterceptor groupTopicAccessRevocationInterceptor;
+     *
+     * @Override
+     * public void configureClientOutboundChannel(@NonNull ChannelRegistration registration) {
+     *     registration.interceptors(groupTopicAccessRevocationInterceptor);
+     * }
+     *
+     * Why commented out:
+     * Re-checking READ_MESSAGES for every outbound /topic/group.{id} frame adds authorization
+     * work to the message hot path. The current product relies on the immediate personal
+     * removed=true update plus client unsubscribe/navigation instead. Keep this snippet nearby
+     * so we can re-enable strict server-side stale-subscription revocation later if needed.
+     */
+
     // STOMP stands for Simple Text Oriented Messaging Protocol. It is a messaging protocol that defines
     // the format and rules for data exchange. Why do we need STOMP? Well, WebSocket is just a communication protocol.
     // It doesn't define things like - How to send a message only to users who are subscribed to a particular topic,

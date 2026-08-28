@@ -29,6 +29,8 @@ interface GroupDetailsDialogProps {
   groupId: number | string | null | undefined;
   initialGroup: ChatGroup | null;
   currentUsername?: string | null;
+  roleChangeSignal?: number;
+  profileChangeSignal?: number;
   onClose: () => void;
   onGroupUpdated?: (group: ChatGroup) => void;
   onGroupLeft?: (groupId: number | string) => void;
@@ -39,6 +41,8 @@ function GroupDetailsDialog({
   groupId,
   initialGroup,
   currentUsername,
+  roleChangeSignal = 0,
+  profileChangeSignal = 0,
   onClose,
   onGroupUpdated,
   onGroupLeft,
@@ -66,7 +70,7 @@ function GroupDetailsDialog({
     setDescription(seed?.description || "");
     setMaxMembersInput(formatMaxMembersInput(seed?.maxMembers));
     setError("");
-  }, [groupId, open]);
+  }, [groupId, open, profileChangeSignal]);
 
   useEffect(() => {
     if (!open || groupId === null || groupId === undefined) {
@@ -108,6 +112,24 @@ function GroupDetailsDialog({
       isCancelled = true;
     };
   }, [groupId, open]);
+
+  useEffect(() => {
+    if (!open || !initialGroup) {
+      return;
+    }
+
+    setGroupDetails((previous) => {
+      if (!previous || Number(previous.id) !== Number(initialGroup.id)) {
+        return previous;
+      }
+      return {
+        ...previous,
+        currentUserRole: initialGroup.currentUserRole ?? previous.currentUserRole,
+        currentUserPermissions: initialGroup.currentUserPermissions ?? previous.currentUserPermissions,
+        unreadCount: initialGroup.unreadCount ?? previous.unreadCount,
+      };
+    });
+  }, [initialGroup, open]);
 
   const permissions = groupDetails?.currentUserPermissions || [];
   const canManageGroupDetails = permissions.includes("MANAGE_GROUP_DETAILS");
@@ -242,6 +264,7 @@ function GroupDetailsDialog({
                 currentUsername={currentUsername}
                 currentUserRole={groupDetails?.currentUserRole}
                 currentUserPermissions={permissions}
+                roleChangeSignal={roleChangeSignal}
                 onMemberBanned={() => setBannedReloadToken((previous) => previous + 1)}
                 onLeadershipTransferred={() => {
                   void refreshAccessAfterLeadershipTransfer();

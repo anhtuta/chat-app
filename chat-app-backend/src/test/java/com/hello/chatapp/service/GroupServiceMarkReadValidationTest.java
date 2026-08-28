@@ -14,15 +14,28 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
+import static org.mockito.Mockito.mock;
+
+/**
+ * Database-backed validation for marking a group as read with group-scoped messages.
+ */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({GroupService.class, GroupAuthorizationService.class, MessageService.class, SystemMessageService.class})
+@Import({
+        GroupService.class,
+        GroupAuthorizationService.class,
+        MessageService.class,
+        SystemMessageService.class,
+        GroupServiceMarkReadValidationTest.RealtimeStubConfig.class
+})
 public class GroupServiceMarkReadValidationTest {
 
     @DynamicPropertySource
@@ -45,6 +58,9 @@ public class GroupServiceMarkReadValidationTest {
     @Autowired
     private MessageRepository messageRepository;
 
+    /**
+     * Mark-read should reject a message ID that belongs to another group.
+     */
     @Test
     public void markGroupAsRead_shouldRejectMessageFromDifferentGroup() {
         // given: two users, two groups, a message in groupA, and user1 is participant in groupB
@@ -83,5 +99,24 @@ public class GroupServiceMarkReadValidationTest {
 
         Assertions.assertTrue(ex.getMessage().contains("does not belong to this group"),
                 "Expected validation message mentioning group mismatch");
+    }
+
+    /**
+     * Stubs realtime publishers so persistence-focused tests do not require STOMP beans.
+     */
+    @TestConfiguration
+    static class RealtimeStubConfig {
+
+        /** No-op membership publisher for service wiring only. */
+        @Bean
+        GroupMembershipRealtimePublisher groupMembershipRealtimePublisher() {
+            return mock(GroupMembershipRealtimePublisher.class);
+        }
+
+        /** No-op profile publisher for service wiring only. */
+        @Bean
+        GroupProfileRealtimePublisher groupProfileRealtimePublisher() {
+            return mock(GroupProfileRealtimePublisher.class);
+        }
     }
 }

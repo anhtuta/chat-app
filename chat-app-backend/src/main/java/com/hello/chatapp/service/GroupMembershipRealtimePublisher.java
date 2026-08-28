@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -44,9 +46,28 @@ public class GroupMembershipRealtimePublisher {
      *        to that user so their sidebar drops the group
      */
     public void publishMembershipChange(Group group, Message systemMessage, String latestPreview, String removedUsername) {
+        publishMembershipChange(group, systemMessage, latestPreview, removedUsername, Map.of());
+    }
+
+    /**
+     * After commit: publish the system chat line, a sidebar summary for remaining members, and
+     * optional immediate personal updates for affected users (for example refreshed role access).
+     *
+     * @param removedUsername when non-null, sends {@link GroupSummaryUpdate#removed(Long)} to that
+     *        user after any other personal update so removal wins
+     * @param personalUpdates immediate personal-topic updates keyed by username; used for
+     *        role/permission refreshes that should not wait for the buffered group fan-out
+     */
+    public void publishMembershipChange(
+            Group group,
+            Message systemMessage,
+            String latestPreview,
+            String removedUsername,
+            Map<String, GroupSummaryUpdate> personalUpdates) {
         Group safeGroup = Objects.requireNonNull(group, "group must not be null");
         Message safeMessage = Objects.requireNonNull(systemMessage, "systemMessage must not be null");
         String safePreview = Objects.requireNonNull(latestPreview, "latestPreview must not be null");
+        Map<String, GroupSummaryUpdate> safePersonalUpdates = personalUpdates == null ? Map.of() : Map.copyOf(personalUpdates);
         Long groupId = Objects.requireNonNull(safeGroup.getId(), "group.id must not be null");
         if (!Objects.equals(safeMessage.getMessageType(), MessageType.SYSTEM)) {
             throw new IllegalArgumentException("systemMessage must be a SYSTEM message");
@@ -63,14 +84,25 @@ public class GroupMembershipRealtimePublisher {
                     groupId, safeGroup.getName(), safePreview, safeMessage.getTimestamp());
             groupSummaryUpdatePublisher.publishToGroupMembers(groupId, membershipChangeUpdate);
 
+            Map<String, GroupSummaryUpdate> immediatePersonalUpdates = new LinkedHashMap<>();
+            immediatePersonalUpdates.putAll(safePersonalUpdates);
+
             // Send to the removed user: used by FE to drop that group from their sidebar.
             // After kick/ban/leave, the target is already gone from group_participants, so the member fan-out never
             // includes them. Without publishToUser(removed), their sidebar would keep the group until refresh.
             if (removedUsername != null && !removedUsername.isBlank()) {
-                GroupSummaryUpdate removedUpdate = GroupSummaryUpdate.removed(groupId);
-                groupSummaryUpdatePublisher.publishToUser(removedUsername, removedUpdate);
+                immediatePersonalUpdates.put(removedUsername, GroupSummaryUpdate.removed(groupId));
+            }
+
+            for (Map.Entry<String, GroupSummaryUpdate> entry : immediatePersonalUpdates.entrySet()) {
+                String username = entry.getKey();
+                GroupSummaryUpdate personalUpdate = entry.getValue();
+                if (username == null || username.isBlank() || personalUpdate == null) {
+                    continue;
+                }
+                groupSummaryUpdatePublisher.publishToUser(username, personalUpdate);
                 logger.debug("[publishToUser] Delivered personal group summary update to user={}, message={}",
-                        removedUsername, removedUpdate);
+                        username, personalUpdate);
             }
         }, "Failed to publish membership realtime update after commit");
     }

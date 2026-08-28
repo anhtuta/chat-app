@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { getUsers, createGroup } from "../services/api";
 import type { ChatGroup, SelectableUser } from "../types/groups";
+import { toUserErrorMessage } from "../utils/apiError";
 import { parseMaxMembersInput, GROUP_MEMBER_LIMIT_REACHED_MESSAGE, isAllowedMaxMembersInput } from "../utils/groupMemberLimit";
 import "./CreateGroupModal.css";
 
@@ -42,7 +43,7 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
       setUsers(usersData);
     } catch (error) {
       console.error("Error loading users:", error);
-      setError("Error loading users");
+      setError(toUserErrorMessage(error, "Error loading users"));
     }
   };
 
@@ -95,8 +96,7 @@ function CreateGroupModal({ onClose, onGroupCreated }: CreateGroupModalProps) {
       onClose();
     } catch (err) {
       console.error("Error creating group:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      setError("Error creating group: " + message);
+      setError(toUserErrorMessage(err, "Error creating group"));
     } finally {
       setIsLoading(false);
     }
