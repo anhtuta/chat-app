@@ -654,3 +654,146 @@ How it works?
 - You can inject `GroupParticipantRepository` anywhere in your application and seamlessly use both standard and custom methods
 
 Ref: Google AI
+
+# Explain the format of `GroupArchiveHistoryIntegrationTest`
+
+This test follows a **slice integration test** pattern used across `chat-app-backend`: real H2 + JPA, a small hand-picked Spring context, and no full app boot. Below is how each piece fits together.
+
+## Why `@DataJpaTest`
+
+`@DataJpaTest` is a **Spring Boot slice test**. It starts a minimal context focused on persistence:
+
+| Auto-wired for you                                        | Not loaded                   |
+| --------------------------------------------------------- | ---------------------------- |
+| JPA repositories (`UserRepository`, `GroupRepository`, …) | Full `@SpringBootTest`       |
+| `EntityManager`, transactions, datasource                 | Controllers, WebSocket/STOMP |
+| Test transaction rollback (by default)                    | Most `@Service` beans        |
+
+You use it when you want **real database behavior** (SQL, JPA mappings, transactions) without paying the cost of booting the whole application.
+
+This project’s convention is `@DataJpaTest` + `@Import({...})` for `*IntegrationTest` classes. They run under Failsafe (`mvn verify`), not Surefire (`mvn test`).
+
+## What goes in `@Import`?
+
+**Rule:** import every bean your test needs that `@DataJpaTest` does **not** create automatically.
+
+Walk the dependency graph from what you `@Autowired` and what those services call:
+
+```
+GroupArchiveHistoryIntegrationTest
+├── Services under test (explicitly imported)
+│   ├── GroupService
+│   ├── GroupMembershipService
+│   ├── MessageService
+│   └── MessageHistoryService
+├── Their service dependencies
+│   ├── GroupAuthorizationService
+│   └── SystemMessageService
+├── Non-service collaborators
+│   └── MessageResponseMapper
+├── Infrastructure those collaborators need
+│   ├── MediaStorageConfig
+│   ├── ObjectStorageProviderRegistry
+│   └── S3ObjectStorageProvider
+└── Test-only substitutes
+    └── RealtimeStubConfig (mock publishers)
+```
+
+Repositories are **not** imported — `@DataJpaTest` registers them from your entity scan.
+
+All service/mapper/storage classes in `@Import` are **real implementations** exercising real logic against a real (H2) database, except the two realtime publisher beans from `RealtimeStubConfig`, which are Mockito mocks.
+
+Compare with `GroupMembershipRevocationIntegrationTest`, which stops at membership/moderation and does **not** import `MessageHistoryService` or the storage stack. This test goes further because the second scenario calls `messageHistoryService.getGroupMessages(...)`.
+
+## Why `S3ObjectStorageProvider` if the test doesn’t “use S3”?
+
+It’s not there for archive logic directly. It’s a **transitive dependency**:
+
+```
+MessageHistoryService
+  → MessageResponseMapper
+    → ObjectStorageProviderRegistry
+      → List<ObjectStorageProvider>  (needs at least S3)
+      → MediaStorageProperties       (from MediaStorageConfig)
+```
+
+`MessageResponseMapper` injects `ObjectStorageProviderRegistry` to build media URLs when mapping messages. Even though this test only asserts text/system events, Spring still has to construct the full bean graph.
+
+And `ObjectStorageProviderRegistry` **fails at startup** if the configured provider has no implementation:
+
+```java
+// Validate that the active provider is available. (We don't use its returned value.)
+// The constructor builds providersByType, then calls this method once so startup will immediately fail if
+// chat.media.provider points to a provider type that has no registered implementation.
+ObjectStorageProvider activeProvider = getActiveProvider();
+logger.info("Active storage provider: {}", activeProvider.getType());
+```
+
+Test config pins the provider to S3:
+
+```yaml
+# chat-app-backend/src/test/resources/application.yaml
+chat:
+  media:
+    provider: S3
+```
+
+So you must register `S3ObjectStorageProvider`. Same pattern appears in `MessageHistoryServiceIntegrationTest`.
+
+## Other annotations and setup
+
+### `@DirtiesContext`
+
+Marks the Spring context dirty after this class so state doesn’t leak between integration tests (shared patterns, schema changes, etc.).
+
+### `@AutoConfigureTestDatabase(replace = Replace.NONE)`
+
+By default, `@DataJpaTest` replaces your datasource with its own embedded DB. `Replace.NONE` keeps **your** datasource config — here, the isolated H2 from `@DynamicPropertySource`.
+
+### `@DynamicPropertySource` + `IsolatedH2DataSourceSupport`
+
+Gives each test class its **own in-memory database**:
+
+```java
+// chat-app-backend/src/test/java/com/hello/chatapp/support/IsolatedH2DataSourceSupport.java
+public static void register(DynamicPropertyRegistry registry, Class<?> testClass) {
+   registry.add("spring.datasource.url",
+      () -> "jdbc:h2:mem:" + testClass.getSimpleName() + H2_OPTIONS);
+```
+
+So this class uses `jdbc:h2:mem:GroupArchiveHistoryIntegrationTest`, avoiding collisions with other integration tests.
+
+### `RealtimeStubConfig` (inner `@TestConfiguration`)
+
+`GroupService` needs `GroupProfileRealtimePublisher`; `GroupMembershipService` needs `GroupMembershipRealtimePublisher`. Those normally tie into WebSocket/STOMP, which `@DataJpaTest` doesn’t load. The inner config supplies **Mockito mocks** so archive/leave logic can run without realtime infrastructure:
+
+```java
+// GroupArchiveHistoryIntegrationTest.java
+@TestConfiguration
+static class RealtimeStubConfig {
+
+   /** No-op membership publisher for leave/archive events. */
+   @Bean
+   GroupMembershipRealtimePublisher groupMembershipRealtimePublisher() {
+      return mock(GroupMembershipRealtimePublisher.class);
+   }
+
+   /** No-op profile publisher for name/description updates. */
+   @Bean
+   GroupProfileRealtimePublisher groupProfileRealtimePublisher() {
+      return mock(GroupProfileRealtimePublisher.class);
+   }
+}
+```
+
+**Import rule of thumb for stubs:** if a required bean has heavy infrastructure (WebSocket, S3 client, RabbitMQ), either mock it in `@TestConfiguration` or import a lightweight real implementation — whichever is smaller and still lets the code under test run.
+
+## Mental model for writing similar tests
+
+1. Start with `@DataJpaTest`.
+2. List services you’ll call → `@Import` them.
+3. For each imported class, trace constructor dependencies; add those to `@Import` too.
+4. Replace infrastructure you don’t want (realtime, etc.) with `@TestConfiguration` mocks.
+5. If you hit storage/mapper code, expect `MediaStorageConfig` + `ObjectStorageProviderRegistry` + the provider matching `chat.media.provider` in test `application.yaml`.
+6. Use `IsolatedH2DataSourceSupport` + `@DirtiesContext` for isolation.
+7. Name the class `*IntegrationTest` so Failsafe picks it up.
