@@ -1,20 +1,23 @@
-# Multi-stage build for Spring Boot application using layered JARs
+# syntax=docker/dockerfile:1
+# Multi-stage build for Spring Boot application
 
 # Build stage: compile and package the app
 FROM maven:3.9-eclipse-temurin-25 AS build
 
 WORKDIR /app
 
-# Copy pom.xml and download dependencies (cached layer)
+# Resolve only dependencies needed by this project (faster than dependency:go-offline,
+# which pulls the entire Spring Boot BOM graph including unused cloud artifacts).
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -DskipTests dependency:resolve dependency:resolve-plugins
 
-# Copy source code and build
+# Copy source code and build; reuse the Maven cache mount so jars are not re-downloaded
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -DskipTests clean package
 
-# Runtime stage: use the original JAR file
-# Docker will cache this layer when dependencies don't change, providing similar benefits to layered extraction
+# Runtime stage
 FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app
@@ -23,7 +26,6 @@ WORKDIR /app
 RUN groupadd -r spring && useradd -r -g spring spring
 
 # Copy the JAR file from build stage
-# This is a separate layer, so Docker can cache it when dependencies don't change
 COPY --from=build /app/target/*.jar app.jar
 
 # Fix ownership and switch to non-root user
@@ -40,4 +42,3 @@ EXPOSE 9010
 
 # Run the Spring Boot application using the JAR file
 ENTRYPOINT ["java", "-jar", "app.jar"]
-

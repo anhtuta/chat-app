@@ -13,8 +13,12 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +37,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class MessageServiceIntegrationTest {
+
+    @DynamicPropertySource
+    static void registerIsolatedDataSource(DynamicPropertyRegistry registry) {
+        IsolatedH2DataSourceSupport.register(registry, MessageServiceIntegrationTest.class);
+    }
 
     @Autowired
     private MessageService messageService;
@@ -78,9 +87,10 @@ class MessageServiceIntegrationTest {
         assertThat(executorService.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
 
         Group persistedGroup = groupRepository.findById(Objects.requireNonNull(group.getId())).orElseThrow();
-        Message actualLatestMessage = messageRepository.findLatestGroupMessages(persistedGroup, PageRequest.of(0, 1)).stream()
+        Long latestMessageId = messageRepository.findLatestGroupMessageIds(persistedGroup, PageRequest.of(0, 1)).stream()
                 .findFirst()
                 .orElseThrow();
+        Message actualLatestMessage = messageRepository.findWithMediaById(latestMessageId).orElseThrow();
 
         assertThat(persistedMessages).hasSize(6);
         assertThat(persistedGroup.getLatestMessage()).isEqualTo(actualLatestMessage.getContent());

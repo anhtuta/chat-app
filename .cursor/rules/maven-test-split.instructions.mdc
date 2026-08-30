@@ -1,0 +1,13 @@
+---
+description: "When adding Java tests in chat-app-backend, follow Surefire/Failsafe naming and pom.xml registration rules."
+globs: chat-app-backend/**/*Test.java, chat-app-backend/pom.xml
+alwaysApply: false
+---
+
+# Maven Unit vs Integration Tests (chat-app-backend)
+
+- **Unit tests** (`FooTest.java`, not `*IntegrationTest`): no `pom.xml` change. Surefire runs them automatically on `mvn test`.
+- **Integration tests**: name `FooIntegrationTest.java` when possible. The `*IntegrationTest` wildcard in `pom.xml` excludes them from Surefire and includes them in Failsafe — no `pom.xml` edit needed.
+- **Integration tests without the suffix** (legacy or unavoidable): add the class to **both** `maven-surefire-plugin` `<excludes>` and `maven-failsafe-plugin` `<includes>` in `chat-app-backend/pom.xml`.
+
+Integration tests run on `mvn verify` (Failsafe), not on `mvn test` alone.

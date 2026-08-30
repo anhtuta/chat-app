@@ -13,7 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
-import java.util.Map;
+
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,8 +37,8 @@ public class DynamicRabbitMQListener {
     @Value("${spring.application.instance-id:${random.uuid}}")
     private String instanceId;
 
-    // Track active listeners: queueName -> MessageListenerContainer
-    private final Map<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
+    // Track active listeners: queueName -> MessageListenerContainer (concurrent start/stop safe)
+    private final ConcurrentHashMap<String, SimpleMessageListenerContainer> activeListeners = new ConcurrentHashMap<>();
 
     public DynamicRabbitMQListener(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
         this.connectionFactory = connectionFactory;
@@ -64,53 +64,55 @@ public class DynamicRabbitMQListener {
      * in a header, not fixed per queue.
      */
     public void startListening(String queueName, String ignoredDestination) {
-        // Don't create duplicate listeners
-        if (activeListeners.containsKey(queueName)) {
-            logger.debug("Listener already exists for queue: {}", queueName);
-            return;
-        }
+        // Atomic contains-and-add: only one thread creates/starts a container per queueName.
+        // ConcurrentHashMap.computeIfAbsent runs the mapping function at most once per key.
+        boolean[] created = { false };
+        activeListeners.computeIfAbsent(queueName, name -> {
+            created[0] = true;
+            logger.debug("Starting listener for queue: {}, instanceId: {}", name, instanceId);
 
-        logger.debug("Starting listener for queue: {}, instanceId: {}", queueName, instanceId);
+            SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
+            container.setConnectionFactory(Objects.requireNonNull(connectionFactory));
+            container.setQueueNames(name);
+            container.setMessageListener(new MessageListener() {
+                @Override
+                public void onMessage(Message message) {
+                    try {
+                        // Check if message came from this instance (skip to avoid duplicate)
+                        String sourceInstanceId = (String) message.getMessageProperties().getHeaders().get("source-instance-id");
+                        if (instanceId.equals(sourceInstanceId)) {
+                            logger.debug("Skipping message from same instance: queue={}, instanceId={}", name, instanceId);
+                            return;
+                        }
 
-        // Create a new listener/consumer for this queue
-        SimpleMessageListenerContainer container = new SimpleMessageListenerContainer();
-        container.setConnectionFactory(Objects.requireNonNull(connectionFactory));
-        container.setQueueNames(queueName);
-        container.setMessageListener(new MessageListener() {
-            @Override
-            public void onMessage(Message message) {
-                try {
-                    // Check if message came from this instance (skip to avoid duplicate)
-                    String sourceInstanceId = (String) message.getMessageProperties().getHeaders().get("source-instance-id");
-                    if (instanceId.equals(sourceInstanceId)) {
-                        logger.debug("Skipping message from same instance: queue={}, instanceId={}", queueName, instanceId);
-                        return;
+                        // Deserialize payload using the configured MessageConverter
+                        Object payload = messageConverter.fromMessage(message);
+                        String destination = (String) message.getMessageProperties().getHeaders()
+                                .get(CustomRabbitMQBrokerHandler.getDestinationHeader());
+                        if (destination == null) {
+                            logger.warn("Skipping RabbitMQ message without STOMP destination header: queue={}", name);
+                            return;
+                        }
+
+                        logger.info("Received message from queue: {}, destination: {}, instanceId: {}",
+                                name, destination, instanceId);
+
+                        // Forward to local subscribers
+                        forwardToLocalSubscribers(destination, payload);
+                    } catch (Exception e) {
+                        logger.error("Error processing message from queue: {}", name, e);
                     }
-
-                    // Deserialize payload using the configured MessageConverter
-                    Object payload = messageConverter.fromMessage(message);
-                    String destination = (String) message.getMessageProperties().getHeaders()
-                            .get(CustomRabbitMQBrokerHandler.getDestinationHeader());
-                    if (destination == null) {
-                        logger.warn("Skipping RabbitMQ message without STOMP destination header: queue={}", queueName);
-                        return;
-                    }
-
-                    logger.info("Received message from queue: {}, destination: {}, instanceId: {}",
-                            queueName, destination, instanceId);
-
-                    // Forward to local subscribers
-                    forwardToLocalSubscribers(destination, payload);
-                } catch (Exception e) {
-                    logger.error("Error processing message from queue: {}", queueName, e);
                 }
-            }
+            });
+
+            container.start();
+            logger.info("Started listener for queue: {}", name);
+            return container;
         });
 
-        container.start();
-        activeListeners.put(queueName, container);
-
-        logger.info("Started listener for queue: {}", queueName);
+        if (!created[0]) {
+            logger.debug("Listener already exists for queue: {}", queueName);
+        }
     }
 
     /**
@@ -118,6 +120,7 @@ public class DynamicRabbitMQListener {
      * Called when a subscription is removed.
      */
     public void stopListening(String queueName) {
+        // Atomic remove so a concurrent startListening cannot observe a half-removed entry.
         SimpleMessageListenerContainer container = activeListeners.remove(queueName);
         if (container != null) {
             logger.debug("Stopping listener for queue: {}, instanceId: {}", queueName, instanceId);

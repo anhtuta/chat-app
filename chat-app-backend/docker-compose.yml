@@ -46,7 +46,10 @@ services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
     container_name: chat-app-rabbitmq
+    hostname: rabbitmq
     environment:
+      # Keep the Erlang node name stable across container recreation when using a persisted data dir.
+      RABBITMQ_NODENAME: rabbit@rabbitmq
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     ports:
@@ -55,7 +58,35 @@ services:
     volumes:
       - ./docker/data/rabbitmq:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      # Authenticated aliveness test (publish/consume on vhost /) — port/UI up is not enough for AmqpAdmin.
+      # Uses management HTTP (not rabbitmq-diagnostics) to avoid the Erlang CLI healthcheck memory leak in docs/25.
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- \"http://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@127.0.0.1:15672/api/aliveness-test/%2F\" | grep -q '\"status\":\"ok\"'",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - chat-network
+
+  # MinIO (local object storage for media uploads)
+  minio:
+    image: minio/minio:latest
+    container_name: chat-app-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - ./docker/data/minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -85,6 +116,12 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
+      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
+      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
+      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
       SERVER_PORT: 9010
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
@@ -95,6 +132,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - chat-network
@@ -122,6 +161,12 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
+      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
+      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
+      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
       SERVER_PORT: 9010
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
@@ -132,6 +177,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - chat-network
@@ -161,6 +208,12 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
+      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
+      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
+      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
       SERVER_PORT: 9010
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
@@ -171,6 +224,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - chat-network

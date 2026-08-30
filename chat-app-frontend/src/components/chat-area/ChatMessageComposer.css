@@ -8,6 +8,97 @@
   border-top: 1px solid var(--color-border);
 }
 
+.chat-message-file-input {
+  display: none;
+}
+
+.chat-message-media-draft-panel {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.chat-message-media-draft-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chat-message-media-draft-title {
+  color: var(--color-text-primary);
+  font-weight: 600 !important;
+}
+
+.chat-message-media-draft-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chat-message-media-draft-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 320px);
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.chat-message-media-draft-preview,
+.chat-message-media-draft-fallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.chat-message-media-draft-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.chat-message-media-draft-audio {
+  width: 180px;
+  max-width: 100%;
+}
+
+.chat-message-media-draft-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-message-media-draft-name {
+  color: var(--color-text-primary);
+  font-weight: 500 !important;
+  word-break: break-word;
+}
+
+.chat-message-media-draft-size {
+  color: var(--color-text-secondary) !important;
+}
+
+.chat-message-media-draft-remove {
+  align-self: flex-start;
+}
+
+.chat-message-media-error {
+  display: block;
+  margin-top: 10px !important;
+  color: var(--color-status-error-text) !important;
+}
+
 .chat-message-input {
   width: 100%;
 }
@@ -36,6 +127,17 @@
 .chat-send-button {
   padding-left: 24px;
   padding-right: 24px;
+}
+
+.chat-message-attach-button {
+  flex-shrink: 0;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.chat-message-attach-button:hover {
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-surface-muted) !important;
 }
 
 .chat-send-button.Mui-disabled {

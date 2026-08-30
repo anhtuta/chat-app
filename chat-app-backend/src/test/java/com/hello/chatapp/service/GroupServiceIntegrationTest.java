@@ -12,18 +12,39 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+import com.hello.chatapp.support.IsolatedH2DataSourceSupport;
 
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
+/**
+ * Database-backed coverage for unread-count aggregation across multiple groups.
+ */
 @DataJpaTest
-@Import(GroupService.class)
+@Import({
+        GroupService.class,
+        GroupAuthorizationService.class,
+        MessageService.class,
+        SystemMessageService.class,
+        GroupServiceIntegrationTest.RealtimeStubConfig.class
+})
 @DirtiesContext
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class GroupServiceIntegrationTest {
+
+    @DynamicPropertySource
+    static void registerIsolatedDataSource(DynamicPropertyRegistry registry) {
+        IsolatedH2DataSourceSupport.register(registry, GroupServiceIntegrationTest.class);
+    }
 
     @Autowired
     private GroupService groupService;
@@ -40,6 +61,9 @@ class GroupServiceIntegrationTest {
     @Autowired
     private MessageRepository messageRepository;
 
+    /**
+     * Unread aggregation should count only messages after the participant's last-read marker.
+     */
     @Test
     void getUnreadCountByGroupId_andTotalUnread_areCorrect_andIncludeZeroForGroupsWithoutMessages() {
         User targetUser = userRepository.saveAndFlush(new User("target-user", "secret", "Target User"));
@@ -86,14 +110,30 @@ class GroupServiceIntegrationTest {
         groupParticipantRepository.saveAndFlush(participantC);
 
         Map<Long, Long> unreadByGroupId = groupService.getUnreadCountByGroupId(targetUser);
-        long totalUnreadCount = groupService.getTotalUnreadCount(targetUser);
 
         assertThat(unreadByGroupId)
                 .containsEntry(groupA.getId(), 2L)
                 .containsEntry(groupB.getId(), 0L)
                 .containsEntry(groupC.getId(), 0L);
+        assertThat(unreadByGroupId.values().stream().mapToLong(count -> count).sum()).isEqualTo(2L);
+    }
 
-        assertThat(totalUnreadCount).isEqualTo(2L);
-        assertThat(totalUnreadCount).isEqualTo(unreadByGroupId.values().stream().mapToLong(Long::longValue).sum());
+    /**
+     * Stubs realtime publishers so persistence-focused tests do not require STOMP beans.
+     */
+    @TestConfiguration
+    static class RealtimeStubConfig {
+
+        /** No-op membership publisher for service wiring only. */
+        @Bean
+        GroupMembershipRealtimePublisher groupMembershipRealtimePublisher() {
+            return mock(GroupMembershipRealtimePublisher.class);
+        }
+
+        /** No-op profile publisher for service wiring only. */
+        @Bean
+        GroupProfileRealtimePublisher groupProfileRealtimePublisher() {
+            return mock(GroupProfileRealtimePublisher.class);
+        }
     }
 }

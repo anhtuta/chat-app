@@ -58,32 +58,10 @@ Ref: GPT-5 mini
 
 # Fix unnecessary `group-updates` topic unsubscribe/subscribe on chat switch
 
-I’ve identified a likely lifecycle issue (effect cleanup firing on route transitions/remount-like behavior), so I’m implementing a robust fix in `WebSocketProvider`: reference-counted personal subscriptions with delayed cleanup cancellation. This will prevent unnecessary UNSUBSCRIBE/SUBSCRIBE churn even if cleanup runs briefly during chat switches.
+Fixed with new solution in
 
-Implemented a deeper fix that should stop the unnecessary `group-updates` unsubscribe/resubscribe even if React effect cleanup runs during chat switches.
-
-What I found
-
-- Your logs prove the personal unsubscribe is being triggered by the cleanup function returned from `subscribeGroupUpdates` (`"2. unsubscribe called..."`).
-- That means a cleanup/re-subscribe lifecycle is happening on chat switch (effect rerun or remount-like transition).
-- Previous fixes were too brittle because they still unsubscribed immediately on cleanup.
-
-What I changed
-
-- Updated WebSocketProvider.js with robust personal subscription lifecycle handling:
-  - Added reference counting per personal topic (`refCount`).
-  - Added delayed cleanup (`cleanupTimer`) before actual unsubscribe.
-  - If the same topic is re-subscribed quickly (common during route/effect churn), cleanup timer is canceled and existing subscription is reused.
-  - This prevents STOMP UNSUBSCRIBE/SUBSCRIBE flapping for `/topic/user.<username>.group-updates`.
-- Also improved context value memo dependencies to include `subscribeSingleGroup`, `unsubscribeSingleGroup`, and `subscribeGroupUpdates` references.
-- Verified the edited file has no syntax errors using diagnostics.
-
-Why this should work now
-
-- On chat switch, even if cleanup runs transiently:
-  - `refCount` drops to `0`, but unsubscribe is delayed.
-  - The immediate re-subscribe for the same topic increments `refCount` and cancels pending cleanup.
-  - Result: no wire-level UNSUBSCRIBE/SUBSCRIBE for personal topic.
+- [`WebSocketProvider.tsx`](../chat-app-frontend/src/context/WebSocketProvider.tsx):
+- [06_REALTIME_GROUP_SIDEBAR_UPDATE_STRATEGY.md](06_REALTIME_GROUP_SIDEBAR_UPDATE_STRATEGY.md#frontend)
 
 ## My manual testing
 
@@ -116,3 +94,68 @@ When user switches groups, websocket messages after:
 
 - We still see the expected unsubscribe/subscribe for the group topic.
 - We no longer see any unsubscribe/subscribe for the personal topic, which means the fix is working as intended.
+
+# Fix unnecessary re-renders in `ChatMessageList`
+
+`ChatMessageList` re-renders on every keystroke because **its parent `ChatArea` re-renders**, not because the message list data changed.
+
+## The chain of events
+
+1. **Typing updates state in `ChatArea`**
+
+```js
+// 29:29:chat-app-frontend/src/components/ChatArea.js
+const [messageInput, setMessageInput] = useState("");
+```
+
+```js
+// 433:436:chat-app-frontend/src/components/ChatArea.js
+<ChatMessageComposer
+  messageInput={messageInput}
+  onChange={(event) => setMessageInput(event.target.value)}
+  onKeyPress={handleKeyPress}
+```
+
+Each keystroke calls `setMessageInput`, which triggers a `ChatArea` re-render.
+
+2. **React re-renders all children by default**
+
+`ChatMessageList` and `ChatMessageComposer` are siblings inside `ChatArea`. When `ChatArea` re-renders, both children re-render unless you opt out.
+
+3. **`ChatMessageList` is not memoized**
+
+It’s a plain function component with no `React.memo`, so it always re-renders when `ChatArea` does.
+
+## Visual flow
+
+```mermaid
+flowchart TD
+    A[User types in composer] --> B[setMessageInput in ChatArea]
+    B --> C[ChatArea re-renders]
+    C --> D[ChatMessageList re-renders]
+    C --> E[ChatMessageComposer re-renders]
+```
+
+## Is this a problem?
+
+Usually **no** for a typical chat — React reconciles the DOM and only updates what changed. It becomes a problem if you have hundreds of messages, heavy media, or expensive per-message work (your `formatMessage` runs for every message on each render).
+
+## How to fix it (if you want to)
+
+### **Option A — Keep input state local to the composer (simplest, selected)**
+
+Move `messageInput` into `ChatMessageComposer`. Only call `onSend` with the final text. Typing then won’t re-render `ChatArea` or `ChatMessageList`.
+
+### **Option B — Memoize the list**
+
+```js
+const ChatMessageList = React.memo(function ChatMessageList({ ... }) { ... });
+```
+
+Also wrap handlers in `useCallback` in `ChatArea`, or the memo won’t help much.
+
+### **Option C — Split the layout**
+
+Extract a `ChatAreaMessages` wrapper that only receives message-related props, keeping composer state in a sibling subtree.
+
+Option A is usually the cleanest: the input field’s state belongs in the composer, not in the parent that owns the message list.

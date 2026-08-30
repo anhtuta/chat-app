@@ -1,77 +1,142 @@
 ---
 description: "Use when implementing, changing, or refactoring any feature. Ensure feature documentation in docs is created or updated, with one markdown file per feature."
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Keep Feature Docs In Sync
 
-- Treat feature documentation updates as required whenever feature behavior, API, data flow, config, UX, or operational behavior changes.
+- Update the docs whenever feature behavior, API, data flow, config, UX, or operational behavior changes. No need to always do it, unless you are asked to do so, or you knew the docs file in current context of the conversation.
 - Store feature documentation as markdown files under `docs/`.
-- If the feature already has a docs file, update that file in the same change.
-- If the feature has no docs file yet, create a new markdown file in `docs/` for that feature.
-- Keep each docs file focused on exactly one feature; do not combine multiple features in one file.
-- Filename should start with a number and a underscore.
-- Use clear feature-specific filenames in `docs/` (for example, `01_AUTH_LOGIN_FLOW.md`).
-- In feature docs updates, include at minimum:
-  - What changed
-  - Why it changed
-  - Any API/contract/config impacts
-  - Rollout, migration, or backward-compatibility notes (if applicable)
-- The format of the documentation should have following sections:
+- If the feature already has a docs file, update it, otherwise, create a new markdown file in `docs/` for that feature.
+- Filename should start with a number and a underscore, e.g, `01_AUTH_LOGIN_FLOW.md`.
 
-  ```md
-  ## Current Problem
+# Types of documentation
 
-  (Describe the current behavior or problem that the feature change is addressing.)
+1. Brand-new feature docs: This is a new feature that is being added to the system.
+2. Optimization docs: This is an optimization to an existing feature.
 
-  ## Possible Solutions
+# Format of the documentation
 
-  ### 1. Solution A
+Note: `optional` means that the section is not mandatory, and can be skipped if not applicable.
 
-  - How it works
-  - Pros
-  - Cons
-  - Recommendation for our problem: Yes/No (optional)
-  - When I’d use it (only if NOT recommended) (optional)
+## 1. Brand-new feature docs
 
-  ### 2. Solution B
+Use following format:
 
-  ## High level Architecture/Design (optional)
+```md
+## Intro
 
-  ### Use cases
+(Describe the new feature in a few sentences.)
 
-  List all use cases. Keep them short and concise.
+## Functional Requirements
 
-  ### Component Diagram
+## Non-Functional Requirements
 
-  Draw a component diagram and show how they interact with each other.
+## Use cases
 
-  ### Core entities/models
+## Possible Solutions
 
-  List core entities/models and their relationships.
+(Introduce the possible solutions for some use cases that are difficult/complex/important, no need for all use cases.)
 
-  ### API Draft
+### 1. How to implement [difficult/complex/important part here]?
 
-  Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
+#### 1.1. Solution A
 
-  ## Recommendation (optional)
+- How it works
+- Pros
+- Cons
+- Recommendation for our problem: Yes/No (optional)
+- (If above is NO, then) When I’d use it (optional)
 
-  (Just a recommendation path, do NOT implement anything in this section)
+#### 1.2. Solution B
 
-  Recommendation path:
+...
 
-  1. Phase 1: Implement the solution
-  2. Phase 2: Implement the solution
+## High level Architecture/Design
 
-  ...
+### Component Diagram / Flowchart / Sequence Diagram
 
-  N. Phase N: Implement the solution
+(Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
 
-  ## Chosen Solution + Implementation
+### Core entities/models
 
-  (Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+List core entities/models and their relationships.
 
-  ## Future Higher-Scale Path
+### API Draft
 
-  ## (Other sections you can add if needed)
-  ```
+Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
+
+## Recommendation (optional)
+
+(Just a recommendation path, do NOT implement anything in this section. Keep this short and concise.)
+
+## Implementation details
+
+(Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+
+For each phase, include the following sections:
+
+- What changed (mandatory, keep it concise and to the point)
+- Why it changed (optional, keep it concise and to the point)
+- Rollout, migration, or backward-compatibility notes (if applicable)
+
+## Future Higher-Scale Path
+
+## (Other sections you can add if needed)
+```
+
+## 2. Optimization docs
+
+Use following format:
+
+```md
+## Current Problem
+
+(Describe the current behavior or problem that we need to optimize/solve.)
+
+## Examples (status quo — before the fix)
+
+(List some examples of the issue before the fix.)
+
+## Possible Solutions
+
+### 1. Solution A
+
+- How it works
+- Pros
+- Cons
+- Recommendation for our problem: Yes/No (optional)
+- (If above is NO, then) When I’d use it (optional)
+
+### 2. Solution B
+
+## High level Architecture/Design (optional)
+
+### Component Diagram / Flowchart / Sequence Diagram
+
+(Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
+
+## Recommendation
+
+(Just a recommendation path, or recommended solution, do NOT implement anything in this section. Keep this short and concise.)
+
+## Implementation details
+
+(Implementation summary for each phase, or the selected solution. After implementing, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+
+For each phase, include the following sections:
+
+- What changed (mandatory, keep it concise and to the point)
+- Why it changed (optional, keep it concise and to the point)
+- Rollout, migration, or backward-compatibility notes (if applicable)
+
+## Examples (after the fix)
+
+(List some examples of the issue after the fix.)
+
+## Lesson (look back here)
+
+## Future Higher-Scale Path
+
+## (Other sections you can add if needed)
+```

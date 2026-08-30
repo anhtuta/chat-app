@@ -1,0 +1,81 @@
+import type { GroupRole } from "../constant/groupRoles";
+
+export type { GroupRole };
+
+export interface ChatGroup {
+  id: number;
+  name: string;
+  description?: string | null;
+  maxMembers?: number | null;
+  latestMessage?: string | null;
+  latestMessageSender?: string | null;
+  latestMessageAt?: string | null;
+  unreadCount?: number;
+  currentUserRole?: string | null;
+  currentUserPermissions?: string[];
+}
+
+export interface GroupMember {
+  userId: number;
+  username: string;
+  fullname?: string | null;
+  role: GroupRole | string;
+  joinedAt?: string | null;
+  groupId?: number | null;
+  groupName?: string | null;
+}
+
+export interface GroupMemberPage {
+  content: GroupMember[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+}
+
+export interface GroupBan {
+  userId: number;
+  username: string;
+  fullname?: string | null;
+  reason?: string | null;
+  bannedAt?: string | null;
+  bannedByUserId?: number | null;
+  bannedByUsername?: string | null;
+}
+
+export interface GroupJoinLink {
+  id: number;
+  groupId: number;
+  /** Raw token is only present on create responses; list responses omit it. */
+  token?: string | null;
+  createdById?: number | null;
+  createdByUsername?: string | null;
+  createdAt?: string | null;
+  /** Absolute expiry instant (UTC ISO-8601). Null means the link does not expire. */
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+}
+
+export interface SelectableUser {
+  id: number;
+  username: string;
+  fullname?: string | null;
+  createdAt?: string | null;
+}
+
+// Similar to chat-app-backend/src/main/java/com/hello/chatapp/dto/GroupSummaryUpdate.java
+export interface GroupSummaryUpdate {
+  groupId: number | string;
+  name?: string | null;
+  description?: string | null;
+  latestMessage?: string | null;
+  latestMessageSender?: string | null;
+  latestMessageAt?: string | null;
+  // TODO: Confirm whether backend should eventually send authoritative unreadCount here.
+  unreadCount?: number;
+  currentUserRole?: string | null;
+  currentUserPermissions?: string[];
+  /** When true, the current user should drop this group from the sidebar. */
+  removed?: boolean;
+}

@@ -1,10 +1,13 @@
 package com.hello.chatapp.entity;
 
+import com.hello.chatapp.constant.GroupRole;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -39,6 +42,10 @@ public class GroupParticipant {
 
     @Column(nullable = false)
     private LocalDateTime joinedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private GroupRole role = GroupRole.MEMBER;
 
     @Column(name = "last_read_message_id")
     private Long lastReadMessageId;

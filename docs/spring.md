@@ -361,6 +361,27 @@ for (String username : usernames) {
 }
 ```
 
+### Another example of LazyInitializationException
+
+This happens when we update group name or description.
+
+`PATCH` name/description now records system events via `recordGroupEvent` → `saveGroupSystemMessage` → `updateLatestMessageIfNewer`. That update is:
+
+```java
+// chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupRepository.java
+@Modifying(clearAutomatically = true, flushAutomatically = true)
+```
+
+`clearAutomatically = true` clears the persistence context after the bulk update. `createdBy` was never fetched (auth loads the group without `JOIN FETCH createdBy`), so the proxy is uninitialized and detached → `LazyInitializationException`.
+
+Before that phase, update returned the still-managed group and lazy load worked.
+
+**Fix**
+
+Same pattern as `createGroup`: re-fetch with `findByIdWithCreator` before building the response.
+
+The same clear also hits `MessageModerationService` after `refreshGroupLatestMessage` (edit/delete of the latest group message). Mapping `savedMessage` _after_ that call can `LazyInitializationException` on lazy `user` / `updatedBy` / `deletedBy` / `group` / `attachments`. Fix there: build `MessageResponse` **before** calling `refreshGroupLatestMessage`.
+
 ## The difference between Throttle/Buffering vs. Debounce
 
 Suppose `window_time` = 1.5 seconds.
@@ -368,7 +389,7 @@ Suppose `window_time` = 1.5 seconds.
 - **Throttling / Buffering:** _"I don't care how much you talk, I will take a snapshot and update the sidebar exactly every 1.5 seconds."_ It guarantees a steady, predictable heartbeat of updates.
 - **Debouncing:** _"I will wait until you **stop** talking for 1.5 seconds before I update the sidebar."_ Every time a new message arrives, the 1.5-second timer **resets**.
 
-## Explain why we lock `latestUpdate` in `GroupSummaryUpdatePublisher.java`
+## Explain why we lock `latestUpdate` in [`GroupSummaryUpdatePublisher.java`](../chat-app-backend/src/main/java/com/hello/chatapp/service/GroupSummaryUpdatePublisher.java)
 
 ### Why `synchronized (pendingUpdate)`?
 
@@ -422,3 +443,357 @@ sequenceDiagram
    Flush->>Lock: acquire (reschedule or cleanup)
    Flush->>Lock: release
 ```
+
+## Test isolation problem
+
+Run a single test passes, but run all tests fails:
+
+```sh
+# Pass
+./mvnw test -Dtest=GroupServiceIntegrationTest
+
+# Fail
+./mvnw test
+```
+
+Why? The failure was a **test isolation** problem, not a bug in `GroupServiceIntegrationTest` itself.
+
+### Root cause
+
+All Spring tests were using the same in-memory H2 database from `src/test/resources/application.yaml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false;LOCK_TIMEOUT=15000
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+```
+
+With `ddl-auto: create-drop`, when one Spring context shuts down (for example after `@DirtiesContext` on `MessageServiceIntegrationTest` or `GroupServiceIntegrationTest`), Hibernate **drops all tables** in that shared `testdb`. Another test class can still be using a cached context that points at the same database — so inserts fail with `Table "USERS" not found (this database is empty)`.
+
+Running a single test works because only one context starts and stops in isolation.
+
+### Fix
+
+Each test class now gets its own H2 database via `@DynamicPropertySource` and a small helper:
+
+- `IsolatedH2DataSourceSupport` — registers `jdbc:h2:mem:<TestClassName>` per class
+- Applied to `GroupServiceIntegrationTest`, `GroupServiceMarkReadValidationTest`, `MessageServiceIntegrationTest`, and `ChatAppApplicationTests`
+
+## Why we use `TaskScheduler` instead of `@Scheduled` in `GroupSummaryUpdatePublisher.java`
+
+- `groupSummaryUpdateScheduler.schedule(...)` is **dynamic, one-shot scheduling**: you register a task at runtime to run once at a specific time (`now + 3s`). Nothing runs until a group actually gets an update.
+- `@Scheduled` is **static, repeating scheduling**: Spring registers a method at startup and invokes it on a fixed cron / fixed rate / fixed delay forever, whether or not there is work.
+
+For debounced/buffered group fan-out, dynamic scheduling fits; `@Scheduled` does not.
+
+### What this class is really doing
+
+It is not “one scheduler per group.” It uses **one shared** `ThreadPoolTaskScheduler` bean (pool size 4 in `AsyncConfig`) and schedules **individual flush tasks** per group when needed:
+
+```java
+private void scheduleFlushIfAbsent(Long groupId, PendingGroupSummaryUpdate pendingUpdate) {
+   if (pendingUpdate.scheduledFlush != null || pendingUpdate.latestUpdate == null) {
+      return;
+   }
+
+   // Relative to this group's first update in the current burst, not a global tick.
+   Instant flushAt = Objects.requireNonNull(Instant.now().plus(GROUP_SUMMARY_BUFFER_INTERVAL));
+   pendingUpdate.scheduledFlush = groupSummaryUpdateScheduler.schedule(
+            () -> flushGroupMembers(groupId, pendingUpdate),
+            flushAt);
+}
+```
+
+Flow:
+
+1. **Message arrives** → `publishToGroupMembers` buffers `latestUpdate`.
+2. **First update in a burst** → schedule one flush in 3s (`scheduleFlushIfAbsent`).
+3. **More messages before flush** → only update `latestUpdate`; no new schedule (debounce).
+4. **Flush runs** → fan-out once with the latest summary.
+5. **No more pending updates** → remove from `pendingUpdates`; **no timer left for that group**.
+
+So idle groups cost nothing: no thread wake-ups, no DB lookups, no empty iterations.
+
+### Why `@Scheduled` would be a poor fit
+
+If you used something like `@Scheduled(fixedRate = 3000)`:
+
+| Concern            | `@Scheduled` (global tick)                                 | `TaskScheduler` (event-driven)                        |
+| ------------------ | ---------------------------------------------------------- | ----------------------------------------------------- |
+| Runs when idle?    | Yes, every 3s forever                                      | No                                                    |
+| Per-group debounce | Hard — global clock, not “3s after first message in burst” | Natural — `flushAt = now + 3s` per group              |
+| Coalescing bursts  | You’d poll `pendingUpdates` on every tick anyway           | Built in via `latestUpdate` + `scheduleFlushIfAbsent` |
+| Per-group timing   | All groups aligned to same tick                            | Group A at 10:01:04, group B at 10:01:07, etc.        |
+
+A polling `@Scheduled` approach could work in theory (“every 3s, scan all pending groups and flush if `now >= deadline`”), but it would:
+
+- Wake up constantly even when **zero** groups have pending updates.
+- Still need the same `pendingUpdates` map and deadline logic you already have.
+- Be less precise and less efficient than scheduling exactly when each group’s debounce window ends.
+
+## Enqueue async work only after transaction commit
+
+**Problem:** Calling `@Async` (or publishing to a queue) inside a `@Transactional` method runs the worker on another thread before the transaction commits. Under `READ COMMITTED`, that thread cannot see uncommitted rows, so `findById` may return empty and processing fails permanently (no retry).
+
+Sample code:
+
+```java
+@Transactional
+public MessageResponse completeUploadSession() {
+   // Persist message + upload rows (not committed yet)
+   MessageResponse response = mapper.toResponse(message);
+
+   // BAD if called here: STOMP/RabbitMQ clients can see a message that later rolls back
+   // publishFinalMessage(response, message);
+
+   // BAD if enqueue runs before commit: async worker may not see the new row under READ COMMITTED
+   // enqueueAsyncProcessingIfNeeded(message);
+}
+```
+
+**Fix used in this project:** Snapshot the response (and group id) and register `AfterCommit` callbacks for both realtime publish and media-processing enqueue — see `MediaUploadSessionService.schedulePublishFinalMessageAfterCommit()` and `scheduleAsyncProcessingAfterCommit()`.
+
+**Other options:** `@TransactionalEventListener(phase = AFTER_COMMIT)` with an application event; split persist into a `REQUIRES_NEW` transaction so commit happens first; retry `NotFoundException` in the worker as a safety net only.
+
+Other solutions:
+
+1. Split transactions: Persist in a `REQUIRES_NEW` method so it commits first, then enqueue in the outer flow. Works, but easier to get wrong than `afterCommit`.
+2. Retry on `NotFoundException` in the async worker.
+
+## A sample request flow in Spring Boot
+
+Request flow for `http://localhost:9010/join/123`:
+
+- `SecurityConfig` does **not** redirect `/join/123` to `index.html`. It only allows that URL without login.
+- The SPA fallback is in `WebMvcConfig`, which **forwards** (not redirects) to `/index.html`.
+
+Note (by Google AI):
+
+- In Spring MVC, a forward is a purely internal server-side operation that keeps the browser's original URL unchanged
+- A redirect sends an HTTP response telling the browser to issue a completely new request to a different URL
+
+For `/join/123` specifically
+
+- Request is allowed anonymously. Security then steps aside; it does not rewrite or serve HTML.
+- `/join/123` matches `/join/{path:[^\\.]*}` (`123` has no `.`), so Spring **internally forwards** to `/index.html` (same request, URL stays `/join/123`). That file comes from `classpath:/static/index.html`.
+
+Summary:
+
+1. Security: `/join/**` → `permitAll` → continue
+2. MVC: view controller matches → `forward:/index.html`
+3. Static resource resolver serves `static/index.html`
+4. Browser loads JS; React Router reads `/join/123` and shows `JoinGroupPage`
+
+**Redirect vs forward:** no `302` to `/index.html`. The browser address bar stays `/join/123`, which is what BrowserRouter needs.
+
+## Explain a JPA query
+
+Code:
+
+```java
+// chat-app-backend/src/main/java/com/hello/chatapp/repository/MessageRepository.java
+@EntityGraph(attributePaths = {"user", "updatedBy", "deletedBy", "attachments"})
+Optional<Message> findTopByGroup_IdOrderByTimestampDescIdDesc(Long groupId);
+```
+
+Inferred from the method name + `@EntityGraph`:
+
+```sql
+SELECT
+  m.*,
+  u.*,
+  ub.*,
+  db.*,
+  mm.*
+FROM messages m
+LEFT JOIN users u  ON m.user_id = u.id
+LEFT JOIN users ub ON m.updated_by = ub.id
+LEFT JOIN users db ON m.deleted_by = db.id
+LEFT JOIN message_media mm ON mm.message_id = m.id
+WHERE m.group_id = :groupId
+ORDER BY m.timestamp DESC, m.id DESC
+LIMIT 1
+```
+
+Breakdown:
+
+| Method part                                                 | SQL                                        |
+| ----------------------------------------------------------- | ------------------------------------------ |
+| `findTop`                                                   | `LIMIT 1`                                  |
+| `ByGroup_Id`                                                | `WHERE m.group_id = ?`                     |
+| `OrderByTimestampDescIdDesc`                                | `ORDER BY m.timestamp DESC, m.id DESC`     |
+| `@EntityGraph(... user, updatedBy, deletedBy, attachments)` | eager `LEFT JOIN`s onto those associations |
+
+Notes:
+
+- `group` is **not** in the entity graph here (unlike `findWithMediaById`), so `groups` is not joined — only the FK `group_id` is filtered.
+- Hibernate may emit aliases/`DISTINCT` and, for the `attachments` bag, sometimes a **second** select instead of one join (to avoid cartesian product with `LIMIT 1`). The SQL above is the logical equivalent, not a guaranteed single Hibernate plan.
+
+## Spring Data's repository fragment pattern
+
+Use it to combine standard Spring Data JPA methods with custom behavior. Steps:
+
+1. defining a custom interface
+2. writing its implementation using a strict naming convention
+3. extending both interfaces from your main repository
+
+Example:
+
+1. [GroupParticipantBulkInsertRepository](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantBulkInsertRepository.java)
+2. [GroupParticipantRepositoryImpl](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantRepositoryImpl.java)
+3. [GroupParticipantRepository](../chat-app-backend/src/main/java/com/hello/chatapp/repository/GroupParticipantRepository.java)
+
+How it works?
+
+- Spring Data JPA will automatically detect the `GroupParticipantRepositoryImpl` fragment class and merge it behind a single proxy
+- You can inject `GroupParticipantRepository` anywhere in your application and seamlessly use both standard and custom methods
+
+Ref: Google AI
+
+# Explain the format of `GroupArchiveHistoryIntegrationTest`
+
+This test follows a **slice integration test** pattern used across `chat-app-backend`: real H2 + JPA, a small hand-picked Spring context, and no full app boot. Below is how each piece fits together.
+
+## Why `@DataJpaTest`
+
+`@DataJpaTest` is a **Spring Boot slice test**. It starts a minimal context focused on persistence:
+
+| Auto-wired for you                                        | Not loaded                   |
+| --------------------------------------------------------- | ---------------------------- |
+| JPA repositories (`UserRepository`, `GroupRepository`, …) | Full `@SpringBootTest`       |
+| `EntityManager`, transactions, datasource                 | Controllers, WebSocket/STOMP |
+| Test transaction rollback (by default)                    | Most `@Service` beans        |
+
+You use it when you want **real database behavior** (SQL, JPA mappings, transactions) without paying the cost of booting the whole application.
+
+This project’s convention is `@DataJpaTest` + `@Import({...})` for `*IntegrationTest` classes. They run under Failsafe (`mvn verify`), not Surefire (`mvn test`).
+
+## What goes in `@Import`?
+
+**Rule:** import every bean your test needs that `@DataJpaTest` does **not** create automatically.
+
+Walk the dependency graph from what you `@Autowired` and what those services call:
+
+```
+GroupArchiveHistoryIntegrationTest
+├── Services under test (explicitly imported)
+│   ├── GroupService
+│   ├── GroupMembershipService
+│   ├── MessageService
+│   └── MessageHistoryService
+├── Their service dependencies
+│   ├── GroupAuthorizationService
+│   └── SystemMessageService
+├── Non-service collaborators
+│   └── MessageResponseMapper
+├── Infrastructure those collaborators need
+│   ├── MediaStorageConfig
+│   ├── ObjectStorageProviderRegistry
+│   └── S3ObjectStorageProvider
+└── Test-only substitutes
+    └── RealtimeStubConfig (mock publishers)
+```
+
+Repositories are **not** imported — `@DataJpaTest` registers them from your entity scan.
+
+All service/mapper/storage classes in `@Import` are **real implementations** exercising real logic against a real (H2) database, except the two realtime publisher beans from `RealtimeStubConfig`, which are Mockito mocks.
+
+Compare with `GroupMembershipRevocationIntegrationTest`, which stops at membership/moderation and does **not** import `MessageHistoryService` or the storage stack. This test goes further because the second scenario calls `messageHistoryService.getGroupMessages(...)`.
+
+## Why `S3ObjectStorageProvider` if the test doesn’t “use S3”?
+
+It’s not there for archive logic directly. It’s a **transitive dependency**:
+
+```
+MessageHistoryService
+  → MessageResponseMapper
+    → ObjectStorageProviderRegistry
+      → List<ObjectStorageProvider>  (needs at least S3)
+      → MediaStorageProperties       (from MediaStorageConfig)
+```
+
+`MessageResponseMapper` injects `ObjectStorageProviderRegistry` to build media URLs when mapping messages. Even though this test only asserts text/system events, Spring still has to construct the full bean graph.
+
+And `ObjectStorageProviderRegistry` **fails at startup** if the configured provider has no implementation:
+
+```java
+// Validate that the active provider is available. (We don't use its returned value.)
+// The constructor builds providersByType, then calls this method once so startup will immediately fail if
+// chat.media.provider points to a provider type that has no registered implementation.
+ObjectStorageProvider activeProvider = getActiveProvider();
+logger.info("Active storage provider: {}", activeProvider.getType());
+```
+
+Test config pins the provider to S3:
+
+```yaml
+# chat-app-backend/src/test/resources/application.yaml
+chat:
+  media:
+    provider: S3
+```
+
+So you must register `S3ObjectStorageProvider`. Same pattern appears in `MessageHistoryServiceIntegrationTest`.
+
+## Other annotations and setup
+
+### `@DirtiesContext`
+
+Marks the Spring context dirty after this class so state doesn’t leak between integration tests (shared patterns, schema changes, etc.).
+
+### `@AutoConfigureTestDatabase(replace = Replace.NONE)`
+
+By default, `@DataJpaTest` replaces your datasource with its own embedded DB. `Replace.NONE` keeps **your** datasource config — here, the isolated H2 from `@DynamicPropertySource`.
+
+### `@DynamicPropertySource` + `IsolatedH2DataSourceSupport`
+
+Gives each test class its **own in-memory database**:
+
+```java
+// chat-app-backend/src/test/java/com/hello/chatapp/support/IsolatedH2DataSourceSupport.java
+public static void register(DynamicPropertyRegistry registry, Class<?> testClass) {
+   registry.add("spring.datasource.url",
+      () -> "jdbc:h2:mem:" + testClass.getSimpleName() + H2_OPTIONS);
+```
+
+So this class uses `jdbc:h2:mem:GroupArchiveHistoryIntegrationTest`, avoiding collisions with other integration tests.
+
+### `RealtimeStubConfig` (inner `@TestConfiguration`)
+
+`GroupService` needs `GroupProfileRealtimePublisher`; `GroupMembershipService` needs `GroupMembershipRealtimePublisher`. Those normally tie into WebSocket/STOMP, which `@DataJpaTest` doesn’t load. The inner config supplies **Mockito mocks** so archive/leave logic can run without realtime infrastructure:
+
+```java
+// GroupArchiveHistoryIntegrationTest.java
+@TestConfiguration
+static class RealtimeStubConfig {
+
+   /** No-op membership publisher for leave/archive events. */
+   @Bean
+   GroupMembershipRealtimePublisher groupMembershipRealtimePublisher() {
+      return mock(GroupMembershipRealtimePublisher.class);
+   }
+
+   /** No-op profile publisher for name/description updates. */
+   @Bean
+   GroupProfileRealtimePublisher groupProfileRealtimePublisher() {
+      return mock(GroupProfileRealtimePublisher.class);
+   }
+}
+```
+
+**Import rule of thumb for stubs:** if a required bean has heavy infrastructure (WebSocket, S3 client, RabbitMQ), either mock it in `@TestConfiguration` or import a lightweight real implementation — whichever is smaller and still lets the code under test run.
+
+## Mental model for writing similar tests
+
+1. Start with `@DataJpaTest`.
+2. List services you’ll call → `@Import` them.
+3. For each imported class, trace constructor dependencies; add those to `@Import` too.
+4. Replace infrastructure you don’t want (realtime, etc.) with `@TestConfiguration` mocks.
+5. If you hit storage/mapper code, expect `MediaStorageConfig` + `ObjectStorageProviderRegistry` + the provider matching `chat.media.provider` in test `application.yaml`.
+6. Use `IsolatedH2DataSourceSupport` + `@DirtiesContext` for isolation.
+7. Name the class `*IntegrationTest` so Failsafe picks it up.

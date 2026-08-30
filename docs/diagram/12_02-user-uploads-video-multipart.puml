@@ -1,0 +1,104 @@
+@startuml
+
+header "Media upload: large VIDEO (MULTIPART)"
+footer "Source: docs/logs/12_user-uploads-a-video-59mb.md\n~59 MB / recommendedPartSize 10 MB → 6 parts; FE batch size = 4"
+
+actor User
+participant "Browser\n(ChatArea)" as Browser
+participant "Backend\n(/api/media/messages)" as Backend
+database "PostgreSQL\n(media_uploads,\nmessages, message_media)" as DB
+participant "MinIO\n(chat-media)" as MinIO
+participant "Realtime\n(STOMP / RabbitMQ)" as Realtime
+
+note over User, Realtime
+  Example: GROUP chat, messageType=VIDEO, video-59mb.mp4 (~59,453,303 bytes).
+  sizeBytes > multipart-threshold (10 MB) → uploadStrategy=MULTIPART.
+  Prepare does **not** return multipartUploadId or presignedUrl;
+  provider upload id is created lazily on the first /parts call.
+end note
+
+== 0. Local selection (no network) ==
+
+User -> Browser: Attach → select video → Send
+Browser -> Browser: Create local pending message
+
+== 1. Prepare upload session ==
+
+Browser -> Backend: POST /prepare\n{ chatScope, groupId, messageType: VIDEO,\n  attachments: [{ filename, mimeType, sizeBytes }] }
+Backend -> Backend: validate scope / SEND_MESSAGES,\nexactly 1 VIDEO attachment, size ≤ max video
+Backend -> Backend: resolveUploadStrategy → MULTIPART
+Backend -> DB: INSERT media_uploads\n(status=UPLOAD_INITIATED,\n multipart_upload_id=null)
+Backend --> Browser: uploadSessionId +\nattachment[{ attachmentId, objectKey,\n  uploadStrategy: MULTIPART,\n  presignedUrl: null,\n  recommendedPartSize: 10485760,\n  completeBy }]
+
+note over Browser
+  Slice file by recommendedPartSize:
+  ceil(59MB / 10MB) = 6 parts.
+  MULTIPART_PART_URL_BATCH_SIZE = 4
+  → batch A: parts 1–4, batch B: parts 5–6.
+end note
+
+== 2a. Part URLs batch 1 (creates multipart upload) ==
+
+Browser -> Backend: POST .../attachments/{attachmentId}/parts\n{ partNumbers: [1,2,3,4] }
+Backend -> Backend: require MULTIPART strategy
+Backend -> MinIO: createMultipartUpload(objectKey)
+MinIO --> Backend: multipartUploadId
+Backend -> DB: save multipart_upload_id;\nstatus = UPLOAD_IN_PROGRESS
+Backend -> MinIO: sign part PUT URLs\n(uploadId + partNumber + SigV4)\n(provider.buildMultipartUploadPartUrl(...))
+MinIO --> Backend: presignedUrl for each part
+Backend --> Browser: { multipartUploadId, parts[{ partNumber, presignedUrl }] }
+
+== 2b. Upload parts 1–4 (parallel within batch) ==
+
+par PUT part 1
+  Browser -> MinIO: PUT part URL #1 (bytes 0–10MB)
+  MinIO --> Browser: ETag
+else PUT part 2
+  Browser -> MinIO: PUT part URL #2
+  MinIO --> Browser: ETag
+else PUT part 3
+  Browser -> MinIO: PUT part URL #3
+  MinIO --> Browser: ETag
+else PUT part 4
+  Browser -> MinIO: PUT part URL #4
+  MinIO --> Browser: ETag
+end
+
+== 3a. Part URLs batch 2 (reuses existing multipartUploadId) ==
+
+Browser -> Backend: POST .../parts\n{ partNumbers: [5,6] }
+Backend -> Backend: ensureMultipartUploadInitialized()\n(id already set → skip create)
+Backend -> MinIO: sign part PUT URLs for 5 & 6
+MinIO --> Backend: presignedUrl for each part
+Backend --> Browser: { multipartUploadId, parts[5,6] }
+
+== 3b. Upload parts 5–6 (parallel within batch) ==
+
+par PUT part 5
+  Browser -> MinIO: PUT part URL #5
+  MinIO --> Browser: ETag
+else PUT part 6
+  Browser -> MinIO: PUT part URL #6
+  MinIO --> Browser: ETag
+end
+
+== 4. Complete session → assemble object + final message ==
+
+Browser -> Backend: POST .../upload-sessions/{id}/complete\n{ attachments: [{ attachmentId,\n  parts: [{ partNumber, etag } × 6] }] }
+Backend -> Backend: re-check SEND_MESSAGES;\nrequire parts metadata + stored multipartUploadId
+Backend -> MinIO: completeMultipartUpload(\n  objectKey, multipartUploadId, ordered parts)
+Backend -> MinIO: objectExists(objectKey)
+Backend -> Backend: malwareScanService.assertClean()
+Backend -> DB: media_uploads → UPLOAD_COMPLETED
+Backend -> DB: INSERT message + message_media\n(VIDEO, PROCESSING_PENDING, SCAN_PASSED)
+Backend -> DB: media_uploads → UPLOAD_SESSION_COMPLETED
+Backend --> Browser: MessageResponse\n(contentUrl, status=PROCESSING_PENDING)
+
+== 5. After commit (async side effects) ==
+
+Backend -> Realtime: publish MessageResponse to group topic
+Backend -> Backend: enqueue media processing\n(VIDEO → derivatives / metadata later)
+
+Browser -> User: Replace pending placeholder\nwith delivered video message
+
+@enduml
