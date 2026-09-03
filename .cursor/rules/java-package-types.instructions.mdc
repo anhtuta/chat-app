@@ -1,5 +1,5 @@
 ---
-description: "Package placement for Java types: entity, dto, model, and constant (enums)."
+description: "Package placement for Java types: entity, dto, model, constant, and util."
 globs: **/*.java
 alwaysApply: false
 ---
@@ -14,9 +14,11 @@ Place Java types by role:
 | `dto` | Controller-layer API request and response objects |
 | `model` | Service-layer data objects (records/classes), not enums |
 | `constant` | All enums, plus other shared constants |
+| `util` | Stateless helpers with only static methods (no instance fields; private constructor) |
 
 Rules:
 
-- Do **not** put enums in `model`, `entity`, `dto`, or `service`.
+- Do **not** put enums in `model`, `entity`, `dto`, `service`, or `util`.
 - Do **not** use a `domain` package for these roles.
 - Keep behavior (services, handlers, loaders) in `service` (or feature packages like `job` / `storage`); keep data shapes in `entity` / `dto` / `model` / `constant` as above.
+- Put stateless, side-effect-free helpers in `util`, not in `service`. Injected `@Singleton` collaborators stay in `service` even when they have no mutable fields.

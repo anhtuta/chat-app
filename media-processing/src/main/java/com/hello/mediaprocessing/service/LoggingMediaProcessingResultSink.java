@@ -21,13 +21,15 @@ public class LoggingMediaProcessingResultSink implements MediaProcessingResultSi
     @Override
     public void accept(MediaProcessingResult result) {
         logger.info(
-                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} metadata={}",
+                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} transcodedObjectKey={} reusedOriginal={} metadata={}",
                 result.jobId(),
                 result.mediaId(),
                 result.messageId(),
                 result.status(),
                 result.completedTargets(),
                 result.pendingTargets(),
+                result.transcodedObjectKey(),
+                result.reusedOriginalObject(),
                 result.videoMetadata());
     }
 }

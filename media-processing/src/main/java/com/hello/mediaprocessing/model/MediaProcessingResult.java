@@ -15,6 +15,8 @@ import java.util.Set;
  * @param videoMetadata extracted video metadata for the processed source
  * @param completedTargets targets completed during the current worker execution
  * @param pendingTargets targets still waiting on later phases
+ * @param transcodedObjectKey object key of the canonical playback MP4, or {@code null} when transcode did not run
+ * @param reusedOriginalObject {@code true} when the original upload is already the playback asset
  */
 public record MediaProcessingResult(
         String jobId,
@@ -23,5 +25,7 @@ public record MediaProcessingResult(
         MediaProcessingJobStatus status,
         VideoMetadata videoMetadata,
         Set<ProcessingTarget> completedTargets,
-        Set<ProcessingTarget> pendingTargets) {
+        Set<ProcessingTarget> pendingTargets,
+        String transcodedObjectKey,
+        boolean reusedOriginalObject) {
 }

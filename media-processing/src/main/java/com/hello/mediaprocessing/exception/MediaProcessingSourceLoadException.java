@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.service;
+package com.hello.mediaprocessing.exception;
 
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 

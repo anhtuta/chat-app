@@ -5,12 +5,21 @@ import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.constant.VideoTranscodeMode;
+import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
+import com.hello.mediaprocessing.exception.VideoMetadataExtractionException;
+import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
 import com.hello.mediaprocessing.model.VideoMetadata;
+import com.hello.mediaprocessing.model.VideoTranscodeResult;
+import com.hello.mediaprocessing.storage.ObjectStorageUploadException;
+import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
+import com.hello.mediaprocessing.util.VideoTranscodeObjectKeys;
 import jakarta.inject.Singleton;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -18,7 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Validates, deduplicates, and advances processing jobs through the initial worker lifecycle.
+ * Validates, deduplicates, and advances processing jobs through metadata extraction and video transcode.
  */
 @Singleton
 public class MediaProcessingJobHandler {
@@ -29,6 +38,8 @@ public class MediaProcessingJobHandler {
     private final MediaProcessingJobDeduplicationStore deduplicationStore;
     private final MediaProcessingSourceLoader sourceLoader;
     private final VideoMetadataExtractor videoMetadataExtractor;
+    private final VideoTranscoder videoTranscoder;
+    private final ObjectStorageUploaderRegistry uploaderRegistry;
     private final MediaProcessingResultSink resultSink;
     private final Validator validator;
 
@@ -37,12 +48,16 @@ public class MediaProcessingJobHandler {
             MediaProcessingJobDeduplicationStore deduplicationStore,
             MediaProcessingSourceLoader sourceLoader,
             VideoMetadataExtractor videoMetadataExtractor,
+            VideoTranscoder videoTranscoder,
+            ObjectStorageUploaderRegistry uploaderRegistry,
             MediaProcessingResultSink resultSink,
             Validator validator) {
         this.workerProperties = workerProperties;
         this.deduplicationStore = deduplicationStore;
         this.sourceLoader = sourceLoader;
         this.videoMetadataExtractor = videoMetadataExtractor;
+        this.videoTranscoder = videoTranscoder;
+        this.uploaderRegistry = uploaderRegistry;
         this.resultSink = resultSink;
         this.validator = validator;
     }
@@ -95,7 +110,9 @@ public class MediaProcessingJobHandler {
                             MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
                             null,
                             Set.of(),
-                            pendingTargets));
+                            pendingTargets,
+                            null,
+                            false));
                     return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
                 }
 
@@ -107,14 +124,37 @@ public class MediaProcessingJobHandler {
 
                 Set<ProcessingTarget> completedTargets = EnumSet.noneOf(ProcessingTarget.class);
                 VideoMetadata videoMetadata = null;
+                String transcodedObjectKey = null;
+                boolean reusedOriginalObject = false;
 
-                if (actionableTargets.contains(ProcessingTarget.METADATA)) {
+                if (actionableTargets.contains(ProcessingTarget.METADATA)
+                        || actionableTargets.contains(ProcessingTarget.TRANSCODE)) {
                     logTransition(
                             MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
                             job,
                             "actionableTargets=" + actionableTargets);
                     videoMetadata = extractVideoMetadata(job, source);
-                    completedTargets.add(ProcessingTarget.METADATA);
+                    if (actionableTargets.contains(ProcessingTarget.METADATA)) {
+                        completedTargets.add(ProcessingTarget.METADATA);
+                    }
+                }
+
+                if (actionableTargets.contains(ProcessingTarget.TRANSCODE)) {
+                    VideoTranscodeResult transcodeResult = videoTranscoder.transcode(
+                            source.getLocalFile(),
+                            source.getWorkspaceDirectory().resolve("playback.mp4"),
+                            videoMetadata);
+                    reusedOriginalObject = transcodeResult.mode() == VideoTranscodeMode.REUSE_ORIGINAL;
+                    if (reusedOriginalObject) {
+                        transcodedObjectKey = job.objectKey();
+                    } else {
+                        verifyTranscodedFile(transcodeResult.outputFile());
+                        transcodedObjectKey = VideoTranscodeObjectKeys.derive(job.objectKey());
+                        uploaderRegistry
+                                .getUploader(job.storageProvider())
+                                .upload(job.bucket(), transcodedObjectKey, transcodeResult.outputFile(), "video/mp4");
+                    }
+                    completedTargets.add(ProcessingTarget.TRANSCODE);
                 }
 
                 Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
@@ -129,19 +169,25 @@ public class MediaProcessingJobHandler {
                         finalStatus,
                         videoMetadata,
                         Set.copyOf(completedTargets),
-                        Set.copyOf(pendingTargets)));
+                        Set.copyOf(pendingTargets),
+                        transcodedObjectKey,
+                        reusedOriginalObject));
                 logTransition(
                         finalStatus,
                         job,
                         "completedTargets=" + completedTargets + "; pendingTargets=" + pendingTargets +
-                                (videoMetadata == null ? "" : "; mimeType=" + videoMetadata.detectedMimeType()));
+                                (videoMetadata == null ? "" : "; mimeType=" + videoMetadata.detectedMimeType()) +
+                                (transcodedObjectKey == null ? "" : "; transcodedObjectKey=" + transcodedObjectKey));
                 if (finalStatus == MediaProcessingJobStatus.MEDIA_READY) {
                     deduplicationStore.markCompleted(job.jobId());
                     terminalSuccess = true;
                 }
                 return finalStatus;
             }
-        } catch (MediaProcessingSourceLoadException | VideoMetadataExtractionException e) {
+        } catch (MediaProcessingSourceLoadException
+                | VideoMetadataExtractionException
+                | VideoTranscodeException
+                | ObjectStorageUploadException e) {
             logTransition(
                     MediaProcessingJobStatus.PROCESSING_FAILED,
                     job,
@@ -160,7 +206,7 @@ public class MediaProcessingJobHandler {
      * @return targets that can be completed during the current handler execution
      */
     private Set<ProcessingTarget> resolveImplementedTargets() {
-        return EnumSet.of(ProcessingTarget.METADATA);
+        return EnumSet.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
     }
 
     /**
@@ -241,6 +287,22 @@ public class MediaProcessingJobHandler {
     }
 
     /**
+     * Probes a derived playback file so empty or corrupt ffmpeg output is not uploaded.
+     *
+     * @param transcodedFile local playback MP4 produced by ffmpeg
+     */
+    private void verifyTranscodedFile(Path transcodedFile) {
+        try {
+            videoMetadataExtractor.extract(transcodedFile, "video/mp4");
+        } catch (VideoMetadataExtractionException e) {
+            throw new VideoTranscodeException(
+                    MediaProcessingFailureReason.TRANSCODE_FAILED,
+                    "Transcoded playback file failed verification: " + transcodedFile,
+                    e);
+        }
+    }
+
+    /**
      * Maps worker exceptions to the normalized failure reason names used in logs and future result contracts.
      *
      * @param exception failure thrown during processing
@@ -249,6 +311,12 @@ public class MediaProcessingJobHandler {
     private String resolveFailureReason(Exception exception) {
         if (exception instanceof MediaProcessingSourceLoadException sourceLoadException) {
             return sourceLoadException.getFailureReason().name();
+        }
+        if (exception instanceof VideoTranscodeException transcodeException) {
+            return transcodeException.getFailureReason().name();
+        }
+        if (exception instanceof ObjectStorageUploadException uploadException) {
+            return uploadException.getFailureReason().name();
         }
         return MediaProcessingFailureReason.METADATA_EXTRACTION_FAILED.name();
     }

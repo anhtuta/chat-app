@@ -1,4 +1,4 @@
-package com.hello.mediaprocessing.service;
+package com.hello.mediaprocessing.exception;
 
 /**
  * Signals that ffprobe-based metadata extraction could not produce a usable video description.

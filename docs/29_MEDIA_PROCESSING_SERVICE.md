@@ -568,22 +568,22 @@ Recommended path:
   - or heuristic based on black-frame avoidance
 - Write poster object metadata and storage pointers back to the shared persistence/API boundary.
 - Ensure `chat-app-backend` can later expose this poster to the frontend as the default pre-play preview.
+- Phase 6 (transcode) does not depend on this phase and was implemented first.
 
-### Phase 6 - First usable transcoded playback asset
+### Phase 6 - First usable transcoded playback asset - **Done**
 
-- Produce a normalized/transcoded asset used for both chat playback and download.
-- Input allowlist:
-  - MP4, MOV, WebM only
-- Choose the initial output target:
-  - one normalized MP4/H.264 + AAC file
-- Optimize for:
-  - reliable browser playback
-  - smaller bandwidth than the original upload
-  - acceptable startup time for chat use
-- Store the derived object and expose a field that `chat-app-backend` can map to both playback and download URLs (`transcodedUrl` / `contentUrl` after switch).
-- Fast path: if ffprobe shows the source is already H.264 + AAC in MP4, do not write a duplicate object; that object stays canonical.
-- After the transcoded (or canonical) object is verified and the backend has switched pointers, delete the original upload when it is a different object.
-- If transcode or verification fails, do not delete the original.
+- What changed:
+  - Worker can complete the `TRANSCODE` target independently of poster generation.
+  - Input allowlist is enforced at transcode time: MP4, MOV, WebM only.
+  - `VideoTranscodePlanner` chooses reuse, remux, or re-encode:
+    - reuse the original object when it is already H.264 + AAC MP4
+    - remux to MP4 when codecs are already chat-friendly but the container is not
+    - otherwise re-encode to one H.264 + AAC MP4 via ffmpeg (`libx264`, AAC, `+faststart`)
+  - Derived files are uploaded to MinIO under `{stem}.transcoded.mp4` and reported on `MediaProcessingResult.transcodedObjectKey`.
+  - Stateless key derivation lives in `util.VideoTranscodeObjectKeys`.
+  - ffmpeg settings are configurable (`ffmpeg-path`, timeout, CRF, preset, audio bitrate).
+  - `video-transcode` feature flag is enabled in `application.properties`.
+  - Original objects are **not** deleted in this phase; pointer switch + delete remain Phase 7.
 
 ### Phase 7 - Chat-backend integration contract
 
