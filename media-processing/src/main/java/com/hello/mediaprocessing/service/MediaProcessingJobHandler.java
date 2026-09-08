@@ -9,6 +9,7 @@ import com.hello.mediaprocessing.constant.VideoTranscodeMode;
 import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
 import com.hello.mediaprocessing.exception.VideoMetadataExtractionException;
 import com.hello.mediaprocessing.exception.VideoPosterGenerationException;
+import com.hello.mediaprocessing.exception.VideoRenditionGenerationException;
 import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
@@ -18,6 +19,7 @@ import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import com.hello.mediaprocessing.storage.ObjectStorageUploadException;
 import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
 import com.hello.mediaprocessing.util.VideoPosterObjectKeys;
+import com.hello.mediaprocessing.util.VideoRenditionObjectKeys;
 import com.hello.mediaprocessing.util.VideoTranscodeObjectKeys;
 import jakarta.inject.Singleton;
 import jakarta.validation.ConstraintViolation;
@@ -44,6 +46,7 @@ public class MediaProcessingJobHandler {
     private final VideoMetadataExtractor videoMetadataExtractor;
     private final VideoPosterGenerator videoPosterGenerator;
     private final VideoTranscoder videoTranscoder;
+    private final VideoMobileRenditionGenerator videoMobileRenditionGenerator;
     private final ObjectStorageUploaderRegistry uploaderRegistry;
     private final MediaProcessingResultSink resultSink;
     private final Validator validator;
@@ -55,6 +58,7 @@ public class MediaProcessingJobHandler {
             VideoMetadataExtractor videoMetadataExtractor,
             VideoPosterGenerator videoPosterGenerator,
             VideoTranscoder videoTranscoder,
+            VideoMobileRenditionGenerator videoMobileRenditionGenerator,
             ObjectStorageUploaderRegistry uploaderRegistry,
             MediaProcessingResultSink resultSink,
             Validator validator) {
@@ -64,6 +68,7 @@ public class MediaProcessingJobHandler {
         this.videoMetadataExtractor = videoMetadataExtractor;
         this.videoPosterGenerator = videoPosterGenerator;
         this.videoTranscoder = videoTranscoder;
+        this.videoMobileRenditionGenerator = videoMobileRenditionGenerator;
         this.uploaderRegistry = uploaderRegistry;
         this.resultSink = resultSink;
         this.validator = validator;
@@ -138,6 +143,7 @@ public class MediaProcessingJobHandler {
                 String transcodedObjectKey = null;
                 Long canonicalObjectSize = null;
                 boolean reusedOriginalObject = false;
+                Path canonicalLocalFile = null;
 
                 if (actionableTargets.contains(ProcessingTarget.METADATA)
                         || actionableTargets.contains(ProcessingTarget.THUMBNAIL)
@@ -181,6 +187,7 @@ public class MediaProcessingJobHandler {
                     if (reusedOriginalObject) {
                         transcodedObjectKey = job.objectKey();
                         canonicalObjectSize = source.getObjectSize();
+                        canonicalLocalFile = source.getLocalFile();
                     } else {
                         verifyTranscodedFile(transcodeResult.outputFile());
                         transcodedObjectKey = VideoTranscodeObjectKeys.derive(job.objectKey());
@@ -188,8 +195,10 @@ public class MediaProcessingJobHandler {
                                 .getUploader(job.storageProvider())
                                 .upload(job.bucket(), transcodedObjectKey, transcodeResult.outputFile(), "video/mp4");
                         canonicalObjectSize = uploadResult.objectSize();
+                        canonicalLocalFile = transcodeResult.outputFile();
                     }
                     completedTargets.add(ProcessingTarget.TRANSCODE);
+                    maybeGenerateMobileRendition(job, videoMetadata, canonicalObjectSize, canonicalLocalFile);
                 }
 
                 Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
@@ -397,5 +406,72 @@ public class MediaProcessingJobHandler {
             return uploadException.getFailureReason().name();
         }
         return MediaProcessingFailureReason.METADATA_EXTRACTION_FAILED.name();
+    }
+
+    /**
+     * Attempts the first smaller MP4 rendition and logs failures without failing the canonical playback result.
+     *
+     * @param job processing job currently being handled
+     * @param sourceMetadata probed source metadata for skip decisions
+     * @param canonicalObjectSize uploaded canonical playback size
+     * @param canonicalLocalFile local canonical playback file used as rendition input
+     */
+    private void maybeGenerateMobileRendition(
+            MediaProcessingJobMessage job,
+            VideoMetadata sourceMetadata,
+            Long canonicalObjectSize,
+            Path canonicalLocalFile) {
+        if (!workerProperties.getFeatureFlags().isVideoMobileRenditions()) {
+            return;
+        }
+        if (canonicalObjectSize == null || canonicalLocalFile == null) {
+            logger.warn(
+                    "Skipping mobile rendition jobId={} mediaId={} because canonical playback details are incomplete",
+                    job.jobId(),
+                    job.mediaId());
+            return;
+        }
+
+        try {
+            Path renditionOutputFile = canonicalLocalFile.getParent().resolve("playback.480p.mp4");
+            java.util.Optional<Path> generatedFile = videoMobileRenditionGenerator.generate(
+                    canonicalLocalFile,
+                    renditionOutputFile,
+                    sourceMetadata,
+                    canonicalObjectSize);
+            if (generatedFile.isEmpty()) {
+                logger.info(
+                        "Skipped mobile rendition jobId={} mediaId={} objectKey={} reason=not-needed",
+                        job.jobId(),
+                        job.mediaId(),
+                        job.objectKey());
+                return;
+            }
+
+            verifyTranscodedFile(generatedFile.get());
+            String renditionObjectKey = VideoRenditionObjectKeys.deriveHeight(job.objectKey(), 480);
+            ObjectStorageUploadResult uploadResult = uploaderRegistry.getUploader(job.storageProvider())
+                    .upload(job.bucket(), renditionObjectKey, generatedFile.get(), "video/mp4");
+            logger.info(
+                    "Generated mobile rendition jobId={} mediaId={} objectKey={} sizeBytes={}",
+                    job.jobId(),
+                    job.mediaId(),
+                    uploadResult.objectKey(),
+                    uploadResult.objectSize());
+        } catch (VideoRenditionGenerationException e) {
+            logger.warn(
+                    "Mobile rendition generation failed jobId={} mediaId={} reason={} message={}",
+                    job.jobId(),
+                    job.mediaId(),
+                    e.getFailureReason(),
+                    e.getMessage());
+        } catch (ObjectStorageUploadException e) {
+            logger.warn(
+                    "Mobile rendition upload failed jobId={} mediaId={} reason={} message={}",
+                    job.jobId(),
+                    job.mediaId(),
+                    MediaProcessingFailureReason.RENDITION_UPLOAD_FAILED,
+                    e.getMessage());
+        }
     }
 }

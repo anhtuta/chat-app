@@ -703,10 +703,13 @@ Recommended path:
      - naming direction for the later implementation step:
        - keep the current canonical MP4 untouched
        - add one sibling derived object for the mobile rendition, for example `{stem}.480p.mp4`
-  2. Produce secondary renditions in `media-processing-service`
-     - generate the chosen MP4 renditions after the canonical transcode succeeds
-     - store them with predictable object keys and metadata
-     - keep failures isolated so the canonical MP4 can still be `MEDIA_READY` even if a smaller secondary rendition fails
+  2. Produce secondary renditions in `media-processing-service` - **Done**
+     - the worker now has an optional secondary-rendition step after canonical transcode succeeds
+     - the first implementation generates one smaller sibling object: `{stem}.480p.mp4`
+     - the rendition stays MP4/H.264/AAC and is derived from the canonical playback asset, not from a separate client upload path
+     - generation is skipped when the source is already `<= 480p`, metadata is incomplete, or the canonical MP4 is too small to justify the extra derivative
+     - failures in this optional step are logged but do **not** fail the canonical transcode result; the main MP4 can still reach `MEDIA_READY`
+     - rollout stays behind a dedicated worker feature flag until task 3 exposes multiple sources to the backend/frontend contract
   3. Extend the backend/frontend contract for multiple sources
      - keep `playbackUrl` as the default source for simple clients
      - add an optional structured list of video sources/renditions for smarter clients
