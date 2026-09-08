@@ -673,15 +673,32 @@ Recommended path:
 
 ### Phase 9 - Adaptive/mobile-friendly video outputs
 
-- Add lower-resolution renditions for constrained networks and mobile devices.
-- Decide whether the next step is:
-  - multiple MP4 renditions first
-  - or HLS directly
-- Define the initial rendition ladder, for example:
-  - 240p
-  - 480p
-  - 720p
-- Decide how the frontend should choose low-resolution playback by default on mobile or poor networks.
+- This phase should be split into smaller tasks. Keep it focused on additional MP4 renditions only.
+- Do **not** add HLS in this phase; HLS stays Phase 10.
+- Suggested order:
+  1. Define the first rendition strategy
+     - choose a small fixed MP4 ladder for v1, for example:
+       - 240p
+       - 480p
+       - optional 720p only if source size/quality justifies it
+     - define video/audio encode settings, max dimensions, and when each rendition is skipped
+     - keep the existing canonical MP4 as the stable download/fallback asset
+  2. Produce secondary renditions in `media-processing-service`
+     - generate the chosen MP4 renditions after the canonical transcode succeeds
+     - store them with predictable object keys and metadata
+     - keep failures isolated so the canonical MP4 can still be `MEDIA_READY` even if a smaller secondary rendition fails
+  3. Extend the backend/frontend contract for multiple sources
+     - keep `playbackUrl` as the default source for simple clients
+     - add an optional structured list of video sources/renditions for smarter clients
+     - include enough metadata per rendition for selection, such as resolution and approximate bitrate or file size
+  4. Add frontend default-selection rules
+     - decide how the client chooses a lower-resolution source on mobile or poor networks
+     - start with simple heuristics and no manual quality switch if that keeps scope smaller
+     - keep fallback behavior straightforward: if rendition selection is unavailable, play `playbackUrl`
+- Exit criteria for this phase:
+  - the worker can produce at least one smaller MP4 rendition
+  - the backend can expose that rendition without breaking old clients
+  - the frontend can prefer a smaller source when conditions call for it
 
 ### Phase 10 - Adaptive streaming
 
