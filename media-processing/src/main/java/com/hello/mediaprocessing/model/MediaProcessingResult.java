@@ -5,6 +5,8 @@ import com.hello.mediaprocessing.constant.ProcessingTarget;
 
 import java.util.Set;
 
+import io.micronaut.serde.annotation.Serdeable;
+
 /**
  * Represents the normalized worker output that a later integration phase can send back to the backend.
  *
@@ -18,6 +20,7 @@ import java.util.Set;
  * @param transcodedObjectKey object key of the canonical playback MP4, or {@code null} when transcode did not run
  * @param reusedOriginalObject {@code true} when the original upload is already the playback asset
  */
+@Serdeable
 public record MediaProcessingResult(
         String jobId,
         Long messageId,

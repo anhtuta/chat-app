@@ -1,8 +1,11 @@
 package com.hello.mediaprocessing.constant;
 
+import io.micronaut.serde.annotation.Serdeable;
+
 /**
  * Enumerates the concrete processing outputs that a worker may produce for a media object.
  */
+@Serdeable
 public enum ProcessingTarget {
     THUMBNAIL,
     PREVIEW,

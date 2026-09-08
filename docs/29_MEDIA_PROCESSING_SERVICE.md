@@ -380,6 +380,12 @@ sequenceDiagram
 
 The service should primarily be queue/outbox driven. User-facing APIs stay in `chat-app-backend`.
 
+#### Liveness
+
+- `GET /health`
+  - Unauthenticated process-up check
+  - Response: `{"status":"UP"}`
+
 #### Processing Job Message
 
 Payload fields:
@@ -584,6 +590,15 @@ Recommended path:
   - ffmpeg settings are configurable (`ffmpeg-path`, timeout, CRF, preset, audio bitrate).
   - `video-transcode` feature flag is enabled in `application.properties`.
   - Original objects are **not** deleted in this phase; pointer switch + delete remain Phase 7.
+- Manual test without `chat-app-backend`:
+  - Put an MP4, MOV, or WebM object in MinIO (default bucket `chat-media`).
+  - Start the worker with ffmpeg/ffprobe on `PATH`. RabbitMQ is not required while `media-processing.worker.enabled=false`.
+  - Enable the local trigger: `media-processing.local-trigger.enabled=true` (keep this off outside local testing).
+  - `POST http://localhost:9020/local/media-processing/jobs` with `{"objectKey":"path/to/video.mov"}`.
+  - Optional body fields: `bucket`, `requestedMimeType`, `processingTargets`, `jobId`, `messageId`, `mediaId`.
+  - Response includes worker `status` plus `transcodedObjectKey` when the sink emitted a result.
+  - Confirm the derived object in MinIO (`{stem}.transcoded.mp4`) unless the source was already H.264 + AAC MP4 (reuse).
+  - This endpoint is not a user-facing chat API.
 
 ### Phase 7 - Chat-backend integration contract
 

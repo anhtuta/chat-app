@@ -134,9 +134,10 @@ public class MediaProcessingJobHandler {
                             job,
                             "actionableTargets=" + actionableTargets);
                     videoMetadata = extractVideoMetadata(job, source);
-                    if (actionableTargets.contains(ProcessingTarget.METADATA)) {
-                        completedTargets.add(ProcessingTarget.METADATA);
-                    }
+                }
+
+                if (actionableTargets.contains(ProcessingTarget.METADATA)) {
+                    completedTargets.add(ProcessingTarget.METADATA);
                 }
 
                 if (actionableTargets.contains(ProcessingTarget.TRANSCODE)) {
