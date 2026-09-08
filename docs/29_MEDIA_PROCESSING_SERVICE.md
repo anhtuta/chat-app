@@ -685,13 +685,24 @@ Recommended path:
 - This phase should be split into smaller tasks. Keep it focused on additional MP4 renditions only.
 - Do **not** add HLS in this phase; HLS stays Phase 10.
 - Suggested order:
-  1. Define the first rendition strategy
-     - choose a small fixed MP4 ladder for v1, for example:
-       - 240p
-       - 480p
-       - optional 720p only if source size/quality justifies it
-     - define video/audio encode settings, max dimensions, and when each rendition is skipped
+  1. Define the first rendition strategy - **Done**
+     - v1 will produce exactly one additional mobile-friendly MP4 rendition: `480p`
+     - do not add `240p` or `720p` in the first rollout; one smaller rendition keeps Phase 9 narrow and easier to validate
      - keep the existing canonical MP4 as the stable download/fallback asset
+     - encoding profile for the first smaller rendition:
+       - container: MP4
+       - video codec: H.264
+       - audio codec: AAC when the source has audio
+       - max height: `480`
+       - width: scale proportionally, preserve aspect ratio, never upscale
+       - playback compatibility goals stay aligned with the existing canonical MP4 (`yuv420p`, fast-start headers)
+     - skip the smaller rendition when:
+       - the source or canonical MP4 is already `<= 480p`
+       - metadata is missing or too incomplete to scale safely
+       - the source is so short/small that the extra rendition would add complexity without meaningful bandwidth savings
+     - naming direction for the later implementation step:
+       - keep the current canonical MP4 untouched
+       - add one sibling derived object for the mobile rendition, for example `{stem}.480p.mp4`
   2. Produce secondary renditions in `media-processing-service`
      - generate the chosen MP4 renditions after the canonical transcode succeeds
      - store them with predictable object keys and metadata
