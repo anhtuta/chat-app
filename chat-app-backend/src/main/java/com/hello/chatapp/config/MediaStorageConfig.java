@@ -4,9 +4,12 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Register configuration properties for media storage.
+ * Registers media storage and processing-integration configuration.
  */
 @Configuration
-@EnableConfigurationProperties(MediaStorageProperties.class)
+@EnableConfigurationProperties({
+        MediaStorageProperties.class,
+        MediaProcessingIntegrationProperties.class
+})
 public class MediaStorageConfig {
 }

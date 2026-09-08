@@ -17,7 +17,9 @@ import io.micronaut.serde.annotation.Serdeable;
  * @param videoMetadata extracted video metadata for the processed source
  * @param completedTargets targets completed during the current worker execution
  * @param pendingTargets targets still waiting on later phases
+ * @param originalObjectKey source object key processed by the worker
  * @param transcodedObjectKey object key of the canonical playback MP4, or {@code null} when transcode did not run
+ * @param canonicalObjectSize size of the canonical playback object, or {@code null} when unavailable
  * @param reusedOriginalObject {@code true} when the original upload is already the playback asset
  */
 @Serdeable
@@ -29,6 +31,8 @@ public record MediaProcessingResult(
         VideoMetadata videoMetadata,
         Set<ProcessingTarget> completedTargets,
         Set<ProcessingTarget> pendingTargets,
+        String originalObjectKey,
         String transcodedObjectKey,
+        Long canonicalObjectSize,
         boolean reusedOriginalObject) {
 }

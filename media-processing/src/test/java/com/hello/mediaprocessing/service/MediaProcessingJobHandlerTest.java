@@ -236,6 +236,7 @@ class MediaProcessingJobHandlerTest {
      */
     @Test
     void handle_sourceMissing_marksProcessingFailed() {
+        CapturingResultSink resultSink = new CapturingResultSink();
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 new MediaProcessingWorkerProperties(),
                 new InMemoryMediaProcessingJobDeduplicationStore(),
@@ -243,12 +244,15 @@ class MediaProcessingJobHandlerTest {
                 new SuccessfulVideoMetadataExtractor(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
-                new NoopResultSink(),
+                resultSink,
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(resultSink.lastResult()).isNotNull();
+        assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(resultSink.lastResult().originalObjectKey()).isEqualTo("media/7/video/demo.mp4");
     }
 
     /**

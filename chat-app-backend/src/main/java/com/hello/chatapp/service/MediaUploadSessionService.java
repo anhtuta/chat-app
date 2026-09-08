@@ -474,8 +474,8 @@ public class MediaUploadSessionService {
 
     private MediaStatus resolveInitialMediaStatus(MessageType messageType) {
         return switch (messageType) {
-            case IMAGE, VIDEO -> MediaStatus.PROCESSING_PENDING;
-            case AUDIO, FILE -> MediaStatus.MEDIA_READY;
+            case VIDEO -> MediaStatus.PROCESSING_PENDING;
+            case IMAGE, AUDIO, FILE -> MediaStatus.MEDIA_READY;
             default -> MediaStatus.MEDIA_READY;
         };
     }
@@ -498,7 +498,7 @@ public class MediaUploadSessionService {
     private void scheduleAsyncProcessingAfterCommit(Message message) {
         Long messageId = Objects.requireNonNull(message.getId());
         MessageType messageType = message.getMessageType();
-        if (messageType != MessageType.IMAGE && messageType != MessageType.VIDEO) {
+        if (messageType != MessageType.VIDEO) {
             return;
         }
         AfterCommit.run(

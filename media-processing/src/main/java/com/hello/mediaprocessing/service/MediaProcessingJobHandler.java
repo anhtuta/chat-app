@@ -11,6 +11,7 @@ import com.hello.mediaprocessing.exception.VideoMetadataExtractionException;
 import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
+import com.hello.mediaprocessing.model.ObjectStorageUploadResult;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import com.hello.mediaprocessing.storage.ObjectStorageUploadException;
@@ -111,6 +112,8 @@ public class MediaProcessingJobHandler {
                             null,
                             Set.of(),
                             pendingTargets,
+                            job.objectKey(),
+                            null,
                             null,
                             false));
                     return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
@@ -125,6 +128,7 @@ public class MediaProcessingJobHandler {
                 Set<ProcessingTarget> completedTargets = EnumSet.noneOf(ProcessingTarget.class);
                 VideoMetadata videoMetadata = null;
                 String transcodedObjectKey = null;
+                Long canonicalObjectSize = null;
                 boolean reusedOriginalObject = false;
 
                 if (actionableTargets.contains(ProcessingTarget.METADATA)
@@ -148,12 +152,14 @@ public class MediaProcessingJobHandler {
                     reusedOriginalObject = transcodeResult.mode() == VideoTranscodeMode.REUSE_ORIGINAL;
                     if (reusedOriginalObject) {
                         transcodedObjectKey = job.objectKey();
+                        canonicalObjectSize = source.getObjectSize();
                     } else {
                         verifyTranscodedFile(transcodeResult.outputFile());
                         transcodedObjectKey = VideoTranscodeObjectKeys.derive(job.objectKey());
-                        uploaderRegistry
+                        ObjectStorageUploadResult uploadResult = uploaderRegistry
                                 .getUploader(job.storageProvider())
                                 .upload(job.bucket(), transcodedObjectKey, transcodeResult.outputFile(), "video/mp4");
+                        canonicalObjectSize = uploadResult.objectSize();
                     }
                     completedTargets.add(ProcessingTarget.TRANSCODE);
                 }
@@ -171,7 +177,9 @@ public class MediaProcessingJobHandler {
                         videoMetadata,
                         Set.copyOf(completedTargets),
                         Set.copyOf(pendingTargets),
+                        job.objectKey(),
                         transcodedObjectKey,
+                        canonicalObjectSize,
                         reusedOriginalObject));
                 logTransition(
                         finalStatus,
@@ -193,6 +201,18 @@ public class MediaProcessingJobHandler {
                     MediaProcessingJobStatus.PROCESSING_FAILED,
                     job,
                     "failureReason=" + resolveFailureReason(e) + ", message=" + e.getMessage());
+            resultSink.accept(new MediaProcessingResult(
+                    job.jobId(),
+                    job.messageId(),
+                    job.mediaId(),
+                    MediaProcessingJobStatus.PROCESSING_FAILED,
+                    null,
+                    Set.of(),
+                    Set.copyOf(resolveEnabledTargets(job)),
+                    job.objectKey(),
+                    null,
+                    null,
+                    false));
             return MediaProcessingJobStatus.PROCESSING_FAILED;
         } finally {
             if (!terminalSuccess) {

@@ -1242,6 +1242,8 @@ Phase-4 implementation note:
 
 ### Phase 5 - Temporary async media processing inside `chat-app-backend`
 
+> Superseded for video by `docs/29_MEDIA_PROCESSING_SERVICE.md` Phase 7: video jobs now publish to the Micronaut worker and return through an authenticated backend callback. Images use their original object as `MEDIA_READY` until real image processing is added in doc 29 Phase 12. The notes below describe the former temporary implementation.
+
 Implemented in `chat-app-backend`:
 
 - Enabled async execution in `AsyncConfig`

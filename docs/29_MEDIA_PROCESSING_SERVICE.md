@@ -327,7 +327,8 @@ sequenceDiagram
     Worker->>Storage: read original object
     Worker->>Storage: write derivatives + extracted metadata
     Worker->>Backend: POST internal media-processing callback\nstatus + derivative keys + metadata
-    Backend->>Backend: update media rows / message view
+    Backend->>Backend: lock media row + switch canonical object
+    Backend->>Storage: after commit, delete replaced original
     Backend->>Realtime: publish updated MessageResponse
     Realtime->>Clients: deliver refreshed media state
 ```
@@ -407,16 +408,28 @@ Payload fields:
   - `VIDEO_OCR`
   - `SPEECH_TO_TEXT`
 
-#### Processing Status Event
+#### Internal Processing Result Callback
 
-Payload fields:
+- `POST /api/internal/media-processing/results`
+- Header: `X-Media-Processing-Token`
+- Enabled only when `chat.media.processing.enabled=true`.
+- Payload fields:
 
+- `jobId`
 - `messageId`
 - `mediaId`
 - `status`
-- `changedFields`
-- `errorCode`
-- `occurredAt`
+- `videoMetadata`
+- `completedTargets`
+- `pendingTargets`
+- `originalObjectKey`
+- `transcodedObjectKey`
+- `canonicalObjectSize`
+- `reusedOriginalObject`
+- Successful response: HTTP `204`.
+- The endpoint locks the `MessageMedia` row, validates the stable `jobId` (`media-{mediaId}`) and source key, and applies callbacks idempotently.
+- `MEDIA_READY` requires the canonical object to exist before the row is switched.
+- This is a service-authenticated internal endpoint, not a user-facing API.
 
 #### Search Text Extracted Event
 
@@ -600,22 +613,38 @@ Recommended path:
   - Confirm the derived object in MinIO (`{stem}.transcoded.mp4`) unless the source was already H.264 + AAC MP4 (reuse).
   - This endpoint is not a user-facing chat API.
 
-### Phase 7 - Chat-backend integration contract
+### Phase 7 - Chat-backend integration contract - **Done**
 
-- Define how `media-processing-service` reports completed outputs back to the chat system.
-- Recommended first integration path:
-  - `media-processing-service` calls a narrow internal API in `chat-app-backend`
-  - `chat-app-backend` remains responsible for final DB updates that affect client-facing message payloads
-  - avoid direct database writes from `media-processing-service` in the first rollout
-- Update the shared contract so `chat-app-backend` can republish message updates after video processing finishes.
-- Ensure the backend can expose these fields to the frontend:
-  - poster thumbnail URL
-  - playback/download URL for the canonical video object (after success, this is the transcoded MP4, not the original MOV/WebM)
-  - duration
-  - width
-  - height
-  - processing status
-- After a successful switch, `contentUrl` and `transcodedUrl` may point at the same object; do not keep a second full-size original.
+- What changed in `chat-app-backend`:
+  - Replaced the temporary in-process `AsyncMediaProcessingService` placeholder with `RabbitMediaProcessingService`.
+  - After the final message transaction commits, the existing `MediaProcessingService.enqueueProcessing(messageId)` hook now publishes one `MediaProcessingJobMessage` per video attachment.
+  - Added durable RabbitMQ topology:
+    - exchange: `media.processing`
+    - queue: `media.processing.jobs`
+    - routing key: `media.processing.video`
+  - Job ids are stable per attachment (`media-{mediaId}`) for handler idempotency.
+  - Jobs currently request `METADATA` and `TRANSCODE`; poster remains Phase 5.
+  - Only video is queued in this rollout. Images are published as `MEDIA_READY` using their original object until Phase 12 adds real image derivatives.
+  - Added service-authenticated `POST /api/internal/media-processing/results`.
+  - Callback updates remain owned by `chat-app-backend`; the worker does not write the chat database.
+  - The callback takes a pessimistic lock on `MessageMedia`, updates duration/width/height/status, and verifies the canonical object exists before switching keys.
+  - On success, `objectKey` and `transcodedObjectKey` both identify the canonical MP4, so `contentUrl` and `transcodedUrl` resolve to the same file.
+  - The replaced original is deleted from MinIO only after the DB transaction commits. Cleanup failure is logged and leaves an orphan rather than breaking the canonical media row.
+  - Duplicate callbacks for an attachment already at `MEDIA_READY` return successfully without deleting or downgrading it. This handles a lost HTTP response followed by RabbitMQ redelivery after the original was deleted.
+  - The updated `MessageResponse` is republished through the existing realtime path after commit.
+- What changed in `media-processing-service`:
+  - Added `ChatBackendMediaProcessingResultSink`, enabled by `media-processing.callback.enabled=true`.
+  - The sink calls the backend synchronously with the shared token; callback transport failures escape the handler so RabbitMQ can redeliver.
+  - `MediaProcessingResult` now includes source key, canonical object size, canonical key, metadata, and reuse status.
+  - Processing failures are also reported to the callback so the backend can set `PROCESSING_FAILED`.
+  - The logging/local-test sink remains active when callback integration is disabled.
+- Configuration:
+  - Backend: `MEDIA_PROCESSING_ENABLED=true` and a non-default `MEDIA_PROCESSING_CALLBACK_TOKEN`.
+  - Worker: `MEDIA_PROCESSING_WORKER_ENABLED=true`, `MEDIA_PROCESSING_CALLBACK_ENABLED=true`, matching `MEDIA_PROCESSING_CALLBACK_TOKEN`, `CHAT_APP_BACKEND_URL`, and `RABBITMQ_URI`.
+  - Integration and the local manual trigger are disabled by default.
+- Current limitation:
+  - MinIO supports original deletion. The repository's S3 provider is still a placeholder and does not implement deletion.
+  - RabbitMQ publish is after commit but has no transactional outbox; the low-priority durable job/outbox work remains Phase 13.
 
 ### Phase 8 - Frontend video-player dependency contract
 

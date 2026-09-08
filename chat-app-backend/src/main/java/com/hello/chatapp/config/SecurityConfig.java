@@ -46,6 +46,8 @@ public class SecurityConfig {
                         .requestMatchers("/health").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        // Service-authenticated inside InternalMediaProcessingController.
+                        .requestMatchers("/api/internal/media-processing/**").permitAll()
                         // SPA entry points and static assets
                         .requestMatchers(
                                 "/", "/index.html", "/manifest.json", "/asset-manifest.json", "/favicon.ico",

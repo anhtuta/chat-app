@@ -91,6 +91,12 @@ chat:
     upload-session-ttl-minutes: ${CHAT_MEDIA_UPLOAD_SESSION_TTL_MINUTES:15}
     upload-url-ttl-minutes: ${CHAT_MEDIA_UPLOAD_URL_TTL_MINUTES:15}
     read-url-ttl-minutes: ${CHAT_MEDIA_READ_URL_TTL_MINUTES:60}
+    processing:
+      enabled: ${MEDIA_PROCESSING_ENABLED:false}
+      exchange: ${MEDIA_PROCESSING_EXCHANGE:media.processing}
+      queue: ${MEDIA_PROCESSING_QUEUE:media.processing.jobs}
+      routing-key: ${MEDIA_PROCESSING_ROUTING_KEY:media.processing.video}
+      callback-token: ${MEDIA_PROCESSING_CALLBACK_TOKEN:change-me-in-production}
     max-size:
       image-bytes: ${CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES:10485760}
       audio-bytes: ${CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES:52428800}

@@ -1,6 +1,7 @@
 package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.model.MediaProcessingResult;
+import io.micronaut.context.annotation.Requires;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Singleton;
 import org.slf4j.Logger;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
  * Logs worker results until a later phase introduces a real callback or persistence implementation.
  */
 @Singleton
+@Requires(property = "media-processing.callback.enabled", value = "false", defaultValue = "false")
 public class LoggingMediaProcessingResultSink implements MediaProcessingResultSink {
 
     private static final Logger logger = LoggerFactory.getLogger(LoggingMediaProcessingResultSink.class);
@@ -32,14 +34,16 @@ public class LoggingMediaProcessingResultSink implements MediaProcessingResultSi
             lastResultHolder.set(result);
         }
         logger.info(
-                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} transcodedObjectKey={} reusedOriginal={} metadata={}",
+                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} originalObjectKey={} transcodedObjectKey={} canonicalObjectSize={} reusedOriginal={} metadata={}",
                 result.jobId(),
                 result.mediaId(),
                 result.messageId(),
                 result.status(),
                 result.completedTargets(),
                 result.pendingTargets(),
+                result.originalObjectKey(),
                 result.transcodedObjectKey(),
+                result.canonicalObjectSize(),
                 result.reusedOriginalObject(),
                 result.videoMetadata());
     }
