@@ -58,7 +58,10 @@ class RabbitMediaProcessingServiceTest {
         assertThat(job.mediaId()).isEqualTo(20L);
         assertThat(job.objectKey()).isEqualTo("media/7/video/input.mov");
         assertThat(job.processingTargets())
-                .containsExactly(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+                    .containsExactly(
+                            ProcessingTarget.METADATA,
+                            ProcessingTarget.THUMBNAIL,
+                            ProcessingTarget.TRANSCODE);
     }
 
     /**

@@ -8,6 +8,7 @@ import com.hello.mediaprocessing.constant.ProcessingTarget;
 import com.hello.mediaprocessing.constant.VideoTranscodeMode;
 import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
 import com.hello.mediaprocessing.exception.VideoMetadataExtractionException;
+import com.hello.mediaprocessing.exception.VideoPosterGenerationException;
 import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
@@ -16,10 +17,12 @@ import com.hello.mediaprocessing.model.VideoMetadata;
 import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import com.hello.mediaprocessing.storage.ObjectStorageUploadException;
 import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
+import com.hello.mediaprocessing.util.VideoPosterObjectKeys;
 import com.hello.mediaprocessing.util.VideoTranscodeObjectKeys;
 import jakarta.inject.Singleton;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
@@ -28,7 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Validates, deduplicates, and advances processing jobs through metadata extraction and video transcode.
+ * Validates, deduplicates, and advances processing jobs through metadata extraction, poster generation, and video transcode.
  */
 @Singleton
 public class MediaProcessingJobHandler {
@@ -39,6 +42,7 @@ public class MediaProcessingJobHandler {
     private final MediaProcessingJobDeduplicationStore deduplicationStore;
     private final MediaProcessingSourceLoader sourceLoader;
     private final VideoMetadataExtractor videoMetadataExtractor;
+    private final VideoPosterGenerator videoPosterGenerator;
     private final VideoTranscoder videoTranscoder;
     private final ObjectStorageUploaderRegistry uploaderRegistry;
     private final MediaProcessingResultSink resultSink;
@@ -49,6 +53,7 @@ public class MediaProcessingJobHandler {
             MediaProcessingJobDeduplicationStore deduplicationStore,
             MediaProcessingSourceLoader sourceLoader,
             VideoMetadataExtractor videoMetadataExtractor,
+            VideoPosterGenerator videoPosterGenerator,
             VideoTranscoder videoTranscoder,
             ObjectStorageUploaderRegistry uploaderRegistry,
             MediaProcessingResultSink resultSink,
@@ -57,6 +62,7 @@ public class MediaProcessingJobHandler {
         this.deduplicationStore = deduplicationStore;
         this.sourceLoader = sourceLoader;
         this.videoMetadataExtractor = videoMetadataExtractor;
+        this.videoPosterGenerator = videoPosterGenerator;
         this.videoTranscoder = videoTranscoder;
         this.uploaderRegistry = uploaderRegistry;
         this.resultSink = resultSink;
@@ -115,6 +121,7 @@ public class MediaProcessingJobHandler {
                             job.objectKey(),
                             null,
                             null,
+                            null,
                             false));
                     return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
                 }
@@ -127,11 +134,13 @@ public class MediaProcessingJobHandler {
 
                 Set<ProcessingTarget> completedTargets = EnumSet.noneOf(ProcessingTarget.class);
                 VideoMetadata videoMetadata = null;
+                String thumbnailObjectKey = null;
                 String transcodedObjectKey = null;
                 Long canonicalObjectSize = null;
                 boolean reusedOriginalObject = false;
 
                 if (actionableTargets.contains(ProcessingTarget.METADATA)
+                        || actionableTargets.contains(ProcessingTarget.THUMBNAIL)
                         || actionableTargets.contains(ProcessingTarget.TRANSCODE)) {
                     logTransition(
                             MediaProcessingJobStatus.PROCESSING_IN_PROGRESS,
@@ -142,6 +151,25 @@ public class MediaProcessingJobHandler {
 
                 if (actionableTargets.contains(ProcessingTarget.METADATA)) {
                     completedTargets.add(ProcessingTarget.METADATA);
+                }
+
+                if (actionableTargets.contains(ProcessingTarget.THUMBNAIL)) {
+                    Path posterFile = videoPosterGenerator.generate(
+                            source.getLocalFile(),
+                            source.getWorkspaceDirectory().resolve("poster.thumbnail.jpg"),
+                            videoMetadata);
+                    verifyPosterFile(posterFile);
+                    thumbnailObjectKey = VideoPosterObjectKeys.derive(job.objectKey());
+                    try {
+                        uploaderRegistry.getUploader(job.storageProvider())
+                                .upload(job.bucket(), thumbnailObjectKey, posterFile, "image/jpeg");
+                    } catch (ObjectStorageUploadException e) {
+                        throw new VideoPosterGenerationException(
+                                MediaProcessingFailureReason.POSTER_UPLOAD_FAILED,
+                                "Failed to upload poster thumbnail for " + job.objectKey(),
+                                e);
+                    }
+                    completedTargets.add(ProcessingTarget.THUMBNAIL);
                 }
 
                 if (actionableTargets.contains(ProcessingTarget.TRANSCODE)) {
@@ -178,6 +206,7 @@ public class MediaProcessingJobHandler {
                         Set.copyOf(completedTargets),
                         Set.copyOf(pendingTargets),
                         job.objectKey(),
+                        thumbnailObjectKey,
                         transcodedObjectKey,
                         canonicalObjectSize,
                         reusedOriginalObject));
@@ -186,6 +215,7 @@ public class MediaProcessingJobHandler {
                         job,
                         "completedTargets=" + completedTargets + "; pendingTargets=" + pendingTargets +
                                 (videoMetadata == null ? "" : "; mimeType=" + videoMetadata.detectedMimeType()) +
+                                (thumbnailObjectKey == null ? "" : "; thumbnailObjectKey=" + thumbnailObjectKey) +
                                 (transcodedObjectKey == null ? "" : "; transcodedObjectKey=" + transcodedObjectKey));
                 if (finalStatus == MediaProcessingJobStatus.MEDIA_READY) {
                     deduplicationStore.markCompleted(job.jobId());
@@ -195,6 +225,7 @@ public class MediaProcessingJobHandler {
             }
         } catch (MediaProcessingSourceLoadException
                 | VideoMetadataExtractionException
+                | VideoPosterGenerationException
                 | VideoTranscodeException
                 | ObjectStorageUploadException e) {
             logTransition(
@@ -212,6 +243,7 @@ public class MediaProcessingJobHandler {
                     job.objectKey(),
                     null,
                     null,
+                    null,
                     false));
             return MediaProcessingJobStatus.PROCESSING_FAILED;
         } finally {
@@ -227,7 +259,7 @@ public class MediaProcessingJobHandler {
      * @return targets that can be completed during the current handler execution
      */
     private Set<ProcessingTarget> resolveImplementedTargets() {
-        return EnumSet.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+        return EnumSet.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL, ProcessingTarget.TRANSCODE);
     }
 
     /**
@@ -324,6 +356,28 @@ public class MediaProcessingJobHandler {
     }
 
     /**
+     * Verifies that a generated poster exists and is non-empty before the worker uploads it.
+     *
+     * @param posterFile local poster file produced by ffmpeg
+     */
+    private void verifyPosterFile(Path posterFile) {
+        try {
+            if (!Files.isRegularFile(posterFile) || Files.size(posterFile) <= 0) {
+                throw new VideoPosterGenerationException(
+                        MediaProcessingFailureReason.POSTER_GENERATION_FAILED,
+                        "Generated poster file is empty or missing: " + posterFile);
+            }
+        } catch (VideoPosterGenerationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new VideoPosterGenerationException(
+                    MediaProcessingFailureReason.POSTER_GENERATION_FAILED,
+                    "Failed to verify generated poster file " + posterFile,
+                    e);
+        }
+    }
+
+    /**
      * Maps worker exceptions to the normalized failure reason names used in logs and future result contracts.
      *
      * @param exception failure thrown during processing
@@ -335,6 +389,9 @@ public class MediaProcessingJobHandler {
         }
         if (exception instanceof VideoTranscodeException transcodeException) {
             return transcodeException.getFailureReason().name();
+        }
+        if (exception instanceof VideoPosterGenerationException posterGenerationException) {
+            return posterGenerationException.getFailureReason().name();
         }
         if (exception instanceof ObjectStorageUploadException uploadException) {
             return uploadException.getFailureReason().name();

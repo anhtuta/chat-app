@@ -47,6 +47,7 @@ class ChatBackendMediaProcessingResultSinkTest {
                 Set.of(),
                 Set.of(),
                 "input.mov",
+                "input.thumbnail.jpg",
                 "input.transcoded.mp4",
                 80L,
                 false);

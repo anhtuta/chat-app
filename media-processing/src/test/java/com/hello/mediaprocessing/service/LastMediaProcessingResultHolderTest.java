@@ -41,6 +41,7 @@ class LastMediaProcessingResultHolderTest {
                 "source.mp4",
                 null,
                 null,
+                null,
                 false);
     }
 }

@@ -9,6 +9,7 @@ import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 import com.hello.mediaprocessing.constant.VideoTranscodeMode;
 import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
+import com.hello.mediaprocessing.exception.VideoPosterGenerationException;
 import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
@@ -19,8 +20,10 @@ import com.hello.mediaprocessing.storage.ObjectStorageUploader;
 import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import java.util.Objects;
 import java.nio.file.Path;
 import java.util.List;
+import org.hibernate.validator.HibernateValidator;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,11 +33,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MediaProcessingJobHandlerTest {
 
-    private final Validator validator = Validation.byDefaultProvider()
-            .configure()
-            .messageInterpolator(new ParameterMessageInterpolator())
-            .buildValidatorFactory()
-            .getValidator();
+    private final Validator validator = createValidator();
+
+    /**
+     * Builds the bean validator used by the worker handler.
+     *
+     * @return non-null validator instance for the test class
+     */
+    private Validator createValidator() {
+        return Objects.requireNonNull(Validation.byProvider(HibernateValidator.class)
+                .configure()
+                .messageInterpolator(new ParameterMessageInterpolator())
+                .buildValidatorFactory()
+                .getValidator());
+    }
 
     /**
      * Verifies that a valid video job with an enabled target reaches the dispatched state.
@@ -46,6 +58,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -66,6 +79,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -88,6 +102,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -99,24 +114,26 @@ class MediaProcessingJobHandlerTest {
     }
 
     /**
-     * Verifies that metadata extraction can complete while later-phase targets remain pending.
+     * Verifies that implemented work can complete while a later-phase preview target remains pending.
      */
     @Test
-    void handle_metadataPlusThumbnail_staysInProgress() {
+    void handle_metadataPlusPreview_staysInProgress() {
         MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
         properties.getFeatureFlags().setVideoPoster(true);
+        properties.getFeatureFlags().setVideoTranscode(false);
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 properties,
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(
-                buildVideoJob("job-partial", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL)));
+                buildVideoJob("job-partial", List.of(ProcessingTarget.METADATA, ProcessingTarget.PREVIEW)));
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
     }
@@ -125,30 +142,34 @@ class MediaProcessingJobHandlerTest {
      * Verifies that enabled but unimplemented targets stay pending instead of returning DISPATCHED.
      */
     @Test
-    void handle_thumbnailOnly_staysPendingWithoutDispatchReturn() {
+    void handle_thumbnailOnly_generatesPosterAndMarksReady() {
         MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
         properties.getFeatureFlags().setVideoMetadata(false);
         properties.getFeatureFlags().setVideoPoster(true);
         CapturingResultSink resultSink = new CapturingResultSink();
+        RecordingUploader uploader = new RecordingUploader();
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 properties,
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
-                minioUploaderRegistry(),
+                minioUploaderRegistry(uploader),
                 resultSink,
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(
                 buildVideoJob("job-thumbnail-only", List.of(ProcessingTarget.THUMBNAIL)));
 
-        assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
         assertThat(resultSink.lastResult()).isNotNull();
-        assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
-        assertThat(resultSink.lastResult().completedTargets()).isEmpty();
-        assertThat(resultSink.lastResult().pendingTargets()).containsExactly(ProcessingTarget.THUMBNAIL);
-        assertThat(resultSink.lastResult().videoMetadata()).isNull();
+        assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().completedTargets()).containsExactly(ProcessingTarget.THUMBNAIL);
+        assertThat(resultSink.lastResult().pendingTargets()).isEmpty();
+        assertThat(resultSink.lastResult().thumbnailObjectKey()).isEqualTo("media/7/video/demo.thumbnail.jpg");
+        assertThat(uploader.lastObjectKey()).isEqualTo("media/7/video/demo.thumbnail.jpg");
+        assertThat(uploader.lastContentType()).isEqualTo("image/jpeg");
     }
 
     /**
@@ -164,6 +185,7 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -186,6 +208,7 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -195,6 +218,7 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -213,19 +237,21 @@ class MediaProcessingJobHandlerTest {
     void handle_partialProgress_allowsRetryUntilMediaReady() {
         MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
         properties.getFeatureFlags().setVideoPoster(true);
+        properties.getFeatureFlags().setVideoTranscode(false);
         InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
         MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
                 properties,
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
         MediaProcessingJobMessage job =
-                buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL));
+                buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.PREVIEW));
 
         assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
         assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
@@ -242,6 +268,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 resultSink,
@@ -253,6 +280,72 @@ class MediaProcessingJobHandlerTest {
         assertThat(resultSink.lastResult()).isNotNull();
         assertThat(resultSink.lastResult().status()).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
         assertThat(resultSink.lastResult().originalObjectKey()).isEqualTo("media/7/video/demo.mp4");
+    }
+
+    /**
+     * Verifies that poster generation uploads a derived JPEG and reports its object key.
+     */
+    @Test
+    void handle_thumbnail_uploadsDerivedPosterObject() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoMetadata(false);
+        properties.getFeatureFlags().setVideoPoster(true);
+        CapturingResultSink resultSink = new CapturingResultSink();
+        RecordingUploader uploader = new RecordingUploader();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(uploader),
+                resultSink,
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-poster", List.of(ProcessingTarget.THUMBNAIL)));
+
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().thumbnailObjectKey()).isEqualTo("media/7/video/demo.thumbnail.jpg");
+        assertThat(uploader.lastObjectKey()).isEqualTo("media/7/video/demo.thumbnail.jpg");
+        assertThat(uploader.lastContentType()).isEqualTo("image/jpeg");
+    }
+
+    /**
+     * Verifies that poster-generation failures mark the job failed and release the in-progress claim.
+     */
+    @Test
+    void handle_thumbnailFailure_marksProcessingFailedAndAllowsRetry() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoMetadata(false);
+        properties.getFeatureFlags().setVideoPoster(true);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler failingHandler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new FailingPosterGenerator(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
+                new NoopResultSink(),
+                validator);
+        MediaProcessingJobHandler successfulHandler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-poster-fail", List.of(ProcessingTarget.THUMBNAIL));
+
+        assertThat(failingHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(successfulHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
     }
 
     /**
@@ -269,6 +362,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(uploader),
                 resultSink,
@@ -278,6 +372,7 @@ class MediaProcessingJobHandlerTest {
                 buildVideoJob("job-reuse", List.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE)));
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().thumbnailObjectKey()).isNull();
         assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.mp4");
         assertThat(resultSink.lastResult().reusedOriginalObject()).isTrue();
         assertThat(resultSink.lastResult().completedTargets())
@@ -299,6 +394,7 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReencodeTranscoder(),
                 minioUploaderRegistry(uploader),
                 resultSink,
@@ -308,6 +404,7 @@ class MediaProcessingJobHandlerTest {
                 buildVideoJob("job-reencode", List.of(ProcessingTarget.TRANSCODE)));
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().thumbnailObjectKey()).isNull();
         assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
         assertThat(resultSink.lastResult().reusedOriginalObject()).isFalse();
         assertThat(uploader.lastObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
@@ -327,6 +424,7 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new FailingTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -336,6 +434,7 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new SuccessfulPosterGenerator(),
                 new ReuseOriginalTranscoder(),
                 minioUploaderRegistry(),
                 new NoopResultSink(),
@@ -437,6 +536,34 @@ class MediaProcessingJobHandlerTest {
     }
 
     /**
+     * Test double that writes a placeholder JPEG so poster generation behaves like a successful ffmpeg run.
+     */
+    private static final class SuccessfulPosterGenerator implements VideoPosterGenerator {
+
+        /**
+         * Writes a tiny placeholder file to the requested poster path.
+         *
+         * @param sourceFile ignored
+         * @param outputFile poster output path
+         * @param sourceMetadata ignored
+         * @return the same output path after writing placeholder bytes
+         */
+        @Override
+        public Path generate(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
+            try {
+                Path parent = outputFile.getParent();
+                if (parent != null) {
+                    java.nio.file.Files.createDirectories(parent);
+                }
+                java.nio.file.Files.writeString(outputFile, "jpeg");
+                return outputFile;
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    /**
      * Test double that reports the source file as already chat-ready.
      */
     private static final class ReuseOriginalTranscoder implements VideoTranscoder {
@@ -491,6 +618,27 @@ class MediaProcessingJobHandlerTest {
         public VideoTranscodeResult transcode(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
             throw new VideoTranscodeException(
                     MediaProcessingFailureReason.TRANSCODE_FAILED, "Simulated transcode failure");
+        }
+    }
+
+    /**
+     * Test double that always fails poster generation.
+     */
+    private static final class FailingPosterGenerator implements VideoPosterGenerator {
+
+        /**
+         * Throws a deterministic poster-generation failure.
+         *
+         * @param sourceFile ignored
+         * @param outputFile ignored
+         * @param sourceMetadata ignored
+         * @return never returns because the method always throws
+         */
+        @Override
+        public Path generate(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
+            throw new VideoPosterGenerationException(
+                    MediaProcessingFailureReason.POSTER_GENERATION_FAILED,
+                    "Simulated poster generation failure");
         }
     }
 

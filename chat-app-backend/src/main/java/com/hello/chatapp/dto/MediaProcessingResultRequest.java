@@ -18,6 +18,7 @@ import java.util.Set;
  * @param completedTargets completed outputs
  * @param pendingTargets outputs still pending
  * @param originalObjectKey object key the worker processed
+ * @param thumbnailObjectKey generated poster object key, if available
  * @param transcodedObjectKey canonical playback object key, if transcode succeeded
  * @param canonicalObjectSize size of the canonical playback object
  * @param reusedOriginalObject whether the original object is already canonical
@@ -31,6 +32,7 @@ public record MediaProcessingResultRequest(
         @NotNull Set<ProcessingTarget> completedTargets,
         @NotNull Set<ProcessingTarget> pendingTargets,
         @NotBlank String originalObjectKey,
+        String thumbnailObjectKey,
         String transcodedObjectKey,
         Long canonicalObjectSize,
         boolean reusedOriginalObject) {

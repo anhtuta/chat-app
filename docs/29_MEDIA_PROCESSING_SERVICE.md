@@ -578,16 +578,25 @@ Recommended path:
   - service-layer data records moved to `model` (`MediaProcessingJobMessage`, `MediaProcessingResult`, `VideoMetadata`, `ObjectStorageDownloadResult`)
   - behavior stays in `service` / `storage` / `messaging` (`LoadedMediaSource` remains in `service` because it owns workspace cleanup)
 
-### Phase 5 - Video poster thumbnail generation
+### Phase 5 - Video poster thumbnail generation - **Done**
 
-- Generate a poster thumbnail for each processed video.
-- Decide thumbnail capture rules:
-  - first usable frame
-  - fixed timestamp
-  - or heuristic based on black-frame avoidance
-- Write poster object metadata and storage pointers back to the shared persistence/API boundary.
-- Ensure `chat-app-backend` can later expose this poster to the frontend as the default pre-play preview.
-- Phase 6 (transcode) does not depend on this phase and was implemented first.
+- What changed:
+  - `media-processing-service` now implements the `THUMBNAIL` target for video jobs.
+  - The worker uses ffmpeg to capture a single JPEG poster near the start of the video, clamped by video duration.
+  - Poster files are uploaded to object storage under `{stem}.thumbnail.jpg`.
+  - `MediaProcessingResult` / backend callback payloads now include `thumbnailObjectKey`.
+  - `chat-app-backend` persists `thumbnailObjectKey` onto `MessageMedia`, so `thumbnailUrl` / `posterUrl` can be exposed to the frontend.
+  - Default local-trigger and backend-published video jobs now request `METADATA`, `THUMBNAIL`, and `TRANSCODE`.
+- Why it changed:
+  - Phase 8's frontend contract needs a stable poster image before the richer video-player UX can start.
+- Manual test without `chat-app-backend`:
+  - Put an MP4, MOV, or WebM object in MinIO (default bucket `chat-media`).
+  - Start the worker with ffmpeg/ffprobe on `PATH`. RabbitMQ is not required while `media-processing.worker.enabled=false`.
+  - Enable the local trigger: `media-processing.local-trigger.enabled=true` (keep this off outside local testing).
+  - `POST http://localhost:9020/local/media-processing/jobs` with `{"objectKey":"path/to/video.mov"}`.
+  - Response includes worker `status` plus `thumbnailObjectKey` and `transcodedObjectKey` when the sink emitted a result.
+  - Confirm the derived poster in MinIO as `{stem}.thumbnail.jpg`.
+- Phase 6 (transcode) was still implemented first so canonical playback could land before poster polish.
 
 ### Phase 6 - First usable transcoded playback asset - **Done**
 
@@ -623,7 +632,7 @@ Recommended path:
     - queue: `media.processing.jobs`
     - routing key: `media.processing.video`
   - Job ids are stable per attachment (`media-{mediaId}`) for handler idempotency.
-  - Jobs currently request `METADATA` and `TRANSCODE`; poster remains Phase 5.
+  - Jobs now request `METADATA`, `THUMBNAIL`, and `TRANSCODE`.
   - Only video is queued in this rollout. Images are published as `MEDIA_READY` using their original object until Phase 12 adds real image derivatives.
   - Added service-authenticated `POST /api/internal/media-processing/results`.
   - Callback updates remain owned by `chat-app-backend`; the worker does not write the chat database.
@@ -635,7 +644,7 @@ Recommended path:
 - What changed in `media-processing-service`:
   - Added `ChatBackendMediaProcessingResultSink`, enabled by `media-processing.callback.enabled=true`.
   - The sink calls the backend synchronously with the shared token; callback transport failures escape the handler so RabbitMQ can redeliver.
-  - `MediaProcessingResult` now includes source key, canonical object size, canonical key, metadata, and reuse status.
+  - `MediaProcessingResult` now includes source key, poster key, canonical object size, canonical key, metadata, and reuse status.
   - Processing failures are also reported to the callback so the backend can set `PROCESSING_FAILED`.
   - The logging/local-test sink remains active when callback integration is disabled.
 - Configuration:
@@ -665,7 +674,7 @@ Recommended path:
   - Frontend attachment types now explicitly model `durationMs`, `width`, `height`, `posterUrl`, `playbackUrl`, and `downloadUrl`.
   - The current inline video component prefers `playbackUrl`, applies `posterUrl` when available, and shows duration/size metadata without introducing the Phase 11 player redesign yet.
 - Contract rules:
-  - before poster generation exists, `posterUrl` may be `null`
+  - before poster generation succeeds for a given asset, `posterUrl` may be `null`
   - before transcode finishes, `playbackUrl` may be `null` or may fall back to `contentUrl`
   - after Phase 7 video success, `contentUrl` and `downloadUrl` point at the canonical MP4
   - after Phase 7 video success, `playbackUrl` resolves to the canonical MP4 (`transcodedUrl` when distinct, otherwise `contentUrl`)

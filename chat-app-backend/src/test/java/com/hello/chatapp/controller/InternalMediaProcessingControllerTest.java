@@ -74,6 +74,7 @@ class InternalMediaProcessingControllerTest {
                 "input.mov",
                 null,
                 null,
+                null,
                 false);
     }
 }

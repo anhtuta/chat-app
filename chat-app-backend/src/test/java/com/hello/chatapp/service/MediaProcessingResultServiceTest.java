@@ -71,12 +71,14 @@ class MediaProcessingResultServiceTest {
      */
     @Test
     void apply_readyResult_switchesCanonicalObjectAndDeletesOriginal() {
+        when(provider.objectExists("media/7/video/input.thumbnail.jpg")).thenReturn(true);
         when(provider.objectExists("media/7/video/input.transcoded.mp4")).thenReturn(true);
 
         service.apply(readyRequest());
 
         assertThat(media.getObjectKey()).isEqualTo("media/7/video/input.transcoded.mp4");
         assertThat(media.getTranscodedObjectKey()).isEqualTo("media/7/video/input.transcoded.mp4");
+        assertThat(media.getThumbnailObjectKey()).isEqualTo("media/7/video/input.thumbnail.jpg");
         assertThat(media.getDetectedMimeType()).isEqualTo("video/mp4");
         assertThat(media.getSizeBytes()).isEqualTo(80L);
         assertThat(media.getWidth()).isEqualTo(1920);
@@ -119,6 +121,7 @@ class MediaProcessingResultServiceTest {
                 "media/7/video/input.mov",
                 null,
                 null,
+                null,
                 false);
 
         service.apply(request);
@@ -144,6 +147,7 @@ class MediaProcessingResultServiceTest {
                 Set.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE),
                 Set.of(),
                 "media/7/video/input.mov",
+                "media/7/video/input.thumbnail.jpg",
                 "media/7/video/input.transcoded.mp4",
                 80L,
                 false);

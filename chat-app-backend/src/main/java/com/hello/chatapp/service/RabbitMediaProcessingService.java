@@ -24,7 +24,7 @@ public class RabbitMediaProcessingService implements MediaProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(RabbitMediaProcessingService.class);
     private static final List<ProcessingTarget> VIDEO_TARGETS =
-            List.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+            List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL, ProcessingTarget.TRANSCODE);
 
     private final MessageRepository messageRepository;
     private final MessageMediaRepository messageMediaRepository;

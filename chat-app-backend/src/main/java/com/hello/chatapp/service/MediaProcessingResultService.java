@@ -65,6 +65,7 @@ public class MediaProcessingResultService {
         validateSourceObject(media, request);
 
         applyMetadata(media, request.videoMetadata());
+        applyPoster(media, request);
         switch (request.status()) {
             case PROCESSING_IN_PROGRESS -> media.setStatus(MediaStatus.PROCESSING_IN_PROGRESS);
             case PROCESSING_FAILED -> media.setStatus(MediaStatus.PROCESSING_FAILED);
@@ -108,6 +109,21 @@ public class MediaProcessingResultService {
         media.setHeight(metadata.height());
         media.setDurationMs(metadata.durationMillis());
         media.setDetectedMimeType(metadata.detectedMimeType());
+    }
+
+    /**
+     * Persists an available poster object after verifying the derived asset exists.
+     */
+    private void applyPoster(MessageMedia media, MediaProcessingResultRequest request) {
+        String thumbnailObjectKey = request.thumbnailObjectKey();
+        if (thumbnailObjectKey == null || thumbnailObjectKey.isBlank()) {
+            return;
+        }
+        ObjectStorageProvider provider = storageProviderRegistry.getProvider(media.getStorageProvider());
+        if (!provider.objectExists(thumbnailObjectKey)) {
+            throw new BadRequestException("Poster media object does not exist");
+        }
+        media.setThumbnailObjectKey(thumbnailObjectKey);
     }
 
     /**
