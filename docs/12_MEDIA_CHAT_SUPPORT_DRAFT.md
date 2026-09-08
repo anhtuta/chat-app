@@ -950,7 +950,8 @@ Recommendation path:
      - show a poster-based video card in the chat bubble instead of raw native controls
      - show filename, duration, and size before playback starts
      - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
-     - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` and `transcodedUrl` refer to that object, not the original upload
+     - prefer explicit contract fields: `posterUrl`, `playbackUrl`, and `downloadUrl`
+     - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` / `downloadUrl` and `playbackUrl` refer to that object, not the original upload
      - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
 12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration

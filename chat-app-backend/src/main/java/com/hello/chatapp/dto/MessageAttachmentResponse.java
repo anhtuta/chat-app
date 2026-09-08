@@ -24,7 +24,10 @@ public class MessageAttachmentResponse {
     private Integer height;
     private Long durationMs;
     private String contentUrl;
+    private String downloadUrl;
+    private String playbackUrl;
     private String thumbnailUrl;
+    private String posterUrl;
     private String previewUrl;
     private String transcodedUrl;
     // private String thumbnailObjectKey;

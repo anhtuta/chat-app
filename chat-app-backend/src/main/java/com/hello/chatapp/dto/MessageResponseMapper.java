@@ -90,11 +90,45 @@ public class MessageResponseMapper {
         }
 
         ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(media.getStorageProvider());
-        response.setContentUrl(provider.buildReadUrl(media.getObjectKey()));
-        response.setThumbnailUrl(buildDerivedUrlIfExists(provider, media.getThumbnailObjectKey()));
-        response.setPreviewUrl(buildDerivedUrlIfExists(provider, media.getPreviewObjectKey()));
-        response.setTranscodedUrl(buildDerivedUrlIfExists(provider, media.getTranscodedObjectKey()));
+        String contentUrl = provider.buildReadUrl(media.getObjectKey());
+        String thumbnailUrl = buildDerivedUrlIfExists(provider, media.getThumbnailObjectKey());
+        String previewUrl = buildDerivedUrlIfExists(provider, media.getPreviewObjectKey());
+        String transcodedUrl = buildDerivedUrlIfExists(provider, media.getTranscodedObjectKey());
+
+        response.setContentUrl(contentUrl);
+        response.setDownloadUrl(contentUrl);
+        response.setThumbnailUrl(thumbnailUrl);
+        response.setPosterUrl(isVideoAttachment(media) ? thumbnailUrl : null);
+        response.setPreviewUrl(previewUrl);
+        response.setTranscodedUrl(transcodedUrl);
+        response.setPlaybackUrl(resolvePlaybackUrl(media, contentUrl, transcodedUrl));
         return response;
+    }
+
+    /**
+     * Resolves the client-facing playback URL for playable media.
+     */
+    private String resolvePlaybackUrl(MessageMedia media, String contentUrl, String transcodedUrl) {
+        if (isVideoAttachment(media) || isAudioAttachment(media)) {
+            return transcodedUrl != null ? transcodedUrl : contentUrl;
+        }
+        return null;
+    }
+
+    /**
+     * Returns whether the attachment is a video based on its resolved MIME type.
+     */
+    private boolean isVideoAttachment(MessageMedia media) {
+        String mimeType = media.getDetectedMimeType() != null ? media.getDetectedMimeType() : media.getDeclaredMimeType();
+        return mimeType != null && mimeType.startsWith("video/");
+    }
+
+    /**
+     * Returns whether the attachment is audio based on its resolved MIME type.
+     */
+    private boolean isAudioAttachment(MessageMedia media) {
+        String mimeType = media.getDetectedMimeType() != null ? media.getDetectedMimeType() : media.getDeclaredMimeType();
+        return mimeType != null && mimeType.startsWith("audio/");
     }
 
     private String buildDerivedUrlIfExists(ObjectStorageProvider provider, String objectKey) {

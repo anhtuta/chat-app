@@ -105,6 +105,25 @@ export function formatBytes(bytes: number | string | null | undefined): string {
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+export function formatDuration(durationMs: number | null | undefined): string {
+  if (durationMs === undefined || durationMs === null || Number.isNaN(Number(durationMs))) {
+    return "";
+  }
+
+  const totalSeconds = Math.round(Number(durationMs) / 1000);
+  if (totalSeconds < 0) {
+    return "";
+  }
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function getAttachmentDisplayUrl(
   messageType: MessageType | string,
   attachment: ChatAttachment | null | undefined,
@@ -122,11 +141,11 @@ export function getAttachmentDisplayUrl(
   }
 
   if (messageType === MESSAGE_TYPES.VIDEO) {
-    return attachment.transcodedUrl || attachment.contentUrl || null;
+    return attachment.playbackUrl || attachment.transcodedUrl || attachment.contentUrl || null;
   }
 
   if (messageType === MESSAGE_TYPES.AUDIO) {
-    return attachment.transcodedUrl || attachment.contentUrl || null;
+    return attachment.playbackUrl || attachment.transcodedUrl || attachment.contentUrl || null;
   }
 
   return attachment.contentUrl || null;

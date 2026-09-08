@@ -62,7 +62,61 @@ class MessageResponseMapperTest {
         assertThat(response).isNotNull();
         assertThat(response.getAttachments()).hasSize(1);
         assertThat(response.getAttachments().getFirst().getContentUrl()).isNotBlank();
+        assertThat(response.getAttachments().getFirst().getDownloadUrl()).isNotBlank();
         assertThat(response.getAttachments().getFirst().getContentUrl()).contains("chat-media/media/1/photo.png");
+    }
+
+    /**
+     * Video attachments expose the canonical playback/download contract needed by the frontend player.
+     */
+    @Test
+    void toResponse_mapsVideoPlaybackContractFields() {
+        MediaStorageProperties properties = new MediaStorageProperties();
+        properties.setProvider(ObjectStorageProviderType.S3);
+
+        MessageResponseMapper mapper = new MessageResponseMapper(
+                new ObjectStorageProviderRegistry(
+                        List.of(new S3ObjectStorageProvider(properties)),
+                        properties));
+
+        User user = new User("alice", "secret", "Alice");
+        user.setId(1L);
+
+        Message message = new Message();
+        message.setId(11L);
+        message.setUser(user);
+        message.setMessageType(MessageType.VIDEO);
+
+        MessageMedia attachment = new MessageMedia();
+        attachment.setId(101L);
+        attachment.setAttachmentOrder(0);
+        attachment.setStorageProvider(ObjectStorageProviderType.S3);
+        attachment.setBucket("chat-media");
+        attachment.setObjectKey("media/1/demo.transcoded.mp4");
+        attachment.setOriginalFilename("demo.mov");
+        attachment.setDeclaredMimeType("video/quicktime");
+        attachment.setDetectedMimeType("video/mp4");
+        attachment.setSizeBytes(4321L);
+        attachment.setWidth(1920);
+        attachment.setHeight(1080);
+        attachment.setDurationMs(12_345L);
+        attachment.setStatus(MediaStatus.MEDIA_READY);
+        attachment.setScanStatus(MediaScanStatus.SCAN_PASSED);
+        attachment.setThumbnailObjectKey("media/1/demo.thumbnail.jpg");
+        attachment.setTranscodedObjectKey("media/1/demo.transcoded.mp4");
+        message.addAttachment(attachment);
+
+        MessageResponse response = mapper.toResponse(message);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAttachments()).hasSize(1);
+        MessageAttachmentResponse mapped = response.getAttachments().getFirst();
+        assertThat(mapped.getDurationMs()).isEqualTo(12_345L);
+        assertThat(mapped.getWidth()).isEqualTo(1920);
+        assertThat(mapped.getHeight()).isEqualTo(1080);
+        assertThat(mapped.getPlaybackUrl()).isEqualTo(mapped.getTranscodedUrl());
+        assertThat(mapped.getDownloadUrl()).isEqualTo(mapped.getContentUrl());
+        assertThat(mapped.getPosterUrl()).isEqualTo(mapped.getThumbnailUrl());
     }
 
     /**

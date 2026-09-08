@@ -646,7 +646,7 @@ Recommended path:
   - MinIO supports original deletion. The repository's S3 provider is still a placeholder and does not implement deletion.
   - RabbitMQ publish is after commit but has no transactional outbox; the low-priority durable job/outbox work remains Phase 13.
 
-### Phase 8 - Frontend video-player dependency contract
+### Phase 8 - Frontend video-player dependency contract - **Done**
 
 - Define the minimum processed video outputs required before frontend player work starts:
   - poster thumbnail
@@ -654,6 +654,22 @@ Recommended path:
   - transcoded playback asset
 - Align this phase with `docs/12_MEDIA_CHAT_SUPPORT_DRAFT.md` Phase 11.
 - Keep this phase focused on the contract and payload shape, not on implementing the player UI inside this service.
+- Contract additions:
+  - attachment `posterUrl`: preferred pre-play still image for video cards
+  - attachment `playbackUrl`: canonical URL the player should open first
+  - attachment `downloadUrl`: canonical file recipients should download
+  - attachment `durationMs`, `width`, and `height`: minimum metadata for pre-play layout/copy
+  - existing `contentUrl`, `thumbnailUrl`, and `transcodedUrl` remain for backward compatibility during rollout
+- What changed:
+  - `chat-app-backend` now includes `posterUrl`, `playbackUrl`, and `downloadUrl` in `MessageAttachmentResponse`.
+  - Frontend attachment types now explicitly model `durationMs`, `width`, `height`, `posterUrl`, `playbackUrl`, and `downloadUrl`.
+  - The current inline video component prefers `playbackUrl`, applies `posterUrl` when available, and shows duration/size metadata without introducing the Phase 11 player redesign yet.
+- Contract rules:
+  - before poster generation exists, `posterUrl` may be `null`
+  - before transcode finishes, `playbackUrl` may be `null` or may fall back to `contentUrl`
+  - after Phase 7 video success, `contentUrl` and `downloadUrl` point at the canonical MP4
+  - after Phase 7 video success, `playbackUrl` resolves to the canonical MP4 (`transcodedUrl` when distinct, otherwise `contentUrl`)
+  - the frontend should stop inferring “best playable URL” from raw storage fields once `playbackUrl` is available
 
 ### Phase 9 - Adaptive/mobile-friendly video outputs
 
