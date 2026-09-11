@@ -42,6 +42,7 @@ class LastMediaProcessingResultHolderTest {
                 null,
                 null,
                 null,
-                false);
+                false,
+                java.util.List.of());
     }
 }

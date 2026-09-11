@@ -75,6 +75,7 @@ class InternalMediaProcessingControllerTest {
                 null,
                 null,
                 null,
-                false);
+                false,
+                java.util.List.of());
     }
 }

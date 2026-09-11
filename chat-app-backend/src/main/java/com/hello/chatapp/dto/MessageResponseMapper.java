@@ -8,6 +8,7 @@ import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -102,7 +103,40 @@ public class MessageResponseMapper {
         response.setPreviewUrl(previewUrl);
         response.setTranscodedUrl(transcodedUrl);
         response.setPlaybackUrl(resolvePlaybackUrl(media, contentUrl, transcodedUrl));
+        response.setVideoSources(resolveVideoSources(media, provider, contentUrl));
         return response;
+    }
+
+    /**
+     * Builds the ordered canonical and optional mobile video source contract.
+     */
+    private List<VideoSourceResponse> resolveVideoSources(
+            MessageMedia media,
+            ObjectStorageProvider provider,
+            String contentUrl) {
+        if (!isVideoAttachment(media)) {
+            return List.of();
+        }
+
+        List<VideoSourceResponse> sources = new ArrayList<>();
+        sources.add(new VideoSourceResponse(
+                contentUrl,
+                "video/mp4",
+                media.getWidth(),
+                media.getHeight(),
+                media.getSizeBytes(),
+                "CANONICAL"));
+        String mobileUrl = buildDerivedUrlIfExists(provider, media.getRendition480pObjectKey());
+        if (mobileUrl != null) {
+            sources.add(new VideoSourceResponse(
+                    mobileUrl,
+                    "video/mp4",
+                    resolveRenditionWidth(media.getWidth(), media.getHeight(), 480),
+                    480,
+                    media.getRendition480pSizeBytes(),
+                    "MOBILE"));
+        }
+        return List.copyOf(sources);
     }
 
     /**
@@ -129,6 +163,17 @@ public class MessageResponseMapper {
     private boolean isAudioAttachment(MessageMedia media) {
         String mimeType = media.getDetectedMimeType() != null ? media.getDetectedMimeType() : media.getDeclaredMimeType();
         return mimeType != null && mimeType.startsWith("audio/");
+    }
+
+    /**
+     * Calculates a proportional even width for a height-constrained source.
+     */
+    private Integer resolveRenditionWidth(Integer sourceWidth, Integer sourceHeight, int targetHeight) {
+        if (sourceWidth == null || sourceHeight == null || sourceHeight <= 0) {
+            return null;
+        }
+        double proportionalWidth = sourceWidth * (targetHeight / (double) sourceHeight);
+        return Math.max(2, (int) Math.round(proportionalWidth / 2.0d) * 2);
     }
 
     private String buildDerivedUrlIfExists(ObjectStorageProvider provider, String objectKey) {

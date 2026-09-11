@@ -104,6 +104,8 @@ class MessageResponseMapperTest {
         attachment.setScanStatus(MediaScanStatus.SCAN_PASSED);
         attachment.setThumbnailObjectKey("media/1/demo.thumbnail.jpg");
         attachment.setTranscodedObjectKey("media/1/demo.transcoded.mp4");
+        attachment.setRendition480pObjectKey("media/1/demo.480p.mp4");
+        attachment.setRendition480pSizeBytes(2_000L);
         message.addAttachment(attachment);
 
         MessageResponse response = mapper.toResponse(message);
@@ -117,6 +119,11 @@ class MessageResponseMapperTest {
         assertThat(mapped.getPlaybackUrl()).isEqualTo(mapped.getTranscodedUrl());
         assertThat(mapped.getDownloadUrl()).isEqualTo(mapped.getContentUrl());
         assertThat(mapped.getPosterUrl()).isEqualTo(mapped.getThumbnailUrl());
+        assertThat(mapped.getVideoSources()).hasSize(2);
+        assertThat(mapped.getVideoSources().getFirst().role()).isEqualTo("CANONICAL");
+        assertThat(mapped.getVideoSources().get(1).role()).isEqualTo("MOBILE");
+        assertThat(mapped.getVideoSources().get(1).height()).isEqualTo(480);
+        assertThat(mapped.getVideoSources().get(1).sizeBytes()).isEqualTo(2_000L);
     }
 
     /**

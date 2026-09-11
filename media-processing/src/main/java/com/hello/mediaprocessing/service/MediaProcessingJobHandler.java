@@ -15,6 +15,7 @@ import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
 import com.hello.mediaprocessing.model.ObjectStorageUploadResult;
 import com.hello.mediaprocessing.model.VideoMetadata;
+import com.hello.mediaprocessing.model.VideoRenditionResult;
 import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import com.hello.mediaprocessing.storage.ObjectStorageUploadException;
 import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
@@ -28,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -127,7 +129,8 @@ public class MediaProcessingJobHandler {
                             null,
                             null,
                             null,
-                            false));
+                            false,
+                            List.of()));
                     return MediaProcessingJobStatus.PROCESSING_IN_PROGRESS;
                 }
 
@@ -144,6 +147,7 @@ public class MediaProcessingJobHandler {
                 Long canonicalObjectSize = null;
                 boolean reusedOriginalObject = false;
                 Path canonicalLocalFile = null;
+                List<VideoRenditionResult> videoRenditions = List.of();
 
                 if (actionableTargets.contains(ProcessingTarget.METADATA)
                         || actionableTargets.contains(ProcessingTarget.THUMBNAIL)
@@ -198,7 +202,8 @@ public class MediaProcessingJobHandler {
                         canonicalLocalFile = transcodeResult.outputFile();
                     }
                     completedTargets.add(ProcessingTarget.TRANSCODE);
-                    maybeGenerateMobileRendition(job, videoMetadata, canonicalObjectSize, canonicalLocalFile);
+                    videoRenditions =
+                            maybeGenerateMobileRendition(job, videoMetadata, canonicalObjectSize, canonicalLocalFile);
                 }
 
                 Set<ProcessingTarget> pendingTargets = EnumSet.copyOf(enabledTargets);
@@ -218,7 +223,8 @@ public class MediaProcessingJobHandler {
                         thumbnailObjectKey,
                         transcodedObjectKey,
                         canonicalObjectSize,
-                        reusedOriginalObject));
+                        reusedOriginalObject,
+                        videoRenditions));
                 logTransition(
                         finalStatus,
                         job,
@@ -253,7 +259,8 @@ public class MediaProcessingJobHandler {
                     null,
                     null,
                     null,
-                    false));
+                    false,
+                    List.of()));
             return MediaProcessingJobStatus.PROCESSING_FAILED;
         } finally {
             if (!terminalSuccess) {
@@ -416,25 +423,25 @@ public class MediaProcessingJobHandler {
      * @param canonicalObjectSize uploaded canonical playback size
      * @param canonicalLocalFile local canonical playback file used as rendition input
      */
-    private void maybeGenerateMobileRendition(
+    private List<VideoRenditionResult> maybeGenerateMobileRendition(
             MediaProcessingJobMessage job,
             VideoMetadata sourceMetadata,
             Long canonicalObjectSize,
             Path canonicalLocalFile) {
         if (!workerProperties.getFeatureFlags().isVideoMobileRenditions()) {
-            return;
+            return List.of();
         }
         if (canonicalObjectSize == null || canonicalLocalFile == null) {
             logger.warn(
                     "Skipping mobile rendition jobId={} mediaId={} because canonical playback details are incomplete",
                     job.jobId(),
                     job.mediaId());
-            return;
+            return List.of();
         }
 
         try {
             Path renditionOutputFile = canonicalLocalFile.getParent().resolve("playback.480p.mp4");
-            java.util.Optional<Path> generatedFile = videoMobileRenditionGenerator.generate(
+            Optional<Path> generatedFile = videoMobileRenditionGenerator.generate(
                     canonicalLocalFile,
                     renditionOutputFile,
                     sourceMetadata,
@@ -445,7 +452,7 @@ public class MediaProcessingJobHandler {
                         job.jobId(),
                         job.mediaId(),
                         job.objectKey());
-                return;
+                return List.of();
             }
 
             verifyTranscodedFile(generatedFile.get());
@@ -458,6 +465,13 @@ public class MediaProcessingJobHandler {
                     job.mediaId(),
                     uploadResult.objectKey(),
                     uploadResult.objectSize());
+            Integer width = resolveRenditionWidth(sourceMetadata, 480);
+            return List.of(new VideoRenditionResult(
+                    uploadResult.objectKey(),
+                    uploadResult.contentType(),
+                    width,
+                    480,
+                    uploadResult.objectSize()));
         } catch (VideoRenditionGenerationException e) {
             logger.warn(
                     "Mobile rendition generation failed jobId={} mediaId={} reason={} message={}",
@@ -465,6 +479,7 @@ public class MediaProcessingJobHandler {
                     job.mediaId(),
                     e.getFailureReason(),
                     e.getMessage());
+            return List.of();
         } catch (ObjectStorageUploadException e) {
             logger.warn(
                     "Mobile rendition upload failed jobId={} mediaId={} reason={} message={}",
@@ -472,6 +487,26 @@ public class MediaProcessingJobHandler {
                     job.mediaId(),
                     MediaProcessingFailureReason.RENDITION_UPLOAD_FAILED,
                     e.getMessage());
+            return List.of();
         }
+    }
+
+    /**
+     * Calculates the proportional even width for a height-constrained rendition.
+     *
+     * @param sourceMetadata source dimensions
+     * @param targetHeight rendition height
+     * @return proportional even width, or {@code null} when dimensions are unavailable
+     */
+    private Integer resolveRenditionWidth(VideoMetadata sourceMetadata, int targetHeight) {
+        if (sourceMetadata == null
+                || sourceMetadata.width() == null
+                || sourceMetadata.height() == null
+                || sourceMetadata.height() <= 0) {
+            return null;
+        }
+        double proportionalWidth =
+                sourceMetadata.width() * (targetHeight / (double) sourceMetadata.height());
+        return Math.max(2, (int) Math.round(proportionalWidth / 2.0d) * 2);
     }
 }

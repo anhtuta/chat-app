@@ -680,7 +680,7 @@ Recommended path:
   - after Phase 7 video success, `playbackUrl` resolves to the canonical MP4 (`transcodedUrl` when distinct, otherwise `contentUrl`)
   - the frontend should stop inferring “best playable URL” from raw storage fields once `playbackUrl` is available
 
-### Phase 9 - Adaptive/mobile-friendly video outputs
+### Phase 9 - Adaptive/mobile-friendly video outputs - **Done**
 
 - This phase should be split into smaller tasks. Keep it focused on additional MP4 renditions only.
 - Do **not** add HLS in this phase; HLS stays Phase 10.
@@ -709,15 +709,19 @@ Recommended path:
      - the rendition stays MP4/H.264/AAC and is derived from the canonical playback asset, not from a separate client upload path
      - generation is skipped when the source is already `<= 480p`, metadata is incomplete, or the canonical MP4 is too small to justify the extra derivative
      - failures in this optional step are logged but do **not** fail the canonical transcode result; the main MP4 can still reach `MEDIA_READY`
-     - rollout stays behind a dedicated worker feature flag until task 3 exposes multiple sources to the backend/frontend contract
-  3. Extend the backend/frontend contract for multiple sources
-     - keep `playbackUrl` as the default source for simple clients
-     - add an optional structured list of video sources/renditions for smarter clients
-     - include enough metadata per rendition for selection, such as resolution and approximate bitrate or file size
-  4. Add frontend default-selection rules
-     - decide how the client chooses a lower-resolution source on mobile or poor networks
-     - start with simple heuristics and no manual quality switch if that keeps scope smaller
-     - keep fallback behavior straightforward: if rendition selection is unavailable, play `playbackUrl`
+     - generation remains controlled by the dedicated `video-mobile-renditions` worker feature flag
+  3. Extend the backend/frontend contract for multiple sources - **Done**
+     - worker callbacks now include structured `videoRenditions` entries with object key, MIME type, dimensions, and size
+     - `chat-app-backend` persists the first 480p rendition key and size through migration `V13`
+     - attachment responses expose ordered `videoSources` entries with stable `CANONICAL` and `MOBILE` roles
+     - `playbackUrl` remains the default source for old/simple clients
+     - missing rendition data remains backward compatible: `videoSources` contains only canonical playback
+  4. Add frontend default-selection rules - **Done**
+     - the frontend prefers the `MOBILE` source on viewports `<= 768px`
+     - it also prefers mobile playback when the Network Information API reports data saver, slow 2G, 2G, or 3G
+     - wide/fast clients continue to use canonical `playbackUrl`
+     - if rendition information or browser network information is unavailable, playback falls back through `playbackUrl`, canonical source, `transcodedUrl`, and `contentUrl`
+     - no manual quality selector is included in this phase
 - Exit criteria for this phase:
   - the worker can produce at least one smaller MP4 rendition
   - the backend can expose that rendition without breaking old clients

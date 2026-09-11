@@ -454,6 +454,12 @@ class MediaProcessingJobHandlerTest {
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
         assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
+        assertThat(resultSink.lastResult().videoRenditions()).singleElement().satisfies(rendition -> {
+            assertThat(rendition.objectKey()).isEqualTo("media/7/video/demo.480p.mp4");
+            assertThat(rendition.width()).isEqualTo(854);
+            assertThat(rendition.height()).isEqualTo(480);
+            assertThat(rendition.sizeBytes()).isEqualTo(4L * 1024 * 1024);
+        });
         assertThat(uploader.uploadedObjectKeys())
                 .containsExactly("media/7/video/demo.transcoded.mp4", "media/7/video/demo.480p.mp4");
         assertThat(uploader.uploadedContentTypes()).containsExactly("video/mp4", "video/mp4");
@@ -486,6 +492,7 @@ class MediaProcessingJobHandlerTest {
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
         assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
+        assertThat(resultSink.lastResult().videoRenditions()).isEmpty();
         assertThat(uploader.uploadedObjectKeys()).containsExactly("media/7/video/demo.transcoded.mp4");
     }
 

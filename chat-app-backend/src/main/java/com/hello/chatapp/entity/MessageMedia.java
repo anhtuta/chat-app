@@ -111,6 +111,12 @@ public class MessageMedia {
     @Column(name = "transcoded_object_key", length = 512)
     private String transcodedObjectKey;
 
+    @Column(name = "rendition_480p_object_key", length = 512)
+    private String rendition480pObjectKey;
+
+    @Column(name = "rendition_480p_size_bytes")
+    private Long rendition480pSizeBytes;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

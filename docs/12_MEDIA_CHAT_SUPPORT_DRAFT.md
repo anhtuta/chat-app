@@ -952,7 +952,8 @@ Recommendation path:
      - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
      - prefer explicit contract fields: `posterUrl`, `playbackUrl`, and `downloadUrl`
      - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` / `downloadUrl` and `playbackUrl` refer to that object, not the original upload
-     - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
+     - use `videoSources` when present: prefer the `MOBILE` 480p source on narrow screens, data saver, or reported slow connections, while retaining `playbackUrl` as fallback
+     - a manual quality selector remains optional future UX
 12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration
    - Redis-based rate limiting

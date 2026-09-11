@@ -34,7 +34,7 @@ public class LoggingMediaProcessingResultSink implements MediaProcessingResultSi
             lastResultHolder.set(result);
         }
         logger.info(
-                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} originalObjectKey={} thumbnailObjectKey={} transcodedObjectKey={} canonicalObjectSize={} reusedOriginal={} metadata={}",
+                "media-processing result jobId={} mediaId={} messageId={} status={} completedTargets={} pendingTargets={} originalObjectKey={} thumbnailObjectKey={} transcodedObjectKey={} canonicalObjectSize={} reusedOriginal={} videoRenditions={} metadata={}",
                 result.jobId(),
                 result.mediaId(),
                 result.messageId(),
@@ -46,6 +46,7 @@ public class LoggingMediaProcessingResultSink implements MediaProcessingResultSi
                 result.transcodedObjectKey(),
                 result.canonicalObjectSize(),
                 result.reusedOriginalObject(),
+                result.videoRenditions(),
                 result.videoMetadata());
     }
 }

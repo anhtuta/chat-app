@@ -5,6 +5,7 @@ import com.hello.chatapp.constant.ProcessingTarget;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -22,6 +23,7 @@ import java.util.Set;
  * @param transcodedObjectKey canonical playback object key, if transcode succeeded
  * @param canonicalObjectSize size of the canonical playback object
  * @param reusedOriginalObject whether the original object is already canonical
+ * @param videoRenditions secondary playback renditions produced by the worker
  */
 public record MediaProcessingResultRequest(
         @NotBlank String jobId,
@@ -35,5 +37,6 @@ public record MediaProcessingResultRequest(
         String thumbnailObjectKey,
         String transcodedObjectKey,
         Long canonicalObjectSize,
-        boolean reusedOriginalObject) {
+        boolean reusedOriginalObject,
+        @NotNull List<@Valid MediaProcessingVideoRenditionRequest> videoRenditions) {
 }

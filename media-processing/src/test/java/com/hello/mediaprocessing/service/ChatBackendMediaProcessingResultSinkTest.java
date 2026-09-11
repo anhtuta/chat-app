@@ -50,7 +50,8 @@ class ChatBackendMediaProcessingResultSinkTest {
                 "input.thumbnail.jpg",
                 "input.transcoded.mp4",
                 80L,
-                false);
+                false,
+                java.util.List.of());
     }
 
     /**

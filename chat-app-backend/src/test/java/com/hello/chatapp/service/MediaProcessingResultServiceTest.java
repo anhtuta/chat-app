@@ -5,6 +5,7 @@ import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.ProcessingTarget;
 import com.hello.chatapp.dto.MediaProcessingResultRequest;
 import com.hello.chatapp.dto.MediaProcessingVideoMetadataRequest;
+import com.hello.chatapp.dto.MediaProcessingVideoRenditionRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
 import com.hello.chatapp.entity.Message;
@@ -73,12 +74,15 @@ class MediaProcessingResultServiceTest {
     void apply_readyResult_switchesCanonicalObjectAndDeletesOriginal() {
         when(provider.objectExists("media/7/video/input.thumbnail.jpg")).thenReturn(true);
         when(provider.objectExists("media/7/video/input.transcoded.mp4")).thenReturn(true);
+        when(provider.objectExists("media/7/video/input.480p.mp4")).thenReturn(true);
 
         service.apply(readyRequest());
 
         assertThat(media.getObjectKey()).isEqualTo("media/7/video/input.transcoded.mp4");
         assertThat(media.getTranscodedObjectKey()).isEqualTo("media/7/video/input.transcoded.mp4");
         assertThat(media.getThumbnailObjectKey()).isEqualTo("media/7/video/input.thumbnail.jpg");
+        assertThat(media.getRendition480pObjectKey()).isEqualTo("media/7/video/input.480p.mp4");
+        assertThat(media.getRendition480pSizeBytes()).isEqualTo(40L);
         assertThat(media.getDetectedMimeType()).isEqualTo("video/mp4");
         assertThat(media.getSizeBytes()).isEqualTo(80L);
         assertThat(media.getWidth()).isEqualTo(1920);
@@ -122,7 +126,8 @@ class MediaProcessingResultServiceTest {
                 null,
                 null,
                 null,
-                false);
+                false,
+                java.util.List.of());
 
         service.apply(request);
 
@@ -150,6 +155,12 @@ class MediaProcessingResultServiceTest {
                 "media/7/video/input.thumbnail.jpg",
                 "media/7/video/input.transcoded.mp4",
                 80L,
-                false);
+                false,
+                java.util.List.of(new MediaProcessingVideoRenditionRequest(
+                        "media/7/video/input.480p.mp4",
+                        "video/mp4",
+                        854,
+                        480,
+                        40L)));
     }
 }

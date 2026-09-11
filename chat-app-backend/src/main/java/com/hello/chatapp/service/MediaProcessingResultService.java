@@ -2,6 +2,7 @@ package com.hello.chatapp.service;
 
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.dto.MediaProcessingResultRequest;
+import com.hello.chatapp.dto.MediaProcessingVideoRenditionRequest;
 import com.hello.chatapp.dto.MediaProcessingVideoMetadataRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.dto.MessageResponseMapper;
@@ -66,6 +67,7 @@ public class MediaProcessingResultService {
 
         applyMetadata(media, request.videoMetadata());
         applyPoster(media, request);
+        applyVideoRenditions(media, request);
         switch (request.status()) {
             case PROCESSING_IN_PROGRESS -> media.setStatus(MediaStatus.PROCESSING_IN_PROGRESS);
             case PROCESSING_FAILED -> media.setStatus(MediaStatus.PROCESSING_FAILED);
@@ -124,6 +126,29 @@ public class MediaProcessingResultService {
             throw new BadRequestException("Poster media object does not exist");
         }
         media.setThumbnailObjectKey(thumbnailObjectKey);
+    }
+
+    /**
+     * Verifies and persists the first supported secondary 480p MP4 rendition.
+     */
+    private void applyVideoRenditions(MessageMedia media, MediaProcessingResultRequest request) {
+        if (request.videoRenditions().isEmpty()) {
+            return;
+        }
+        if (request.videoRenditions().size() > 1) {
+            throw new BadRequestException("Only one secondary video rendition is supported");
+        }
+
+        MediaProcessingVideoRenditionRequest rendition = request.videoRenditions().getFirst();
+        if (rendition.height() != 480 || !"video/mp4".equalsIgnoreCase(rendition.mimeType())) {
+            throw new BadRequestException("Unsupported secondary video rendition");
+        }
+        ObjectStorageProvider provider = storageProviderRegistry.getProvider(media.getStorageProvider());
+        if (!provider.objectExists(rendition.objectKey())) {
+            throw new BadRequestException("Secondary video rendition object does not exist");
+        }
+        media.setRendition480pObjectKey(rendition.objectKey());
+        media.setRendition480pSizeBytes(rendition.sizeBytes());
     }
 
     /**

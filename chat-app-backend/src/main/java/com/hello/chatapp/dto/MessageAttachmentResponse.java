@@ -3,6 +3,7 @@ package com.hello.chatapp.dto;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.constant.MediaScanStatus;
 import com.hello.chatapp.constant.MediaStatus;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,6 +31,7 @@ public class MessageAttachmentResponse {
     private String posterUrl;
     private String previewUrl;
     private String transcodedUrl;
+    private List<VideoSourceResponse> videoSources;
     // private String thumbnailObjectKey;
     // private String previewObjectKey;
     // private String transcodedObjectKey;

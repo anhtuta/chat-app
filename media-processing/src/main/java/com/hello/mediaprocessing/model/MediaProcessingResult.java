@@ -3,6 +3,7 @@ package com.hello.mediaprocessing.model;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 
+import java.util.List;
 import java.util.Set;
 
 import io.micronaut.serde.annotation.Serdeable;
@@ -22,6 +23,7 @@ import io.micronaut.serde.annotation.Serdeable;
  * @param transcodedObjectKey object key of the canonical playback MP4, or {@code null} when transcode did not run
  * @param canonicalObjectSize size of the canonical playback object, or {@code null} when unavailable
  * @param reusedOriginalObject {@code true} when the original upload is already the playback asset
+ * @param videoRenditions secondary playback renditions produced by the worker
  */
 @Serdeable
 public record MediaProcessingResult(
@@ -36,5 +38,6 @@ public record MediaProcessingResult(
         String thumbnailObjectKey,
         String transcodedObjectKey,
         Long canonicalObjectSize,
-        boolean reusedOriginalObject) {
+        boolean reusedOriginalObject,
+        List<VideoRenditionResult> videoRenditions) {
 }

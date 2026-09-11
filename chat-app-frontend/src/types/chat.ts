@@ -24,6 +24,15 @@ export interface ChatUser {
   fullname?: string | null;
 }
 
+export interface VideoSource {
+  url: string;
+  mimeType: string;
+  width?: number | null;
+  height?: number | null;
+  sizeBytes?: number | null;
+  role: "CANONICAL" | "MOBILE" | string;
+}
+
 export interface ChatAttachment {
   id?: number | string | null;
   attachmentId?: string;
@@ -41,6 +50,7 @@ export interface ChatAttachment {
   contentUrl?: string | null;
   downloadUrl?: string | null;
   playbackUrl?: string | null;
+  videoSources?: VideoSource[] | null;
   localPreviewUrl?: string | null;
   status?: AttachmentProcessingStatus | LocalUploadStatus | string | null;
 }
