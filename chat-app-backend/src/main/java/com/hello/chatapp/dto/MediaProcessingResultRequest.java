@@ -39,4 +39,14 @@ public record MediaProcessingResultRequest(
         Long canonicalObjectSize,
         boolean reusedOriginalObject,
         @NotNull List<@Valid MediaProcessingVideoRenditionRequest> videoRenditions) {
+
+    /**
+     * Micronaut Serde omits empty collections by default, so a finished job can arrive without
+     * {@code pendingTargets}. Treat missing collections as empty instead of failing {@code @NotNull}.
+     */
+    public MediaProcessingResultRequest {
+        completedTargets = completedTargets == null ? Set.of() : Set.copyOf(completedTargets);
+        pendingTargets = pendingTargets == null ? Set.of() : Set.copyOf(pendingTargets);
+        videoRenditions = videoRenditions == null ? List.of() : List.copyOf(videoRenditions);
+    }
 }

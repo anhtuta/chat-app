@@ -640,6 +640,7 @@ Recommended path:
   - On success, `objectKey` and `transcodedObjectKey` both identify the canonical MP4, so `contentUrl` and `transcodedUrl` resolve to the same file.
   - The replaced original is deleted from MinIO only after the DB transaction commits. Cleanup failure is logged and leaves an orphan rather than breaking the canonical media row.
   - Duplicate callbacks for an attachment already at `MEDIA_READY` return successfully without deleting or downgrading it. This handles a lost HTTP response followed by RabbitMQ redelivery after the original was deleted.
+  - A finished job sends `pendingTargets: []`. Micronaut Serde would otherwise omit that empty set, and the backend `@NotNull` check used to reject the callback. Empty collections on the result payload are now always serialized, and the backend treats omitted collections as empty.
   - The updated `MessageResponse` is republished through the existing realtime path after commit.
 - What changed in `media-processing-service`:
   - Added `ChatBackendMediaProcessingResultSink`, enabled by `media-processing.callback.enabled=true`.
