@@ -1,12 +1,6 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
-import type {
-  ChatAttachment,
-  LocalUploadState,
-  MessageType,
-  ProcessingIndicator,
-} from "../../types/chat";
-import { MESSAGE_TYPES } from "./mediaUtils";
+import { getProcessingIndicator, MESSAGE_TYPES } from "./mediaUtils";
 import type { DisplayChatMessage } from "./displayChatMessage";
 import ImageGallery from "./ImageGallery";
 import InlineVideo from "./InlineVideo";
@@ -14,16 +8,8 @@ import InlineAudio from "./InlineAudio";
 import FileAttachmentCard from "./FileAttachmentCard";
 import LocalUploadStatus from "./LocalUploadStatus";
 
-export interface MessageMediaFormattedFields {
-  messageType: MessageType;
-  attachments: ChatAttachment[];
-  localUploadState: LocalUploadState | null;
-  processingIndicator: ProcessingIndicator | null;
-}
-
 interface MessageMediaContentProps {
   message: DisplayChatMessage;
-  formatted: MessageMediaFormattedFields;
   onRetryPendingMessage?: (localId: string) => void;
   onCancelPendingMessage?: (localId: string) => void;
   onDismissPendingMessage?: (localId: string) => void;
@@ -31,40 +17,44 @@ interface MessageMediaContentProps {
 
 function MessageMediaContent({
   message,
-  formatted,
   onRetryPendingMessage,
   onCancelPendingMessage,
   onDismissPendingMessage,
 }: MessageMediaContentProps) {
+  const messageType = message.messageType || MESSAGE_TYPES.TEXT;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  const localUploadState = message.localUploadState || null;
+  const processingIndicator = getProcessingIndicator(message);
+
   return (
     <div className="message-media-content-wrapper">
       <Box className="chat-message-media-block">
-        {formatted.messageType === MESSAGE_TYPES.IMAGE && (
-          <ImageGallery attachments={formatted.attachments} />
+        {messageType === MESSAGE_TYPES.IMAGE && (
+          <ImageGallery attachments={attachments} />
         )}
-        {formatted.messageType === MESSAGE_TYPES.VIDEO && (
-          <InlineVideo attachment={formatted.attachments[0]} messageType={formatted.messageType} />
+        {messageType === MESSAGE_TYPES.VIDEO && (
+          <InlineVideo attachment={attachments[0]} messageType={messageType} />
         )}
-        {formatted.messageType === MESSAGE_TYPES.AUDIO && (
-          <InlineAudio attachment={formatted.attachments[0]} messageType={formatted.messageType} />
+        {messageType === MESSAGE_TYPES.AUDIO && (
+          <InlineAudio attachment={attachments[0]} messageType={messageType} />
         )}
-        {formatted.messageType === MESSAGE_TYPES.FILE && (
-          <FileAttachmentCard attachment={formatted.attachments[0]} />
+        {messageType === MESSAGE_TYPES.FILE && (
+          <FileAttachmentCard attachment={attachments[0]} />
         )}
-        {formatted.processingIndicator && (
-          <Box className={`chat-message-processing-indicator ${formatted.processingIndicator.tone}`}>
+        {processingIndicator && (
+          <Box className={`chat-message-processing-indicator ${processingIndicator.tone}`}>
             <Typography variant="caption" className="chat-message-processing-title">
-              {formatted.processingIndicator.label}
+              {processingIndicator.label}
             </Typography>
             <Typography variant="caption" className="chat-message-processing-copy">
-              {formatted.processingIndicator.description}
+              {processingIndicator.description}
             </Typography>
           </Box>
         )}
-        {formatted.localUploadState && (
+        {localUploadState && (
           <LocalUploadStatus
             message={message}
-            localUploadState={formatted.localUploadState}
+            localUploadState={localUploadState}
             onRetryPendingMessage={onRetryPendingMessage}
             onCancelPendingMessage={onCancelPendingMessage}
             onDismissPendingMessage={onDismissPendingMessage}
