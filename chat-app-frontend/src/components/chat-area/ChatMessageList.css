@@ -246,6 +246,7 @@
 
 .chat-message-video {
   width: 100%;
+  min-height: 180px;
   max-height: 320px;
   border-radius: 10px;
   background: #000;
