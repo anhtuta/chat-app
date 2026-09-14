@@ -1,4 +1,4 @@
-# Flow
+# Flow when user uploads a video without media processing
 
 User clicks to Attach button
 
