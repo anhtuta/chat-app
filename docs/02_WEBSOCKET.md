@@ -161,23 +161,24 @@ From a scaling perspective, I think **Version B is much safer**.
 
 Tóm lại thì:
 
-- Vẫn nên dùng 1 subscription cho mỗi user
-- 1 subscription cho group đang mở
-- 1 subscription cho summary của các group còn lại
+- Vẫn nên dùng 2 subscriptions cho mỗi user
+  - 1 subscription cho group đang mở (per-group channel)
+  - 1 subscription cho summary của các group còn lại (per-user channel)
 
 ## My opinion on your proposal
 
 I like the direction, but I would refine it:
 
-**Good idea:** remove `/topic/user.{id}.group-updates` and stop doing per-member fan-out.  
-**Risky part:** making every user subscribe to the full chat stream of every group.
+- **Good idea:** remove `/topic/user.{id}.group-updates` and stop doing per-member fan-out.
+- **Risky part:** making every user subscribe to the full chat stream of every group.
 
 So I would recommend:
 
 - keep the **per-group model**
 - but not necessarily a single literal destination for everything
-- use a **per-group summary stream** for the sidebar
-- use the **chat stream** only for active/opened groups
+  - use a **per-group summary stream** for the sidebar
+  - use the **chat stream** only for active/opened groups
+- (Giống với ý tưởng ban đầu: vẫn phải dùng 2 subscriptions/destinations cho mỗi user)
 
 That gives you the same structural win:
 
@@ -210,40 +211,6 @@ instead of:
 That is a strong improvement.
 
 Also, note that RabbitMQ bindings are per **destination per instance**, not per user, if implemented well. So even if there are 1M client subscriptions, RabbitMQ may only need bindings for the distinct group destinations that actually exist on that instance.
-
-## Refactor cost
-
-You’re right that this is a meaningful refactor. It touches:
-
-- frontend subscription lifecycle
-- unread/last-message derivation
-- WebSocket security validation
-- RabbitMQ routing keys / binding names
-- deprecating `/topic/user.{username}.group-updates`
-- possibly separating "chat message" vs "sidebar summary" event types
-
-So I’d call it a **medium-to-large refactor**, but the architecture is cleaner afterward.
-
-## Bottom line
-
-- **Possible?** Yes.
-- **Simpler than current per-user update topic?** Yes.
-- **Removes backend fan-out issue?** Yes.
-- **Would I use exactly one `/topic/group.{id}` subscription for all groups and all message traffic?** Probably **NO**, unless message rate is known to be low.
-
-My preferred version is:
-
-- remove `/topic/user.{id}.group-updates`
-- move to **per-group subscriptions**
-- but keep **summary events** separate from **full chat message events**
-
-That gives you the simplicity you want without making every client consume the full live traffic of all joined groups.
-
-If you want, I can next rewrite `docs/11_GROUP_SUMMARY_UPDATE_FANOUT_SCALING.md` around this newer direction and compare these 3 options clearly:
-
-1. current per-user summary topic
-2. per-group summary topic
-3. one per-group event stream for everything
 
 # Memory impact of 1 million subscriptions
 
@@ -297,7 +264,7 @@ T vừa đọc lại bài viết này: https://centrifugal.dev/docs/tutorial/cen
 
 Do đó cách dùng duy nhất 1 channel như này là ko tối ưu.
 
-Tốt nhất là phải dùng 2 channel/destination:
+Tốt nhất là phải dùng 2 channel/destination (như đã nói ở trên):
 
 - 1 cái dành cho group mà user đang open (per-group channel): channel này sẽ nhận đc tin nhắn tức thì khi có ai đó gửi tin
 - 1 cái dành cho summary của các group còn lại (per-user channel): channel này sẽ nhận đc tin nhắn chậm hơn để tối ưu. Vì user có thể ko cần nhận đc update mới nhất của tất cả các group họ tham gia, như vậy quá là loạn!!!

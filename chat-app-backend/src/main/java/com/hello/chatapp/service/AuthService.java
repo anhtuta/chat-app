@@ -24,7 +24,7 @@ public class AuthService {
         if (userRepository.existsByUsername(username)) {
             throw new BadRequestException("Username already exists");
         }
-        
+
         User user = new User(username, passwordEncoder.encode(password));
         return userRepository.save(user);
     }
@@ -32,11 +32,11 @@ public class AuthService {
     public User login(String username, String password) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UnauthorizedException("Invalid username or password"));
-        
+
         if (!passwordEncoder.matches(password, user.getPassword())) {
             throw new UnauthorizedException("Invalid username or password");
         }
-        
+
         return user;
     }
 }

@@ -50,17 +50,17 @@ end note
 == B. Users on Instance 2 subscribe to their groups ==
 
 User2 -> Handler2: STOMP SUBSCRIBE /topic/group.42
-Handler2 -> Exchange: **declareBinding**\nchat.groups --[**group.42**]--> ws.instance-2.inbound
+Handler2 -> Exchange: **declareBinding**\nchat.groups ---[**group.42**]-> ws.instance-2.inbound
 Handler2 -> SimpleBroker2: register User2 on /topic/group.42
 
 User3 -> Handler2: STOMP SUBSCRIBE /topic/group.45
-Handler2 -> Exchange: **declareBinding**\nchat.groups --[**group.45**]--> ws.instance-2.inbound
+Handler2 -> Exchange: **declareBinding**\nchat.groups ---[**group.45**]-> ws.instance-2.inbound
 Handler2 -> SimpleBroker2: register User3 on /topic/group.45
 
 note over Q2
   Same queue, **two bindings** (different routing keys):
-  - chat.groups --[group.42]--> ws.instance-2.inbound
-  - chat.groups --[group.45]--> ws.instance-2.inbound
+  - chat.groups ---[group.42]-> ws.instance-2.inbound
+  - chat.groups ---[group.45]-> ws.instance-2.inbound
 end note
 
 note over Q1
@@ -83,7 +83,7 @@ end note
 
 Exchange -> Q2: deliver message\n(matched: group.42 binding only)
 note over Q1 #White
-  ws.instance-1.inbound: no group.42 binding\n→ **not delivered**
+  ws.instance-1.inbound: no group.42 binding → **not delivered**
 end note
 
 == D. Instance 2 consumes — only group-42 subscribers receive it ==
@@ -98,8 +98,8 @@ SimpleBroker2 -> User2: MESSAGE ✓\n(subscribed to /topic/group.42)
 note over User3 #MistyRose
   User3 does **NOT** receive this message.
   Two independent reasons:
-  1. **RabbitMQ:** routing key group.42 did not match\nthe group.45 binding (User3's group).
-  2. **SimpleBroker:** even after consume, delivery goes only\nto /topic/group.42 subscribers — User3 is on /topic/group.45.
+  1. **RabbitMQ:** routing key group.42 did not match the group.45 binding (User3's group).
+  2. **SimpleBroker:** even after consume, delivery goes only to /topic/group.42 subscribers — User3 is on /topic/group.45.
 end note
 
 User3 -> User3: no message ✗
@@ -114,7 +114,7 @@ note over Exchange, Listener1
   Instance 1 listener checks **source-instance-id**:
   - source = instance-1 → **skip** (local users already got it via SimpleBroker)
 
-  User3 on Instance 2 is still unaffected — group.45 binding\nnever matches a group.42 publish.
+  User3 on Instance 2 is still unaffected — group.45 binding never matches a group.42 publish.
 end note
 
 @enduml

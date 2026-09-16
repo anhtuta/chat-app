@@ -1,0 +1,16 @@
+package com.hello.chatapp.constant;
+
+public enum GroupPermission {
+    READ_MESSAGES,
+    SEND_MESSAGES,
+    CREATE_JOIN_LINK,
+    ADD_MEMBERS,
+    KICK_MEMBERS,
+    BAN_MEMBERS,
+    UNBAN_MEMBERS,
+    MANAGE_ROLES,
+    MANAGE_GROUP_DETAILS,
+    EDIT_ANY_TEXT_MESSAGE,
+    DELETE_ANY_MESSAGE,
+    TRANSFER_LEADERSHIP
+}

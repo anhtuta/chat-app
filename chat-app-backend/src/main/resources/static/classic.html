@@ -858,8 +858,11 @@
                     // Switch to the newly created group
                     switchToChat('group', group.id, group.name);
                 } else {
-                    const error = await response.text();
-                    alert('Error creating group: ' + error);
+                    const errorBody = await response.json().catch(() => null);
+                    const errorMessage = errorBody && typeof errorBody.message === 'string' && errorBody.message.trim()
+                        ? errorBody.message.trim()
+                        : 'Error creating group';
+                    alert(errorMessage);
                 }
             } catch (error) {
                 console.error('Error creating group:', error);

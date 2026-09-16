@@ -1,0 +1,13 @@
+---
+description: Require Javadocs for Java types and non-boilerplate methods
+globs: **/*.java
+alwaysApply: false
+---
+
+# Java Javadocs
+
+- Add Javadocs to every Java class, interface, enum, record, and nested type you create or modify.
+- Add Javadocs to every non-boilerplate method you create or modify.
+- Skip constructors plus plain getters, setters, `toString()`, `equals()`, and `hashCode()` unless they contain non-obvious behavior.
+- For test files, add brief Javadocs to the test class and each test method describing the behavior being verified.
+- If the code is obvious, keep the Javadoc short.

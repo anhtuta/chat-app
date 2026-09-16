@@ -8,6 +8,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 
+/**
+ * Setup-only seeder for unlimited groups ({@code max_members} left {@code NULL}).
+ */
 public class GroupSeeder {
 
     public static void main(String[] args) {
@@ -38,7 +41,7 @@ public class GroupSeeder {
             }
         }
 
-        // Insert groups
+        // Insert groups. max_members is omitted so seed groups stay unlimited (NULL).
         String checkGroupSql = "SELECT COUNT(*) FROM groups WHERE name = ?";
         String insertGroupSql = "INSERT INTO groups (name, created_by, created_at) VALUES (?, ?, ?) RETURNING id";
 

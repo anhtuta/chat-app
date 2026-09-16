@@ -17,8 +17,7 @@ chat-app.code-workspace
 # SENSITIVE DATA & LOCAL CREDENTIALS
 # ----------------------------------------------------
 **/.env
-**/.env.*
-!**/.env.example
+**/.env.local
 **/*.pem
 **/*.key
 **/*.p12
@@ -33,3 +32,7 @@ chat-app.code-workspace
 **/.pnpm-store/
 **/node/
 **/npm/
+
+out/
+chat-app-backend/cursor.md
+chat-app-backend/README.md

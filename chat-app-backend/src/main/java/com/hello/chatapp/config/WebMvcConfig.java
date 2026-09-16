@@ -13,6 +13,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // Forward SPA routes to index.html so BrowserRouter works in production
         registry.addViewController("/login").setViewName("forward:/index.html");
         registry.addViewController("/register").setViewName("forward:/index.html");
+        registry.addViewController("/join").setViewName("forward:/index.html");
+        registry.addViewController("/join/{path:[^\\.]*}").setViewName("forward:/index.html");
         registry.addViewController("/group/{path:[^\\.]*}").setViewName("forward:/index.html");
         registry.addViewController("/group/{path:[^\\.]*}/{path2:[^\\.]*}").setViewName("forward:/index.html");
         registry.addViewController("/").setViewName("forward:/index.html");

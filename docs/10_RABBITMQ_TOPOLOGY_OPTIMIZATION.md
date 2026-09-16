@@ -24,6 +24,13 @@ Example with 3 instances, 100 groups, 1,000 users (all connected):
 | Exchanges | 1 + 100 + 1,000 = **1,101**       | Same (exchanges persist)                             |
 | Queues    | 3 × (1 + 100 + 1,000) = **3,303** | 3 × (1 + ~concurrent_group_views + ~connected_users) |
 
+Why?
+
+- 100 groups --> 100 websocket destinations (`topic/group.42`, `topic/group.99`, ...) --> 100 exchanges (`topic.group.42`, `topic.group.99`, ...)
+- 1,000 users --> 1,000 websocket destinations (`topic/user.alice.group-updates`, `topic/user.bob.group-updates`, ...) --> 1,000 exchanges (`topic.user.alice.group-updates`, `topic.user.bob.group-updates`, ...)
+- `Total_exchanges = total_ws_destinations = total_groups + total_users_with_updates`.
+- `Total_queues = total_ws_destinations * total_instances`.
+
 RabbitMQ topology with 1 instance, 100 groups, 1,000 users, here is the rabbitMQ exchanges and queues:
 
 - Exchanges are durable and persist across restarts. That's why we have so many exchanges, even after all users and groups are disconnected:
@@ -233,6 +240,8 @@ The current active topology is:
 
 ### RabbitMQ topology
 
+#### Example 1: 1 instance, 20 groups, 12 online users
+
 Exchanges:
 
 ![](./photo/10_exchange-list.webp)
@@ -248,6 +257,49 @@ Queues:
 ![](./photo/10_queue-bindings-1.webp)
 
 ![](./photo/10_queue-bindings-2.webp)
+
+#### Example 2: 2 instances, 4 online users
+
+(This one is easier to understand than Example 1.)
+
+- `instance-dev`:
+  - user `vegeta` connects to group `public`
+  - user `u5` connects to group `16`
+  - user `u11` connects to group `16`
+- `instance-2`:
+  - user `anhtu` connects to group `public`
+
+Exchanges: similar to Example 1: only have 3 exchanges: `chat.public`, `chat.groups`, `chat.user-updates`.
+
+Queues: only have 2 queues for 2 instances.
+
+- `ws.instance-dev.inbound`:
+  - Has 5 bindings with routing keys: `public`, `group.16`, `user.vegeta.group-updates`, `user.u5.group-updates`, `user.u11.group-updates`
+- `ws.instance-2.inbound`:
+  - Has 2 bindings with routing keys: `public`, `user.anhtu.group-updates`
+
+Note:
+
+- RabbitMQ KHÔNG biết gì về các user: `anhtu`, `vegeta`, `u5`, `u11`.
+- Nếu có 1 binding với routing key `group.16` giữa exchange `chat.groups` và queue `ws.instance-dev.inbound`, nghĩa là hiện tại đang có ai đó kết nối tới `instance-dev` và đang xem group `16` (1 hoặc nhiều người). Method `syncSubscriptionToRabbitMQ` sẽ tạo binding và đếm số người đang xem group `16`. Khi tất cả người đang xem group `16` đều disconnect, nó sẽ xoá binding này đi.
+- Nếu có 1 binding với routing key `user.anhtu.group-updates` giữa exchange `chat.user-updates` và queue `ws.instance-2.inbound`, nghĩa là hiện tại đang có ai đó kết nối tới `instance-2` (chỉ 1 người), nhưng ko biết user đó đang xem group nào.
+- Không có binding với routing key `group.42` giữa exchange `chat.groups` và queue `ws.instance-2.inbound`, nghĩa là hiện tại đang KHÔNG có ai kết nối tới `instance-2` và đang xem group `42`.
+
+![](./photo/10_eg2_total-queues.webp)
+
+![](./photo/10_eg2_queue-ws.instance-dev.inbound.webp)
+
+![](./photo/10_eg2_queue-ws.instance-2.inbound.webp)
+
+Also, we use Redis to count online users. See [11_GROUP_SUMMARY_UPDATE_FANOUT_SCALING.md](11_GROUP_SUMMARY_UPDATE_FANOUT_SCALING.md#phase-1b--online-only-fan-out-implemented) for more details. Here is the Redis keys for counting, each key has value `1`:
+
+```sh
+127.0.0.1:6379> keys ws:*
+1) "ws:group-updates:count:u11"
+2) "ws:group-updates:count:anhtu"
+3) "ws:group-updates:count:vegeta"
+4) "ws:group-updates:count:u5"
+```
 
 ### Scaling review
 

@@ -16,6 +16,9 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
+/**
+ * Persisted chat group, including optional member capacity ({@code maxMembers}).
+ */
 @Entity
 @Table(name = "groups")
 @Getter
@@ -29,6 +32,16 @@ public class Group {
 
     @Column(nullable = false)
     private String name;
+
+    @Column(length = 1000)
+    private String description;
+
+    /**
+     * Optional active-member cap. {@code null} and {@code 0} mean unlimited.
+     * Positive values are the configured capacity. Never store a negative value.
+     */
+    @Column(name = "max_members")
+    private Integer maxMembers;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
@@ -45,6 +58,16 @@ public class Group {
 
     @Column(name = "latest_message_at")
     private LocalDateTime latestMessageAt;
+
+    @Column(name = "archived_at")
+    private LocalDateTime archivedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "archived_by")
+    private User archivedBy;
+
+    @Column(name = "archive_reason", length = 64)
+    private String archiveReason;
 
     @PrePersist
     protected void onCreate() {

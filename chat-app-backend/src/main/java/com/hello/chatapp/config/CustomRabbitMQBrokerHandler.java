@@ -40,6 +40,12 @@ public class CustomRabbitMQBrokerHandler {
     private static final String USER_UPDATES_EXCHANGE = "chat.user-updates";
     private static final String DESTINATION_HEADER = "stomp-destination";
 
+    /**
+     * Key: destination.
+     * Value: total subscribers.
+     * This is a per-destination refcount on this JVM instance.
+     * It answers: “how many active local STOMP subscriptions exist for this destination?” — not “which users are subscribed".
+     */
     private final ConcurrentHashMap<String, Integer> destinationSubscriptionCount = new ConcurrentHashMap<>();
 
     /**
@@ -179,6 +185,7 @@ public class CustomRabbitMQBrokerHandler {
             Message message = rabbitTemplate.getMessageConverter().toMessage(Objects.requireNonNull(payload),
                     new MessageProperties());
             message.getMessageProperties().setHeader("source-instance-id", instanceId);
+            // Listener will use this header to forward the message to only users that subscribed to this destination.
             message.getMessageProperties().setHeader(DESTINATION_HEADER, destination);
 
             rabbitTemplate.send(route.exchange(), route.routingKey(), message);

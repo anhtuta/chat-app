@@ -39,7 +39,7 @@ flowchart TB
 | `BotSimulatorApplication` | Spring Boot entry point; loads `SimulatorProperties`.                                                                      |
 | `SimulationOrchestrator`  | Starts on boot: spawns one `StompBotWorker` per bot on a **virtual-thread** executor and schedules periodic stats logging. |
 | `StompBotWorker`          | One simulated user: login, connect, subscribe, send messages in a loop, reconnect on errors.                               |
-| `ChatHttpSessionClient`   | HTTP client for `/api/auth/login`; captures `JSESSIONID` for authenticated WebSocket handshake.                            |
+| `ChatHttpSessionClient`   | HTTP client for `/api/auth/login`; captures the app session cookie for authenticated WebSocket handshake.                   |
 | `WebSocketClientConfig`   | SockJS + STOMP client with Jackson converter and 10s heartbeats.                                                           |
 | `SimulationStats`         | Counters for connected bots, sent/failed messages, and connect failures.                                                   |
 
@@ -54,7 +54,7 @@ flowchart TB
 Each `StompBotWorker` runs this lifecycle until the process shuts down:
 
 1. **Startup jitter** — random delay up to `startup-spread-ms`.
-2. **HTTP login** — `POST /api/auth/login` with `{ username, password }`; store session cookie (`JSESSIONID`).
+2. **HTTP login** — `POST /api/auth/login` with `{ username, password }`; store the session cookie (`CHATAPP_SESSION` by default).
 3. **STOMP connect** — open SockJS WebSocket at `{base-url}{ws-endpoint}` (default `http://localhost:9010/ws`) with the session cookie.
 4. **Subscribe** — register no-op handlers on group and user-scoped topics (see below).
 5. **Send loop** — repeatedly:

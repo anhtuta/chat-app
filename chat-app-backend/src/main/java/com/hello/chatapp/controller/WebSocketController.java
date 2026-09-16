@@ -1,18 +1,17 @@
 package com.hello.chatapp.controller;
 
 import com.hello.chatapp.config.CustomRabbitMQBrokerHandler;
+import com.hello.chatapp.constant.GroupPermission;
 import com.hello.chatapp.dto.GroupSummaryUpdate;
 import com.hello.chatapp.dto.MessageRequest;
 import com.hello.chatapp.dto.MessageResponse;
 import com.hello.chatapp.entity.Group;
 import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.User;
-import com.hello.chatapp.exception.ForbiddenException;
-import com.hello.chatapp.exception.NotFoundException;
-import com.hello.chatapp.repository.GroupParticipantRepository;
-import com.hello.chatapp.repository.GroupRepository;
+import com.hello.chatapp.service.GroupAuthorizationService;
 import com.hello.chatapp.service.GroupSummaryUpdatePublisher;
 import com.hello.chatapp.service.MessageService;
+import com.hello.chatapp.service.RealtimeMessageDeliveryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
@@ -20,7 +19,6 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
@@ -31,23 +29,20 @@ public class WebSocketController {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketController.class);
 
-    private final GroupRepository groupRepository;
-    private final GroupParticipantRepository groupParticipantRepository;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final GroupAuthorizationService groupAuthorizationService;
     private final CustomRabbitMQBrokerHandler rabbitMQBrokerHandler;
+    private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
     private final MessageService messageService;
     private final GroupSummaryUpdatePublisher groupSummaryUpdatePublisher;
 
-    public WebSocketController(GroupRepository groupRepository,
-            GroupParticipantRepository groupParticipantRepository,
-            SimpMessagingTemplate messagingTemplate,
+    public WebSocketController(GroupAuthorizationService groupAuthorizationService,
             CustomRabbitMQBrokerHandler rabbitMQBrokerHandler,
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService,
             MessageService messageService,
             GroupSummaryUpdatePublisher groupSummaryUpdatePublisher) {
-        this.groupRepository = groupRepository;
-        this.groupParticipantRepository = groupParticipantRepository;
-        this.messagingTemplate = messagingTemplate;
+        this.groupAuthorizationService = groupAuthorizationService;
         this.rabbitMQBrokerHandler = rabbitMQBrokerHandler;
+        this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
         this.messageService = messageService;
         this.groupSummaryUpdatePublisher = groupSummaryUpdatePublisher;
     }
@@ -102,13 +97,7 @@ public class WebSocketController {
             response = Objects.requireNonNull(MessageResponse.fromMessage(savedMessage));
         }
 
-        // Send to local subscribers via SimpleBroker
-        logger.debug("[sendGroupMessage] Sending to in-memory broker for local subscribers: destination={}", destination);
-        messagingTemplate.convertAndSend(destination, response);
-
-        // Publish to RabbitMQ for cross-instance distribution
-        logger.debug("[sendGroupMessage] Publishing to RabbitMQ for cross-instance distribution: destination={}", destination);
-        rabbitMQBrokerHandler.publishToRabbitMQ(destination, response);
+        realtimeMessageDeliveryService.publish(destination, response);
 
         // Buffer group-summary updates per group before fan-out so active chats
         // coalesce to at most one personal-topic publish per buffer interval.
@@ -130,7 +119,7 @@ public class WebSocketController {
      */
     private void pushGroupSummaryUpdate(Group group, Message savedMessage) {
         Long groupId = Objects.requireNonNull(group.getId());
-        String preview = MessageService.buildLatestMessagePreview(savedMessage.getContent());
+        String preview = MessageService.buildLatestMessagePreview(savedMessage);
         groupSummaryUpdatePublisher.publishToGroupMembers(
                 groupId,
                 GroupSummaryUpdate.fromMessage(groupId, savedMessage, preview));
@@ -158,18 +147,11 @@ public class WebSocketController {
      * Validates that a group exists and that the user is a member of the group.
      * 
      * @throws IllegalArgumentException if the group ID is null
-     * @throws NotFoundException if the group is not found
-     * @throws ForbiddenException if the user is not a member of the group
      */
-    private Group validateGroup(Long groupId, User user) throws NotFoundException, ForbiddenException {
+    private Group validateGroup(Long groupId, User user) {
         if (groupId == null) {
             throw new IllegalArgumentException("Group ID is required for group messages");
         }
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new NotFoundException("Group with id " + groupId + " not found"));
-        if (!groupParticipantRepository.existsByGroupAndUser(group, user)) {
-            throw new ForbiddenException("You are not a member of this group");
-        }
-        return group;
+        return groupAuthorizationService.requireActivePermission(user, groupId, GroupPermission.SEND_MESSAGES);
     }
 }

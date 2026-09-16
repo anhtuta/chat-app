@@ -206,7 +206,7 @@ Start with
 2. Mark read when the user opens the group and the frontend has loaded/rendered the latest messages for that group
 3. Compute unread count as messages newer than `lastReadMessageId`
 4. Return `unreadCount` per group in the groups API
-5. Return `totalUnreadCount` as sum of per-group unread counts, either in the same response or a lightweight dedicated endpoint
+5. Derive `totalUnreadCount` on the client as the sum of per-group unread counts (no dedicated total endpoint)
 6. Keep your existing real-time `GroupSummaryUpdate` event, and use it to refresh badges/sidebar instantly
 
 This is the cleanest model for your current architecture.
@@ -263,7 +263,7 @@ Implementation summary:
 - APIs:
   - `GET /api/groups` now returns `unreadCount` per group in `GroupResponse`.
   - `POST /api/groups/{groupId}/read` marks a group as read up to `lastReadMessageId`.
-  - `GET /api/groups/unread/total` returns aggregated unread count.
+  - Total unread is derived on the client from per-group `unreadCount` values (no dedicated total endpoint).
 - Validation:
   - Mark-read endpoint validates membership and validates that `lastReadMessageId` belongs to the same group.
 
@@ -289,8 +289,8 @@ Implementation summary:
 
 - `GroupResponse` now includes `unreadCount`.
 - New endpoint: `POST /api/groups/{groupId}/read`.
-- New endpoint: `GET /api/groups/unread/total`.
 - New DB column: `group_participants.last_read_message_id`.
+- Removed unused `GET /api/groups/unread/total`; the sidebar totals unread from per-group counts.
 
 ### Rollout/migration/backward-compatibility notes
 

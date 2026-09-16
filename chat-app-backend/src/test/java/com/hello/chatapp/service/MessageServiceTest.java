@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.notNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,6 +84,79 @@ class MessageServiceTest {
 
         assertThat(result).isSameAs(savedMessage);
         assertThat(result.getGroup()).isNull();
+    }
+
+    @Test
+    void refreshGroupLatestMessage_usesDeletedPreviewForDeletedLatestMessage() {
+        Message deletedMessage = buildMessage(300L, user, group, "secret", LocalDateTime.now());
+        deletedMessage.setDeletedAt(LocalDateTime.now());
+        Long groupId = Objects.requireNonNull(group.getId());
+
+        when(groupRepository.existsById(groupId)).thenReturn(true);
+        when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.of(deletedMessage));
+        when(groupRepository.updateLatestMessageIfNotStale(
+                eq(groupId),
+                eq("Message deleted"),
+                eq("alice"),
+                eq(deletedMessage.getTimestamp()),
+                eq(300L))).thenReturn(1);
+
+        messageService.refreshGroupLatestMessage(groupId, 300L);
+
+        verify(groupRepository).updateLatestMessageIfNotStale(
+                eq(groupId),
+                eq("Message deleted"),
+                eq("alice"),
+                eq(deletedMessage.getTimestamp()),
+                eq(300L));
+    }
+
+    @Test
+    void refreshGroupLatestMessage_skipsWhenModeratedMessageIsNotLatest() {
+        Message latest = buildMessage(400L, user, group, "newest", LocalDateTime.now());
+        Long groupId = Objects.requireNonNull(group.getId());
+
+        when(groupRepository.existsById(groupId)).thenReturn(true);
+        when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.of(latest));
+
+        messageService.refreshGroupLatestMessage(groupId, 300L);
+
+        verify(groupRepository, never()).updateLatestMessageIfNotStale(
+                anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong());
+        verify(groupRepository, never()).clearLatestMessageIfEmpty(anyLong());
+    }
+
+    @Test
+    void refreshGroupLatestMessage_skipsWhenConcurrentNewerSummaryExists() {
+        Message latest = buildMessage(300L, user, group, "old", LocalDateTime.now());
+        Long groupId = Objects.requireNonNull(group.getId());
+
+        when(groupRepository.existsById(groupId)).thenReturn(true);
+        when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.of(latest));
+        when(groupRepository.updateLatestMessageIfNotStale(
+                anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong())).thenReturn(0);
+
+        messageService.refreshGroupLatestMessage(groupId, 300L);
+
+        verify(groupRepository).updateLatestMessageIfNotStale(
+                eq(groupId),
+                eq("old"),
+                eq("alice"),
+                eq(latest.getTimestamp()),
+                eq(300L));
+    }
+
+    @Test
+    void refreshGroupLatestMessage_clearsSummaryOnlyWhenGroupHasNoMessages() {
+        Long groupId = Objects.requireNonNull(group.getId());
+
+        when(groupRepository.existsById(groupId)).thenReturn(true);
+        when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.empty());
+        when(groupRepository.clearLatestMessageIfEmpty(groupId)).thenReturn(1);
+
+        messageService.refreshGroupLatestMessage(groupId, 300L);
+
+        verify(groupRepository).clearLatestMessageIfEmpty(groupId);
     }
 
     private Message buildMessage(Long id, User messageUser, Group messageGroup, String content, LocalDateTime timestamp) {

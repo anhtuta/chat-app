@@ -9,6 +9,19 @@
   - `messagingTemplate.convertAndSend("/topic/user.{username}.group-updates", update)`
   - `rabbitMQBrokerHandler.publishToRabbitMQ("/topic/user.{username}.group-updates", update)` (multi-instance only)
 
+```java
+@Async("groupSummaryUpdateExecutor")
+public void publishToGroupMembers(Long groupId, GroupSummaryUpdate update) {
+    List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
+    for (String username : usernames) {
+        String safeUsername = Objects.requireNonNull(username);
+        String userScopedTopicDestination = "/topic/user." + safeUsername + ".group-updates";
+        messagingTemplate.convertAndSend(userScopedTopicDestination, Objects.requireNonNull((Object) update));
+        rabbitMQBrokerHandler.publishToRabbitMQ(userScopedTopicDestination, update);
+    }
+}
+```
+
 This means the backend does **O(group_members)** publish calls per saved group message.
 
 Example for a busy group:
@@ -37,118 +50,6 @@ Per-user topic model:
   Client subscriptions: O(1) per user
   Backend publish calls:  O(members) per group message
 ```
-
-## Single-Instance Baseline (no RabbitMQ)
-
-With **one backend instance**, RabbitMQ is not needed for cross-instance delivery. The publisher can be reduced to:
-
-```java
-@Async("groupSummaryUpdateExecutor")
-public void publishToGroupMembers(Long groupId, GroupSummaryUpdate update) {
-    List<String> usernames = groupParticipantRepository.findParticipantUsernamesByGroupId(groupId);
-    for (String username : usernames) {
-        String destination = "/topic/user." + username + ".group-updates";
-        messagingTemplate.convertAndSend(destination, update);
-    }
-}
-```
-
-### Yes — this is still fan-out
-
-Even on a single instance, **the Java code fans out once per member per message**. The problem is not RabbitMQ here; it is the **publisher loop**.
-
-| What                   | Single instance (current)                  |
-| ---------------------- | ------------------------------------------ |
-| DB query               | 1 × load all usernames                     |
-| `convertAndSend` calls | **N** (one per member)                     |
-| RabbitMQ               | none                                       |
-| WebSocket deliveries   | N (one per connected member on that topic) |
-
-For a 1,000-member group at 10 msg/s → **10,000 `convertAndSend` calls/s** from application code alone.
-
-### Single destination + subscribers (removes application fan-out)
-
-Group **chat** already works this way on one instance:
-
-```java
-messagingTemplate.convertAndSend("/topic/group.42", messageResponse);
-```
-
-One publish; SimpleBroker delivers to every STOMP session subscribed to `/topic/group.42`.
-
-The same pattern can apply to sidebar summaries:
-
-```java
-messagingTemplate.convertAndSend("/topic/group.42.summary", update);
-```
-
-| What                  | Per-user loop (current)                                              | Per-group topic (alternative)                                            |
-| --------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Backend publish calls | **O(members)**                                                       | **O(1)**                                                                 |
-| Who subscribes        | Each user: `/topic/user.{me}.group-updates` (1 topic for all groups) | Each user: `/topic/group.{id}.summary` for **each group they belong to** |
-| Broker fan-out        | Done N times in Java                                                 | Done once by SimpleBroker                                                |
-| DB query on send      | Load all usernames                                                   | **None** (no member list needed)                                         |
-
-```text
-Per-group summary topic model (single instance):
-  Client subscriptions: O(groups_user_belongs_to) per user
-  Backend publish calls:  O(1) per group message
-```
-
-This **does** remove the application fan-out issue on one instance.
-
-### Single-instance trade-off
-
-|                            | Per-user destination                 | Per-group summary topic                                               |
-| -------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
-| Publisher cost             | High in large groups                 | **Low (1 call)**                                                      |
-| Client subscriptions       | **Low (1)**                          | Higher (1 per group in sidebar)                                       |
-| Security                   | Personal topic, easy to reason about | Must validate SUBSCRIBE to `/topic/group.{id}.summary` (member check) |
-| Matches group chat pattern | No                                   | **Yes**                                                               |
-
-For a **1,000-member group**, per-group topic is clearly better on the publisher side. The cost moves to **each member subscribing** to that group's summary topic (only while connected / while group is in their list).
-
-**Recommendation for single instance:** **Yes** — prefer **one publish to `/topic/group.{groupId}.summary`** over a per-member loop. Buffering (below) is still useful for busy chats but is no longer required just to avoid melting the publisher.
-
-## Add RabbitMQ Back (multi-instance)
-
-On multiple instances, the same idea extends naturally:
-
-```text
-Instance 1 (sender):
-  1 × publish to RabbitMQ: chat.groups / group.42.summary
-  (optional) 1 × local convertAndSend for local subscribers
-
-RabbitMQ:
-  Route to ws.{instance-id}.inbound only on instances with a binding for group.42.summary
-
-Each receiving instance:
-  1 × listener receives message
-  1 × convertAndSend("/topic/group.42.summary", update)  → SimpleBroker fans out locally
-```
-
-| Layer                         | Per-user loop (current)                            | Per-group summary topic                                        |
-| ----------------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
-| RabbitMQ publishes            | **O(members)**                                     | **O(instances_with_online_members)** ≈ small constant          |
-| Per-instance `convertAndSend` | **O(members on that instance)** via loop           | **O(1)** per instance                                          |
-| Bindings                      | `user.{username}.group-updates` per connected user | `group.{id}.summary` per group that has ≥1 local online member |
-
-RabbitMQ remains the **middle-man between instances**; it should not replicate the per-member loop across the cluster.
-
-### Multi-instance flow (target)
-
-```text
-User A on Instance 1 sends message to group 42
-  → save message
-  → publish ONCE: exchange chat.groups, routing key group.42.summary
-  → headers: source-instance-id, stomp-destination=/topic/group.42.summary
-
-Instance 1 listener: skip or local forward (same as group chat)
-Instance 2 listener: convertAndSend("/topic/group.42.summary", update)
-  → User B, User C (subscribed on Instance 2) receive sidebar update
-```
-
-Frontend: on load (after `GET /api/groups`), subscribe to `/topic/group.{id}.summary` for each group in the sidebar (or subscribe lazily when group list is loaded). Unsubscribe when leaving app or when removed from group.
 
 ## Possible Solutions
 
@@ -430,38 +331,9 @@ Buffering helps with:
 
 It does **not** change the big-O (still O(members) per flush), but for 2–10 member groups that is usually irrelevant.
 
-### When I would still switch to Option 2
-
-Move to per-group summary if you later see:
-
-- groups with 100+ members and high message rate
-- publisher/RabbitMQ metrics climbing with group size
-- need to support community/server-style chats
-
-Until then, Option 1 + buffering is a good **low-risk** path.
-
-### Practical recommendation
-
-1. **Short/medium term:** keep per-user summary + fixed-interval buffering per `groupId` + **online-only fan-out** (Phase 1 + 1b, implemented).
-2. **Add metrics:** max/avg group size, publishes per summary flush, subscribed/total members ratio, flush rate.
-3. **Revisit Option 2** only when large-group traffic shows up in metrics.
-
 So yes — for “many small groups, few giants,” **Option 1 + buffering + online-only fan-out is a suitable solution**, and the large refactor to per-group subscriptions is probably not worth it yet.
 
 ## Recommendation
-
-Think in two layers:
-
-1. **Single instance:** remove application fan-out → **one publish to `/topic/group.{groupId}.summary`** (Solution **2**).
-2. **Multi-instance:** same single publish → **one RabbitMQ message** per summary update on `chat.groups` / `group.{groupId}.summary`, then **one local `convertAndSend` per instance** (not per member).
-
-**Short term (optional patch):** Solution **4** (buffer + current per-user loop) if we need relief before frontend subscription changes.
-
-**Medium term (recommended):** Solution **2** (per-group summary topic end-to-end).
-
-**Avoid as end state:** per-member loop (current) and hybrid **3** (RabbitMQ fixed but local loop to personal topics).
-
-**Long term:** Solutions **7** / **8** if product scale outgrows push-based summaries.
 
 Recommendation path:
 
@@ -508,54 +380,8 @@ Why buffering instead of debounce:
 - Subscription existence is a better signal than “user exists in group” for real-time sidebar delivery.
 - Why don't we use `SimpUserRegistry`? See [02_WEBSOCKET.md](02_WEBSOCKET.md#how-to-check-if-a-user-is-online-why-dont-we-use-simpuserregistry)
 
-**API / contract impacts**
-
-- No client or STOMP destination change.
-- New Redis keys: `ws:group-updates:count:{username}` (integer refcount, deleted at zero).
-- Debug log reports `deliveredCount/totalMembers` per flush.
-
-**Rollout / backward compatibility**
-
-- Requires Redis (already used for Spring Session). If Redis is unavailable, fan-out fails open to all members (same as pre-1b behavior).
-- Offline users miss real-time sidebar events while disconnected; sidebar is still correct after reconnect via HTTP group list load.
-
 What did **not** change yet:
 
 - No move to `/topic/group.{groupId}.summary`
 - No frontend subscription model change
 - Per-member **loop and DB username scan** still run on each flush (publish step is skipped for offline users only)
-
-### Migration / backward compatibility
-
-- No client/API contract change in Phase 1 or 1b; existing personal summary subscribers continue to work unchanged.
-- If we later move to per-group summary topics, we can run both personal and per-group streams briefly if needed.
-- Ensure `validateSubscription` allows `/topic/group.{id}.summary` only for members before any Phase 2 rollout.
-
-### Metrics to validate after Phase 1 + 1b
-
-- Group member count distribution
-- `publishToGroupMembers()` call rate and loop size
-- **Subscribed vs total members per flush** (`deliveredCount/totalMembers` in logs)
-- RabbitMQ publishes to `chat.user-updates` vs `chat.groups` (summary keys)
-- Subscriptions per client (group summary topics)
-- Buffer flush rate and coalescing ratio
-- Redis `ws:group-updates:count:*` key count vs connected clients
-
-## Future Higher-Scale Path
-
-| Scale                               | Suggested approach                                        |
-| ----------------------------------- | --------------------------------------------------------- |
-| Single instance, any group size     | **One publish** to `/topic/group.{id}.summary`            |
-| Multi-instance, small groups        | Per-group summary topic + one RabbitMQ publish per update |
-| Large groups (1000+), bursty chat   | Above + **buffering** per group                           |
-| Many instances, sustained high rate | Dedicated summary worker (Solution 7)                     |
-| Very large product                  | CQRS read model (Solution 8)                              |
-
-### Comparison summary
-
-| Model                           | 1 instance: publish calls/msg | Multi-instance: RabbitMQ msgs/msg    | Client subscriptions/user |
-| ------------------------------- | ----------------------------- | ------------------------------------ | ------------------------- |
-| **Current (per-user loop)**     | O(members)                    | O(members)                           | **1**                     |
-| **Per-group summary topic**     | **O(1)**                      | **O(instances with online members)** | O(groups user belongs to) |
-| **Per-user loop + buffering**   | O(members) / interval factor  | same / interval factor               | **1**                     |
-| **Per-user loop + online-only** | O(online_members) / flush     | O(online_members) / flush            | **1**                     |

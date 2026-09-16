@@ -53,7 +53,8 @@ Run your backend normally in debug mode on port 9010.
 
 ### Step C: Open the UIs
 
-- App health: http://localhost:9010/actuator/health
+- App health (liveness): http://localhost:9010/health
+- App health (dependencies via Actuator): http://localhost:9010/actuator/health
 - App metrics (Prometheus format): http://localhost:9010/actuator/prometheus
 - Prometheus: http://localhost:9090
 - Prometheus targets page: http://localhost:9090/targets

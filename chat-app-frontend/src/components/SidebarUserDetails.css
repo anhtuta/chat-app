@@ -1,0 +1,52 @@
+.sidebar-user-details-wrapper {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-user-details {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sidebar-user-details-avatar {
+  width: 36px !important;
+  height: 36px !important;
+  flex-shrink: 0;
+  background-color: var(--color-surface-raised) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+.sidebar-user-details-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-user-details-fullname {
+  color: var(--color-text-secondary) !important;
+  font-weight: 600 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-details-username {
+  color: var(--color-text-primary) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-details-logout {
+  flex-shrink: 0;
+  color: var(--color-text-secondary) !important;
+}
+
+.sidebar-user-details-logout:hover {
+  color: var(--color-text-primary) !important;
+  background-color: var(--color-surface-hover) !important;
+}

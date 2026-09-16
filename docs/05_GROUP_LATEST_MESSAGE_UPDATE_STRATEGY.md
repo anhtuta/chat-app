@@ -146,6 +146,46 @@ Why this exists:
 - Timestamp alone cannot decide which one is latest.
 - Message id provides deterministic ordering inside that timestamp.
 
+## `refreshGroupLatestMessage` (edit / delete path)
+
+CAS (`updateLatestMessageIfNewer`) only runs on **new** message inserts: it advances the group summary when the incoming row is newer. It does **not** cover moderation, where the chronologically latest row can stay the same while its preview must change.
+
+### When we use it
+
+`MessageModerationService` calls `MessageService.refreshGroupLatestMessage(groupId, moderatedMessageId)` after a successful:
+
+- `PATCH /api/messages/{messageId}` (text edit)
+- `DELETE /api/messages/{messageId}` (soft delete)
+
+for **group** messages only (public chat has no group summary columns).
+
+### What it does
+
+1. Verify the group exists.
+2. Query the latest message: `findTopByGroup_IdOrderByTimestampDescIdDesc`.
+3. If none: `clearLatestMessageIfEmpty` (conditional clear so a concurrent send is not wiped).
+4. **Early exit** if `moderatedMessageId != latest.id` — an older message’s edit/delete cannot change the sidebar preview. Soft-delete of the latest row still matches (same id, preview becomes `"Message deleted"`).
+5. Otherwise: write preview/sender/timestamp via `updateLatestMessageIfNotStale` (CAS with `<=` on message-id tie-break).
+
+### Concurrency note
+
+A plain `group.setLatestMessage(...); save(group)` is unsafe: a concurrent `saveGroupMessage` CAS can land between the `findTop` read and the save, and the refresh would overwrite the newer summary.
+
+Do **not** reuse `updateLatestMessageIfNewer` for this path. Its tie-break uses `<`, so editing/deleting the current latest message (same timestamp + same id, new preview) would update **0** rows. `updateLatestMessageIfNotStale` uses `<=`, which:
+
+- still refuses to overwrite a **newer** concurrent summary
+- allows rewriting the preview when the candidate **is** the current latest (edit / soft-delete)
+
+### Relationship to the FE sidebar
+
+| Layer                              | Behavior today                                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **DB** (`groups.latest_message*`)  | Updated by `refreshGroupLatestMessage` so the next `GET /api/groups` / reload shows the correct preview.           |
+| **Acting client sidebar**          | Patched locally from the edit/delete HTTP response when the moderated message is the current latest (Phase 11 UI). |
+| **Other online clients’ sidebars** | **Not** updated by this method. No `GroupSummaryUpdate` WebSocket fan-out yet; that is Feature 15 **Task 12.4**.   |
+
+So: yes, edit/delete use this method so the **persisted** sidebar preview stays coherent — but it is a DB recompute helper, not the realtime sidebar publisher.
+
 ## Future Higher-Scale Path
 
 If group write traffic grows beyond what synchronous CAS can handle comfortably, the next step is:

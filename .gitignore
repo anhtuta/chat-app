@@ -8,3 +8,5 @@ Thumbs.db
 target/
 .specstory
 docker/logs/
+
+.idea/

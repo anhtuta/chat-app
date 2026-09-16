@@ -18,11 +18,13 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
     Optional<Group> findByIdWithCreator(Long id);
 
     /**
-     * Unused
+     * Locks the group row ({@code SELECT … FOR UPDATE}) for membership lifecycle changes.
+     * Used to serialize last-member leave/archive against concurrent add/join so a new
+     * participant cannot be inserted into a group that is about to be (or already) archived.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT g FROM Group g WHERE g.id = :id")
-    Optional<Group> findByIdForLatestMessageUpdate(@Param("id") Long id);
+    Optional<Group> findByIdForUpdate(@Param("id") Long id);
 
     /**
      * Atomically updates the group's latest message summary fields if the provided message is newer than the current latest message.
@@ -67,4 +69,57 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
             @Param("latestMessageSender") String latestMessageSender,
             @Param("latestMessageAt") LocalDateTime latestMessageAt,
             @Param("messageId") Long messageId);
+
+    /**
+     * Like {@link #updateLatestMessageIfNewer}, but also allows rewriting the summary when the candidate
+     * message is already the stored latest (same timestamp and same winning message id).
+     * <p>
+     * Used by {@code refreshGroupLatestMessage} after edit/delete: the chronologically latest row may be
+     * unchanged while its preview must change. The tie-break uses {@code <=} instead of {@code <} so that
+     * case succeeds, while a concurrently written newer message still causes {@code 0} rows updated.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Group g
+            SET g.latestMessage = :latestMessage,
+                g.latestMessageSender = :latestMessageSender,
+                g.latestMessageAt = :latestMessageAt
+            WHERE g.id = :groupId
+                AND (
+                    g.latestMessageAt IS NULL
+                    OR g.latestMessageAt < :latestMessageAt
+                    OR (
+                        g.latestMessageAt = :latestMessageAt
+                        AND (
+                            SELECT COALESCE(MAX(m.id), 0)
+                            FROM Message m
+                            WHERE m.group.id = :groupId
+                              AND m.timestamp = g.latestMessageAt
+                        ) <= :messageId
+                    )
+                )
+            """)
+    int updateLatestMessageIfNotStale(
+            @Param("groupId") Long groupId,
+            @Param("latestMessage") String latestMessage,
+            @Param("latestMessageSender") String latestMessageSender,
+            @Param("latestMessageAt") LocalDateTime latestMessageAt,
+            @Param("messageId") Long messageId);
+
+    /**
+     * Clears denormalized latest-message fields only when the group has no messages.
+     * Avoids wiping a concurrent send's summary with an unconditional entity save.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Group g
+            SET g.latestMessage = null,
+                g.latestMessageSender = null,
+                g.latestMessageAt = null
+            WHERE g.id = :groupId
+              AND NOT EXISTS (
+                  SELECT 1 FROM Message m WHERE m.group.id = :groupId
+              )
+            """)
+    int clearLatestMessageIfEmpty(@Param("groupId") Long groupId);
 }

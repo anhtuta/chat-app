@@ -72,8 +72,9 @@ For production deployment:
    ```
 
 4. **Health checks:**
-   - Add Spring Boot Actuator for health endpoints
-   - Configure proper health check intervals
+   - `GET /health` is the liveness probe (process up; no database/broker check)
+   - `GET /actuator/health` is Actuator dependency health
+   - Compose instances and the Dockerfile probe `http://localhost:9010/health`
 
 5. **Logging:**
    - Use centralized logging (ELK, Loki, etc.)
