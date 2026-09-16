@@ -3,6 +3,7 @@ package com.hello.mediaprocessing.service;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hello.mediaprocessing.config.MediaProcessingVideoMetadataProperties;
+import com.hello.mediaprocessing.exception.VideoMetadataExtractionException;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import jakarta.inject.Singleton;
 import java.io.IOException;
@@ -233,15 +234,15 @@ public class FfprobeVideoMetadataExtractor implements VideoMetadataExtractor {
             FfprobeStream videoStream = response.streams() == null
                     ? null
                     : response.streams().stream()
-                    .filter(stream -> "video".equals(stream.codec_type()))
-                    .findFirst()
-                    .orElse(null);
+                            .filter(stream -> "video".equals(stream.codec_type()))
+                            .findFirst()
+                            .orElse(null);
             FfprobeStream audioStream = response.streams() == null
                     ? null
                     : response.streams().stream()
-                    .filter(stream -> "audio".equals(stream.codec_type()))
-                    .findFirst()
-                    .orElse(null);
+                            .filter(stream -> "audio".equals(stream.codec_type()))
+                            .findFirst()
+                            .orElse(null);
             long durationMillis = parseDurationMillis(response.format() == null ? null : response.format().duration());
             if (videoStream == null) {
                 throw new VideoMetadataExtractionException("ffprobe did not return a video stream");

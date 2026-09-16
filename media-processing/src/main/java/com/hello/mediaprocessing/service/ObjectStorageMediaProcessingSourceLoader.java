@@ -2,6 +2,7 @@ package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingWorkspaceProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
+import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloadException;
@@ -40,10 +41,8 @@ public class ObjectStorageMediaProcessingSourceLoader implements MediaProcessing
         if (job.storageProvider() != downloaderRegistry.getConfiguredProviderType()) {
             throw new MediaProcessingSourceLoadException(
                     MediaProcessingFailureReason.STORAGE_PROVIDER_MISMATCH,
-                    "Job storage provider "
-                            + job.storageProvider()
-                            + " does not match configured provider "
-                            + downloaderRegistry.getConfiguredProviderType());
+                    "Job storage provider " + job.storageProvider() + " does not match configured provider " +
+                            downloaderRegistry.getConfiguredProviderType());
         }
 
         ObjectStorageDownloader objectStorageDownloader = downloaderRegistry.getDownloader(job.storageProvider());

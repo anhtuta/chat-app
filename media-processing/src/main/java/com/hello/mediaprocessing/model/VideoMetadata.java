@@ -1,5 +1,7 @@
 package com.hello.mediaprocessing.model;
 
+import io.micronaut.serde.annotation.Serdeable;
+
 /**
  * Captures the normalized metadata extracted from a local video source file.
  *
@@ -11,6 +13,7 @@ package com.hello.mediaprocessing.model;
  * @param videoCodec primary video codec name, if present
  * @param audioCodec primary audio codec name, if present
  */
+@Serdeable
 public record VideoMetadata(
         long durationMillis,
         Integer width,

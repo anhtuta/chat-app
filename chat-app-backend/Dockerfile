@@ -22,8 +22,11 @@ FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app
 
-# Create non-root user
-RUN groupadd -r spring && useradd -r -g spring spring
+# curl is used by HEALTHCHECK; create the non-root user in the same layer
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r spring && useradd -r -g spring spring
 
 # Copy the JAR file from build stage
 COPY --from=build /app/target/*.jar app.jar
@@ -35,10 +38,8 @@ USER spring:spring
 # Expose port
 EXPOSE 9010
 
-# Health check (optional - requires Spring Boot Actuator)
-# To enable, add spring-boot-starter-actuator to pom.xml and uncomment:
-# HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-#   CMD java -jar app.jar --spring.actuator.health.enabled=true || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -fsS http://localhost:9010/health || exit 1
 
 # Run the Spring Boot application using the JAR file
 ENTRYPOINT ["java", "-jar", "app.jar"]

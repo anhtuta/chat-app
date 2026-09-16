@@ -6,6 +6,7 @@ import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
 import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.ObjectStorageDownloadResult;
 import com.hello.mediaprocessing.storage.ObjectStorageDownloadException;

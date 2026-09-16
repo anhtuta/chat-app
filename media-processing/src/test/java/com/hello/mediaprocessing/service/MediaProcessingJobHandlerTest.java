@@ -1,14 +1,22 @@
 package com.hello.mediaprocessing.service;
 
+import com.hello.mediaprocessing.config.MediaProcessingStorageProperties;
 import com.hello.mediaprocessing.config.MediaProcessingWorkerProperties;
 import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.MediaProcessingMessageType;
 import com.hello.mediaprocessing.constant.ObjectStorageProviderType;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
+import com.hello.mediaprocessing.constant.VideoTranscodeMode;
+import com.hello.mediaprocessing.exception.MediaProcessingSourceLoadException;
+import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.MediaProcessingJobMessage;
 import com.hello.mediaprocessing.model.MediaProcessingResult;
+import com.hello.mediaprocessing.model.ObjectStorageUploadResult;
 import com.hello.mediaprocessing.model.VideoMetadata;
+import com.hello.mediaprocessing.model.VideoTranscodeResult;
+import com.hello.mediaprocessing.storage.ObjectStorageUploader;
+import com.hello.mediaprocessing.storage.ObjectStorageUploaderRegistry;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.nio.file.Path;
@@ -38,6 +46,8 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -56,6 +66,8 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -76,6 +88,8 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -96,6 +110,8 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -119,6 +135,8 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 resultSink,
                 validator);
 
@@ -146,6 +164,8 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -166,6 +186,8 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
         MediaProcessingJobHandler successfulHandler = new MediaProcessingJobHandler(
@@ -173,6 +195,8 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
@@ -195,10 +219,13 @@ class MediaProcessingJobHandlerTest {
                 deduplicationStore,
                 new SuccessfulSourceLoader(),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
-        MediaProcessingJobMessage job = buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL));
+        MediaProcessingJobMessage job =
+                buildVideoJob("job-partial-retry", List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL));
 
         assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
         assertThat(handler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_IN_PROGRESS);
@@ -214,12 +241,106 @@ class MediaProcessingJobHandlerTest {
                 new InMemoryMediaProcessingJobDeduplicationStore(),
                 new FailingSourceLoader(MediaProcessingFailureReason.SOURCE_MISSING),
                 new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
                 new NoopResultSink(),
                 validator);
 
         MediaProcessingJobStatus status = handler.handle(buildVideoJob("job-missing", List.of(ProcessingTarget.METADATA)));
 
         assertThat(status).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+    }
+
+    /**
+     * Verifies that an already chat-ready MP4 is reused as the playback object without uploading a duplicate.
+     */
+    @Test
+    void handle_transcodeFastPath_reusesOriginalObject() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoTranscode(true);
+        CapturingResultSink resultSink = new CapturingResultSink();
+        RecordingUploader uploader = new RecordingUploader();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(uploader),
+                resultSink,
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-reuse", List.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE)));
+
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.mp4");
+        assertThat(resultSink.lastResult().reusedOriginalObject()).isTrue();
+        assertThat(resultSink.lastResult().completedTargets())
+                .containsExactlyInAnyOrder(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+        assertThat(uploader.lastObjectKey()).isNull();
+    }
+
+    /**
+     * Verifies that a converted playback file is uploaded under a derived object key.
+     */
+    @Test
+    void handle_transcodeReencode_uploadsDerivedObject() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoTranscode(true);
+        CapturingResultSink resultSink = new CapturingResultSink();
+        RecordingUploader uploader = new RecordingUploader();
+        MediaProcessingJobHandler handler = new MediaProcessingJobHandler(
+                properties,
+                new InMemoryMediaProcessingJobDeduplicationStore(),
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new ReencodeTranscoder(),
+                minioUploaderRegistry(uploader),
+                resultSink,
+                validator);
+
+        MediaProcessingJobStatus status = handler.handle(
+                buildVideoJob("job-reencode", List.of(ProcessingTarget.TRANSCODE)));
+
+        assertThat(status).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
+        assertThat(resultSink.lastResult().transcodedObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
+        assertThat(resultSink.lastResult().reusedOriginalObject()).isFalse();
+        assertThat(uploader.lastObjectKey()).isEqualTo("media/7/video/demo.transcoded.mp4");
+        assertThat(uploader.lastContentType()).isEqualTo("video/mp4");
+    }
+
+    /**
+     * Verifies that transcode failures mark the job failed and release the in-progress claim.
+     */
+    @Test
+    void handle_transcodeFailure_marksProcessingFailedAndAllowsRetry() {
+        MediaProcessingWorkerProperties properties = new MediaProcessingWorkerProperties();
+        properties.getFeatureFlags().setVideoTranscode(true);
+        InMemoryMediaProcessingJobDeduplicationStore deduplicationStore = new InMemoryMediaProcessingJobDeduplicationStore();
+        MediaProcessingJobHandler failingHandler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new FailingTranscoder(),
+                minioUploaderRegistry(),
+                new NoopResultSink(),
+                validator);
+        MediaProcessingJobHandler successfulHandler = new MediaProcessingJobHandler(
+                properties,
+                deduplicationStore,
+                new SuccessfulSourceLoader(),
+                new SuccessfulVideoMetadataExtractor(),
+                new ReuseOriginalTranscoder(),
+                minioUploaderRegistry(),
+                new NoopResultSink(),
+                validator);
+
+        MediaProcessingJobMessage job = buildVideoJob("job-transcode-fail", List.of(ProcessingTarget.TRANSCODE));
+
+        assertThat(failingHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.PROCESSING_FAILED);
+        assertThat(successfulHandler.handle(job)).isEqualTo(MediaProcessingJobStatus.MEDIA_READY);
     }
 
     /**
@@ -240,6 +361,27 @@ class MediaProcessingJobHandlerTest {
                 "media/7/video/demo.mp4",
                 "video/mp4",
                 targets);
+    }
+
+    /**
+     * Builds a MinIO uploader registry that records uploads when a recording uploader is supplied.
+     *
+     * @return registry containing a no-op MinIO uploader
+     */
+    private ObjectStorageUploaderRegistry minioUploaderRegistry() {
+        return minioUploaderRegistry(new RecordingUploader());
+    }
+
+    /**
+     * Builds a MinIO uploader registry around the supplied uploader.
+     *
+     * @param uploader uploader to register
+     * @return registry configured for MinIO
+     */
+    private ObjectStorageUploaderRegistry minioUploaderRegistry(ObjectStorageUploader uploader) {
+        MediaProcessingStorageProperties storageProperties = new MediaProcessingStorageProperties();
+        storageProperties.setProvider(ObjectStorageProviderType.MINIO);
+        return new ObjectStorageUploaderRegistry(List.of(uploader), storageProperties);
     }
 
     /**
@@ -287,6 +429,107 @@ class MediaProcessingJobHandlerTest {
                     "mov,mp4,m4a,3gp,3g2,mj2",
                     "h264",
                     "aac");
+        }
+    }
+
+    /**
+     * Test double that reports the source file as already chat-ready.
+     */
+    private static final class ReuseOriginalTranscoder implements VideoTranscoder {
+
+        /**
+         * Returns the source path as the playback file without conversion.
+         *
+         * @param sourceFile downloaded original
+         * @param outputFile ignored
+         * @param sourceMetadata ignored
+         * @return reuse result pointing at the source file
+         */
+        @Override
+        public VideoTranscodeResult transcode(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
+            return new VideoTranscodeResult(VideoTranscodeMode.REUSE_ORIGINAL, sourceFile);
+        }
+    }
+
+    /**
+     * Test double that reports a derived playback file that still needs uploading.
+     */
+    private static final class ReencodeTranscoder implements VideoTranscoder {
+
+        /**
+         * Returns the requested output path as a re-encoded playback file.
+         *
+         * @param sourceFile ignored
+         * @param outputFile workspace playback path
+         * @param sourceMetadata ignored
+         * @return re-encode result pointing at the output file
+         */
+        @Override
+        public VideoTranscodeResult transcode(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
+            return new VideoTranscodeResult(VideoTranscodeMode.REENCODE, outputFile);
+        }
+    }
+
+    /**
+     * Test double that always fails conversion.
+     */
+    private static final class FailingTranscoder implements VideoTranscoder {
+
+        /**
+         * Throws a deterministic transcode failure.
+         *
+         * @param sourceFile ignored
+         * @param outputFile ignored
+         * @param sourceMetadata ignored
+         * @return never returns because the method always throws
+         */
+        @Override
+        public VideoTranscodeResult transcode(Path sourceFile, Path outputFile, VideoMetadata sourceMetadata) {
+            throw new VideoTranscodeException(
+                    MediaProcessingFailureReason.TRANSCODE_FAILED, "Simulated transcode failure");
+        }
+    }
+
+    /**
+     * Records the last upload request without writing to object storage.
+     */
+    private static final class RecordingUploader implements ObjectStorageUploader {
+
+        private String lastObjectKey;
+        private String lastContentType;
+
+        /**
+         * Returns MinIO so the handler registry can resolve the job provider.
+         *
+         * @return {@link ObjectStorageProviderType#MINIO}
+         */
+        @Override
+        public ObjectStorageProviderType getType() {
+            return ObjectStorageProviderType.MINIO;
+        }
+
+        /**
+         * Stores upload arguments for later assertions.
+         *
+         * @param bucket destination bucket
+         * @param objectKey destination object key
+         * @param sourcePath local file that would be uploaded
+         * @param contentType stored content type
+         * @return synthetic upload metadata
+         */
+        @Override
+        public ObjectStorageUploadResult upload(String bucket, String objectKey, Path sourcePath, String contentType) {
+            this.lastObjectKey = objectKey;
+            this.lastContentType = contentType;
+            return new ObjectStorageUploadResult(objectKey, 1L, contentType);
+        }
+
+        private String lastObjectKey() {
+            return lastObjectKey;
+        }
+
+        private String lastContentType() {
+            return lastContentType;
         }
     }
 

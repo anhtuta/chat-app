@@ -40,6 +40,7 @@ public class MediaProcessingWorkerProperties {
     /**
      * Toggles individual processing capabilities while the pipeline is still being built incrementally.
      */
+    @ConfigurationProperties("feature-flags")
     @Introspected
     @Getter
     @Setter

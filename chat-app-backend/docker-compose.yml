@@ -126,6 +126,12 @@ services:
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
       - "9010:9010"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9010/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -171,6 +177,12 @@ services:
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
       - "9011:9010"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9010/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -218,6 +230,12 @@ services:
       LOGGING_LEVEL_COM_HELLO_CHATAPP: ${LOG_LEVEL:-INFO}
     ports:
       - "9012:9010"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9010/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy

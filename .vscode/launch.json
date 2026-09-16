@@ -28,5 +28,12 @@
     //   "port": 5005,
     //   "projectName": "chat-app"
     // },
+    {
+      "type": "java",
+      "name": "MediaProcessing",
+      "request": "launch",
+      "mainClass": "com.hello.mediaprocessing.Application",
+      "projectName": "media-processing"
+    },
   ]
 }

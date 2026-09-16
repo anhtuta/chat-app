@@ -1,8 +1,11 @@
 package com.hello.mediaprocessing.constant;
 
+import io.micronaut.serde.annotation.Serdeable;
+
 /**
  * Describes the worker-side lifecycle state recorded while handling a processing job.
  */
+@Serdeable
 public enum MediaProcessingJobStatus {
     RECEIVED,
     VALIDATED,
