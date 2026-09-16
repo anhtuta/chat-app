@@ -327,7 +327,8 @@ sequenceDiagram
     Worker->>Storage: read original object
     Worker->>Storage: write derivatives + extracted metadata
     Worker->>Backend: POST internal media-processing callback\nstatus + derivative keys + metadata
-    Backend->>Backend: update media rows / message view
+    Backend->>Backend: lock media row + switch canonical object
+    Backend->>Storage: after commit, delete replaced original
     Backend->>Realtime: publish updated MessageResponse
     Realtime->>Clients: deliver refreshed media state
 ```
@@ -407,16 +408,28 @@ Payload fields:
   - `VIDEO_OCR`
   - `SPEECH_TO_TEXT`
 
-#### Processing Status Event
+#### Internal Processing Result Callback
 
-Payload fields:
+- `POST /api/internal/media-processing/results`
+- Header: `X-Media-Processing-Token`
+- Enabled only when `chat.media.processing.enabled=true`.
+- Payload fields:
 
+- `jobId`
 - `messageId`
 - `mediaId`
 - `status`
-- `changedFields`
-- `errorCode`
-- `occurredAt`
+- `videoMetadata`
+- `completedTargets`
+- `pendingTargets`
+- `originalObjectKey`
+- `transcodedObjectKey`
+- `canonicalObjectSize`
+- `reusedOriginalObject`
+- Successful response: HTTP `204`.
+- The endpoint locks the `MessageMedia` row, validates the stable `jobId` (`media-{mediaId}`) and source key, and applies callbacks idempotently.
+- `MEDIA_READY` requires the canonical object to exist before the row is switched.
+- This is a service-authenticated internal endpoint, not a user-facing API.
 
 #### Search Text Extracted Event
 
@@ -565,16 +578,25 @@ Recommended path:
   - service-layer data records moved to `model` (`MediaProcessingJobMessage`, `MediaProcessingResult`, `VideoMetadata`, `ObjectStorageDownloadResult`)
   - behavior stays in `service` / `storage` / `messaging` (`LoadedMediaSource` remains in `service` because it owns workspace cleanup)
 
-### Phase 5 - Video poster thumbnail generation
+### Phase 5 - Video poster thumbnail generation - **Done**
 
-- Generate a poster thumbnail for each processed video.
-- Decide thumbnail capture rules:
-  - first usable frame
-  - fixed timestamp
-  - or heuristic based on black-frame avoidance
-- Write poster object metadata and storage pointers back to the shared persistence/API boundary.
-- Ensure `chat-app-backend` can later expose this poster to the frontend as the default pre-play preview.
-- Phase 6 (transcode) does not depend on this phase and was implemented first.
+- What changed:
+  - `media-processing-service` now implements the `THUMBNAIL` target for video jobs.
+  - The worker uses ffmpeg to capture a single JPEG poster near the start of the video, clamped by video duration.
+  - Poster files are uploaded to object storage under `{stem}.thumbnail.jpg`.
+  - `MediaProcessingResult` / backend callback payloads now include `thumbnailObjectKey`.
+  - `chat-app-backend` persists `thumbnailObjectKey` onto `MessageMedia`, so `thumbnailUrl` / `posterUrl` can be exposed to the frontend.
+  - Default local-trigger and backend-published video jobs now request `METADATA`, `THUMBNAIL`, and `TRANSCODE`.
+- Why it changed:
+  - Phase 8's frontend contract needs a stable poster image before the richer video-player UX can start.
+- Manual test without `chat-app-backend`:
+  - Put an MP4, MOV, or WebM object in MinIO (default bucket `chat-media`).
+  - Start the worker with ffmpeg/ffprobe on `PATH`. RabbitMQ is not required while `media-processing.worker.enabled=false`.
+  - Enable the local trigger: `media-processing.local-trigger.enabled=true` (keep this off outside local testing).
+  - `POST http://localhost:9020/local/media-processing/jobs` with `{"objectKey":"path/to/video.mov"}`.
+  - Response includes worker `status` plus `thumbnailObjectKey` and `transcodedObjectKey` when the sink emitted a result.
+  - Confirm the derived poster in MinIO as `{stem}.thumbnail.jpg`.
+- Phase 6 (transcode) was still implemented first so canonical playback could land before poster polish.
 
 ### Phase 6 - First usable transcoded playback asset - **Done**
 
@@ -600,24 +622,40 @@ Recommended path:
   - Confirm the derived object in MinIO (`{stem}.transcoded.mp4`) unless the source was already H.264 + AAC MP4 (reuse).
   - This endpoint is not a user-facing chat API.
 
-### Phase 7 - Chat-backend integration contract
+### Phase 7 - Chat-backend integration contract - **Done**
 
-- Define how `media-processing-service` reports completed outputs back to the chat system.
-- Recommended first integration path:
-  - `media-processing-service` calls a narrow internal API in `chat-app-backend`
-  - `chat-app-backend` remains responsible for final DB updates that affect client-facing message payloads
-  - avoid direct database writes from `media-processing-service` in the first rollout
-- Update the shared contract so `chat-app-backend` can republish message updates after video processing finishes.
-- Ensure the backend can expose these fields to the frontend:
-  - poster thumbnail URL
-  - playback/download URL for the canonical video object (after success, this is the transcoded MP4, not the original MOV/WebM)
-  - duration
-  - width
-  - height
-  - processing status
-- After a successful switch, `contentUrl` and `transcodedUrl` may point at the same object; do not keep a second full-size original.
+- What changed in `chat-app-backend`:
+  - Replaced the temporary in-process `AsyncMediaProcessingService` placeholder with `RabbitMediaProcessingService`.
+  - After the final message transaction commits, the existing `MediaProcessingService.enqueueProcessing(messageId)` hook now publishes one `MediaProcessingJobMessage` per video attachment.
+  - Added durable RabbitMQ topology:
+    - exchange: `media.processing`
+    - queue: `media.processing.jobs`
+    - routing key: `media.processing.video`
+  - Job ids are stable per attachment (`media-{mediaId}`) for handler idempotency.
+  - Jobs now request `METADATA`, `THUMBNAIL`, and `TRANSCODE`.
+  - Only video is queued in this rollout. Images are published as `MEDIA_READY` using their original object until Phase 12 adds real image derivatives.
+  - Added service-authenticated `POST /api/internal/media-processing/results`.
+  - Callback updates remain owned by `chat-app-backend`; the worker does not write the chat database.
+  - The callback takes a pessimistic lock on `MessageMedia`, updates duration/width/height/status, and verifies the canonical object exists before switching keys.
+  - On success, `objectKey` and `transcodedObjectKey` both identify the canonical MP4, so `contentUrl` and `transcodedUrl` resolve to the same file.
+  - The replaced original is deleted from MinIO only after the DB transaction commits. Cleanup failure is logged and leaves an orphan rather than breaking the canonical media row.
+  - Duplicate callbacks for an attachment already at `MEDIA_READY` return successfully without deleting or downgrading it. This handles a lost HTTP response followed by RabbitMQ redelivery after the original was deleted.
+  - The updated `MessageResponse` is republished through the existing realtime path after commit.
+- What changed in `media-processing-service`:
+  - Added `ChatBackendMediaProcessingResultSink`, enabled by `media-processing.callback.enabled=true`.
+  - The sink calls the backend synchronously with the shared token; callback transport failures escape the handler so RabbitMQ can redeliver.
+  - `MediaProcessingResult` now includes source key, poster key, canonical object size, canonical key, metadata, and reuse status.
+  - Processing failures are also reported to the callback so the backend can set `PROCESSING_FAILED`.
+  - The logging/local-test sink remains active when callback integration is disabled.
+- Configuration:
+  - Backend: `MEDIA_PROCESSING_ENABLED=true` and a non-default `MEDIA_PROCESSING_CALLBACK_TOKEN`.
+  - Worker: `MEDIA_PROCESSING_WORKER_ENABLED=true`, `MEDIA_PROCESSING_CALLBACK_ENABLED=true`, matching `MEDIA_PROCESSING_CALLBACK_TOKEN`, `CHAT_APP_BACKEND_URL`, and `RABBITMQ_URI`.
+  - Integration and the local manual trigger are disabled by default.
+- Current limitation:
+  - MinIO supports original deletion. The repository's S3 provider is still a placeholder and does not implement deletion.
+  - RabbitMQ publish is after commit but has no transactional outbox; the low-priority durable job/outbox work remains Phase 13.
 
-### Phase 8 - Frontend video-player dependency contract
+### Phase 8 - Frontend video-player dependency contract - **Done**
 
 - Define the minimum processed video outputs required before frontend player work starts:
   - poster thumbnail
@@ -625,18 +663,69 @@ Recommended path:
   - transcoded playback asset
 - Align this phase with `docs/12_MEDIA_CHAT_SUPPORT_DRAFT.md` Phase 11.
 - Keep this phase focused on the contract and payload shape, not on implementing the player UI inside this service.
+- Contract additions:
+  - attachment `posterUrl`: preferred pre-play still image for video cards
+  - attachment `playbackUrl`: canonical URL the player should open first
+  - attachment `downloadUrl`: canonical file recipients should download
+  - attachment `durationMs`, `width`, and `height`: minimum metadata for pre-play layout/copy
+  - existing `contentUrl`, `thumbnailUrl`, and `transcodedUrl` remain for backward compatibility during rollout
+- What changed:
+  - `chat-app-backend` now includes `posterUrl`, `playbackUrl`, and `downloadUrl` in `MessageAttachmentResponse`.
+  - Frontend attachment types now explicitly model `durationMs`, `width`, `height`, `posterUrl`, `playbackUrl`, and `downloadUrl`.
+  - The current inline video component prefers `playbackUrl`, applies `posterUrl` when available, and shows duration/size metadata without introducing the Phase 11 player redesign yet.
+- Contract rules:
+  - before poster generation succeeds for a given asset, `posterUrl` may be `null`
+  - before transcode finishes, `playbackUrl` may be `null` or may fall back to `contentUrl`
+  - after Phase 7 video success, `contentUrl` and `downloadUrl` point at the canonical MP4
+  - after Phase 7 video success, `playbackUrl` resolves to the canonical MP4 (`transcodedUrl` when distinct, otherwise `contentUrl`)
+  - the frontend should stop inferring “best playable URL” from raw storage fields once `playbackUrl` is available
 
-### Phase 9 - Adaptive/mobile-friendly video outputs
+### Phase 9 - Adaptive/mobile-friendly video outputs - **Done**
 
-- Add lower-resolution renditions for constrained networks and mobile devices.
-- Decide whether the next step is:
-  - multiple MP4 renditions first
-  - or HLS directly
-- Define the initial rendition ladder, for example:
-  - 240p
-  - 480p
-  - 720p
-- Decide how the frontend should choose low-resolution playback by default on mobile or poor networks.
+- This phase should be split into smaller tasks. Keep it focused on additional MP4 renditions only.
+- Do **not** add HLS in this phase; HLS stays Phase 10.
+- Suggested order:
+  1. Define the first rendition strategy - **Done**
+     - v1 will produce exactly one additional mobile-friendly MP4 rendition: `480p`
+     - do not add `240p` or `720p` in the first rollout; one smaller rendition keeps Phase 9 narrow and easier to validate
+     - keep the existing canonical MP4 as the stable download/fallback asset
+     - encoding profile for the first smaller rendition:
+       - container: MP4
+       - video codec: H.264
+       - audio codec: AAC when the source has audio
+       - max height: `480`
+       - width: scale proportionally, preserve aspect ratio, never upscale
+       - playback compatibility goals stay aligned with the existing canonical MP4 (`yuv420p`, fast-start headers)
+     - skip the smaller rendition when:
+       - the source or canonical MP4 is already `<= 480p`
+       - metadata is missing or too incomplete to scale safely
+       - the source is so short/small that the extra rendition would add complexity without meaningful bandwidth savings
+     - naming direction for the later implementation step:
+       - keep the current canonical MP4 untouched
+       - add one sibling derived object for the mobile rendition, for example `{stem}.480p.mp4`
+  2. Produce secondary renditions in `media-processing-service` - **Done**
+     - the worker now has an optional secondary-rendition step after canonical transcode succeeds
+     - the first implementation generates one smaller sibling object: `{stem}.480p.mp4`
+     - the rendition stays MP4/H.264/AAC and is derived from the canonical playback asset, not from a separate client upload path
+     - generation is skipped when the source is already `<= 480p`, metadata is incomplete, or the canonical MP4 is too small to justify the extra derivative
+     - failures in this optional step are logged but do **not** fail the canonical transcode result; the main MP4 can still reach `MEDIA_READY`
+     - generation remains controlled by the dedicated `video-mobile-renditions` worker feature flag
+  3. Extend the backend/frontend contract for multiple sources - **Done**
+     - worker callbacks now include structured `videoRenditions` entries with object key, MIME type, dimensions, and size
+     - `chat-app-backend` persists the first 480p rendition key and size through migration `V13`
+     - attachment responses expose ordered `videoSources` entries with stable `CANONICAL` and `MOBILE` roles
+     - `playbackUrl` remains the default source for old/simple clients
+     - missing rendition data remains backward compatible: `videoSources` contains only canonical playback
+  4. Add frontend default-selection rules - **Done**
+     - the frontend prefers the `MOBILE` source on viewports `<= 768px`
+     - it also prefers mobile playback when the Network Information API reports data saver, slow 2G, 2G, or 3G
+     - wide/fast clients continue to use canonical `playbackUrl`
+     - if rendition information or browser network information is unavailable, playback falls back through `playbackUrl`, canonical source, `transcodedUrl`, and `contentUrl`
+     - no manual quality selector is included in this phase
+- Exit criteria for this phase:
+  - the worker can produce at least one smaller MP4 rendition
+  - the backend can expose that rendition without breaking old clients
+  - the frontend can prefer a smaller source when conditions call for it
 
 ### Phase 10 - Adaptive streaming
 

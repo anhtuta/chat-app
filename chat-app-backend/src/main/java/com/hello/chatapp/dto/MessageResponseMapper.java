@@ -8,6 +8,7 @@ import com.hello.chatapp.storage.ObjectStorageProvider;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -90,11 +91,89 @@ public class MessageResponseMapper {
         }
 
         ObjectStorageProvider provider = objectStorageProviderRegistry.getProvider(media.getStorageProvider());
-        response.setContentUrl(provider.buildReadUrl(media.getObjectKey()));
-        response.setThumbnailUrl(buildDerivedUrlIfExists(provider, media.getThumbnailObjectKey()));
-        response.setPreviewUrl(buildDerivedUrlIfExists(provider, media.getPreviewObjectKey()));
-        response.setTranscodedUrl(buildDerivedUrlIfExists(provider, media.getTranscodedObjectKey()));
+        String contentUrl = provider.buildReadUrl(media.getObjectKey());
+        String thumbnailUrl = buildDerivedUrlIfExists(provider, media.getThumbnailObjectKey());
+        String previewUrl = buildDerivedUrlIfExists(provider, media.getPreviewObjectKey());
+        String transcodedUrl = buildDerivedUrlIfExists(provider, media.getTranscodedObjectKey());
+
+        response.setContentUrl(contentUrl);
+        response.setDownloadUrl(contentUrl);
+        response.setThumbnailUrl(thumbnailUrl);
+        response.setPosterUrl(isVideoAttachment(media) ? thumbnailUrl : null);
+        response.setPreviewUrl(previewUrl);
+        response.setTranscodedUrl(transcodedUrl);
+        response.setPlaybackUrl(resolvePlaybackUrl(media, contentUrl, transcodedUrl));
+        response.setVideoSources(resolveVideoSources(media, provider, contentUrl));
         return response;
+    }
+
+    /**
+     * Builds the ordered canonical and optional mobile video source contract.
+     */
+    private List<VideoSourceResponse> resolveVideoSources(
+            MessageMedia media,
+            ObjectStorageProvider provider,
+            String contentUrl) {
+        if (!isVideoAttachment(media)) {
+            return List.of();
+        }
+
+        List<VideoSourceResponse> sources = new ArrayList<>();
+        sources.add(new VideoSourceResponse(
+                contentUrl,
+                "video/mp4",
+                media.getWidth(),
+                media.getHeight(),
+                media.getSizeBytes(),
+                "CANONICAL"));
+        String mobileUrl = buildDerivedUrlIfExists(provider, media.getRendition480pObjectKey());
+        if (mobileUrl != null) {
+            sources.add(new VideoSourceResponse(
+                    mobileUrl,
+                    "video/mp4",
+                    resolveRenditionWidth(media.getWidth(), media.getHeight(), 480),
+                    480,
+                    media.getRendition480pSizeBytes(),
+                    "MOBILE"));
+        }
+        return List.copyOf(sources);
+    }
+
+    /**
+     * Resolves the client-facing playback URL for playable media.
+     */
+    private String resolvePlaybackUrl(MessageMedia media, String contentUrl, String transcodedUrl) {
+        if (isVideoAttachment(media) || isAudioAttachment(media)) {
+            return transcodedUrl != null ? transcodedUrl : contentUrl;
+        }
+        return null;
+    }
+
+    /**
+     * Returns whether the attachment is a video based on its resolved MIME type.
+     */
+    private boolean isVideoAttachment(MessageMedia media) {
+        String mimeType = media.getDetectedMimeType() != null ? media.getDetectedMimeType() : media.getDeclaredMimeType();
+        return mimeType != null && mimeType.startsWith("video/");
+    }
+
+    /**
+     * Returns whether the attachment is audio based on its resolved MIME type.
+     */
+    private boolean isAudioAttachment(MessageMedia media) {
+        String mimeType = media.getDetectedMimeType() != null ? media.getDetectedMimeType() : media.getDeclaredMimeType();
+        return mimeType != null && mimeType.startsWith("audio/");
+    }
+
+    /**
+     * Calculates a proportional even width for a height-constrained source.
+     */
+    private Integer resolveRenditionWidth(Integer sourceWidth, Integer sourceHeight, int targetHeight) {
+        if (sourceWidth == null || sourceHeight == null || sourceHeight <= 0) {
+            return null;
+        }
+        double proportionalWidth = sourceWidth * (targetHeight / (double) sourceHeight);
+        return Math.max(2, (int) Math.round(proportionalWidth / 2.0d) * 2);
     }
 
     private String buildDerivedUrlIfExists(ObjectStorageProvider provider, String objectKey) {

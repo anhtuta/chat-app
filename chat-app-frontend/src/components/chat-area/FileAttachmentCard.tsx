@@ -12,6 +12,8 @@ function FileAttachmentCard({ attachment }: FileAttachmentCardProps) {
     return null;
   }
 
+  const downloadUrl = attachment.downloadUrl || attachment.contentUrl;
+
   return (
     <div className="file-attachment-card-wrapper">
       <Box className="chat-message-file-card">
@@ -24,12 +26,12 @@ function FileAttachmentCard({ attachment }: FileAttachmentCardProps) {
           </Typography>
         </Box>
         <Box className="chat-message-file-actions">
-          {attachment.contentUrl && (
+          {downloadUrl && (
             <>
-              <a href={attachment.contentUrl} target="_blank" rel="noreferrer" className="chat-message-file-link">
+              <a href={downloadUrl} target="_blank" rel="noreferrer" className="chat-message-file-link">
                 Open
               </a>
-              <a href={attachment.contentUrl} download className="chat-message-file-link">
+              <a href={downloadUrl} download className="chat-message-file-link">
                 Download
               </a>
             </>

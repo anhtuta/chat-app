@@ -29,7 +29,10 @@ class LocalMediaProcessingJobFactoryTest {
         assertThat(job.requestedMimeType()).isEqualTo("video/mp4");
         assertThat(job.messageType()).isEqualTo(MediaProcessingMessageType.VIDEO);
         assertThat(job.storageProvider()).isEqualTo(ObjectStorageProviderType.MINIO);
-        assertThat(job.processingTargets()).containsExactly(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+        assertThat(job.processingTargets()).containsExactly(
+                ProcessingTarget.METADATA,
+                ProcessingTarget.THUMBNAIL,
+                ProcessingTarget.TRANSCODE);
         assertThat(job.jobId()).isNotBlank();
         assertThat(job.messageId()).isZero();
         assertThat(job.mediaId()).isZero();

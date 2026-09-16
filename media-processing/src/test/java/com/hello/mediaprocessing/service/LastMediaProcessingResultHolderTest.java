@@ -31,6 +31,18 @@ class LastMediaProcessingResultHolderTest {
      */
     private MediaProcessingResult result(String jobId) {
         return new MediaProcessingResult(
-                jobId, 0L, 0L, MediaProcessingJobStatus.MEDIA_READY, null, Set.of(), Set.of(), null, false);
+                jobId,
+                0L,
+                0L,
+                MediaProcessingJobStatus.MEDIA_READY,
+                null,
+                Set.of(),
+                Set.of(),
+                "source.mp4",
+                null,
+                null,
+                null,
+                false,
+                java.util.List.of());
     }
 }

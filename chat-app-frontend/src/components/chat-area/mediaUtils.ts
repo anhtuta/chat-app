@@ -28,6 +28,12 @@ export interface LocalUploadStatusCopy {
   description: string;
 }
 
+export interface VideoPlaybackEnvironment {
+  viewportWidth?: number;
+  saveData?: boolean;
+  effectiveType?: string;
+}
+
 export function isMediaMessageType(messageType: MessageType | string | null | undefined): boolean {
   return (
     messageType === MESSAGE_TYPES.IMAGE ||
@@ -105,6 +111,70 @@ export function formatBytes(bytes: number | string | null | undefined): string {
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+export function formatDuration(durationMs: number | null | undefined): string {
+  if (durationMs === undefined || durationMs === null || Number.isNaN(Number(durationMs))) {
+    return "";
+  }
+
+  const totalSeconds = Math.round(Number(durationMs) / 1000);
+  if (totalSeconds < 0) {
+    return "";
+  }
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+export function getPreferredVideoPlaybackUrl(
+  attachment: ChatAttachment | null | undefined,
+  environment: VideoPlaybackEnvironment = readVideoPlaybackEnvironment(),
+): string | null {
+  if (!attachment) {
+    return null;
+  }
+  if (attachment.localPreviewUrl) {
+    return attachment.localPreviewUrl;
+  }
+
+  const sources = Array.isArray(attachment.videoSources) ? attachment.videoSources : [];
+  const mobileSource = sources.find((source) => source.role === "MOBILE")
+    || sources.find((source) => source.height != null && source.height <= 480);
+  const shouldPreferMobile = environment.saveData === true
+    || ["slow-2g", "2g", "3g"].includes(environment.effectiveType || "")
+    || (environment.viewportWidth != null && environment.viewportWidth <= 768);
+
+  if (shouldPreferMobile && mobileSource?.url) {
+    return mobileSource.url;
+  }
+
+  const canonicalSource = sources.find((source) => source.role === "CANONICAL");
+  return attachment.playbackUrl
+    || canonicalSource?.url
+    || attachment.transcodedUrl
+    || attachment.contentUrl
+    || mobileSource?.url
+    || null;
+}
+
+function readVideoPlaybackEnvironment(): VideoPlaybackEnvironment {
+  const connection = typeof navigator === "undefined"
+    ? undefined
+    : (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+
+  return {
+    viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
+    saveData: connection?.saveData,
+    effectiveType: connection?.effectiveType,
+  };
+}
+
 export function getAttachmentDisplayUrl(
   messageType: MessageType | string,
   attachment: ChatAttachment | null | undefined,
@@ -122,11 +192,11 @@ export function getAttachmentDisplayUrl(
   }
 
   if (messageType === MESSAGE_TYPES.VIDEO) {
-    return attachment.transcodedUrl || attachment.contentUrl || null;
+    return getPreferredVideoPlaybackUrl(attachment);
   }
 
   if (messageType === MESSAGE_TYPES.AUDIO) {
-    return attachment.transcodedUrl || attachment.contentUrl || null;
+    return attachment.playbackUrl || attachment.transcodedUrl || attachment.contentUrl || null;
   }
 
   return attachment.contentUrl || null;

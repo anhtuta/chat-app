@@ -25,8 +25,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -110,10 +108,9 @@ class MediaUploadSessionServiceTest {
         TransactionSynchronizationManager.clear();
     }
 
-    @ParameterizedTest
-    @EnumSource(value = MessageType.class, names = {"IMAGE", "VIDEO"})
-    void completeUploadSession_mediaMessage_publishesAndEnqueuesOnlyAfterCommit(MessageType messageType) {
-        MessageResponse response = stubSuccessfulCompletion(messageType);
+    @Test
+    void completeUploadSession_videoMessage_publishesAndEnqueuesOnlyAfterCommit() {
+        MessageResponse response = stubSuccessfulCompletion(MessageType.VIDEO);
 
         mediaUploadSessionService.completeUploadSession(
                 user,
@@ -132,6 +129,22 @@ class MediaUploadSessionServiceTest {
     }
 
     @Test
+    void completeUploadSession_imageMessage_publishesReadyOriginalWithoutProcessingJob() {
+        MessageResponse response = stubSuccessfulCompletion(MessageType.IMAGE);
+
+        mediaUploadSessionService.completeUploadSession(
+                user,
+                UPLOAD_SESSION_ID,
+                completionRequest(ATTACHMENT_ID));
+
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
+        triggerAfterCommit();
+
+        verify(realtimeMessageDeliveryService).publishToPublic(response);
+        verify(mediaProcessingService, never()).enqueueProcessing(anyLong());
+    }
+
+    @Test
     void completeUploadSession_imageMessage_doesNotPublishOrEnqueueOnRollback() {
         stubSuccessfulCompletion(MessageType.IMAGE);
 
@@ -140,7 +153,7 @@ class MediaUploadSessionServiceTest {
                 UPLOAD_SESSION_ID,
                 completionRequest(ATTACHMENT_ID));
 
-        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(2);
+        assertThat(TransactionSynchronizationManager.getSynchronizations()).hasSize(1);
         triggerAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
 
         verify(realtimeMessageDeliveryService, never()).publishToPublic(any());

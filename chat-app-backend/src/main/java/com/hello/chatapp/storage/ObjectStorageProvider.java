@@ -77,4 +77,11 @@ public interface ObjectStorageProvider {
      * @return {@code true} if the object exists; {@code false} if missing
      */
     boolean objectExists(String objectKey);
+
+    /**
+     * Deletes an object that is no longer referenced by a media row.
+     *
+     * @param objectKey object key to remove
+     */
+    void deleteObject(String objectKey);
 }

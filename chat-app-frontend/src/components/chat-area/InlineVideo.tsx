@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
 import type { ChatAttachment, MessageType } from "../../types/chat";
-import { formatBytes, getAttachmentDisplayUrl } from "./mediaUtils";
+import { formatBytes, formatDuration, getAttachmentDisplayUrl } from "./mediaUtils";
 
 interface InlineVideoProps {
   attachment: ChatAttachment | undefined;
@@ -14,6 +14,11 @@ function InlineVideo({ attachment, messageType }: InlineVideoProps) {
     return null;
   }
 
+  const metadataParts = [
+    attachment.durationMs ? formatDuration(attachment.durationMs) : "",
+    attachment.sizeBytes ? formatBytes(attachment.sizeBytes) : "",
+  ].filter(Boolean);
+
   return (
     <div className="inline-video-wrapper">
       <Box className="chat-message-video-card">
@@ -22,6 +27,7 @@ function InlineVideo({ attachment, messageType }: InlineVideoProps) {
             className="chat-message-video"
             controls
             preload="metadata"
+            poster={attachment.posterUrl || attachment.thumbnailUrl || undefined}
             src={videoUrl}
           />
         ) : (
@@ -30,7 +36,8 @@ function InlineVideo({ attachment, messageType }: InlineVideoProps) {
           </Box>
         )}
         <Typography variant="caption" className="chat-message-attachment-meta">
-          {attachment.originalFilename} {attachment.sizeBytes ? `• ${formatBytes(attachment.sizeBytes)}` : ""}
+          {attachment.originalFilename}
+          {metadataParts.length ? ` • ${metadataParts.join(" • ")}` : ""}
         </Typography>
       </Box>
     </div>

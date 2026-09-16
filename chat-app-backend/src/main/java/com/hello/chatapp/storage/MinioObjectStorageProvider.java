@@ -10,6 +10,7 @@ import io.minio.Http;
 import io.minio.MinioAsyncClient;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.errors.ErrorResponseException;
 import io.minio.messages.Part;
@@ -175,6 +176,23 @@ public class MinioObjectStorageProvider implements ObjectStorageProvider {
             throw new IllegalStateException("Failed to verify object existence in MinIO", e);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to verify object existence in MinIO", e);
+        }
+    }
+
+    /**
+     * Removes an unreferenced object from the configured MinIO bucket.
+     *
+     * @param objectKey object key to remove
+     */
+    @Override
+    public void deleteObject(String objectKey) {
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(mediaStorageProperties.getMinio().getBucket())
+                    .object(objectKey)
+                    .build());
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to delete object from MinIO: " + objectKey, e);
         }
     }
 

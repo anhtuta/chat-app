@@ -51,6 +51,8 @@ public class MediaProcessingWorkerProperties {
 
         private boolean videoTranscode = false;
 
+        private boolean videoMobileRenditions = false;
+
         private boolean videoOcr = false;
 
         private boolean speechToText = false;
