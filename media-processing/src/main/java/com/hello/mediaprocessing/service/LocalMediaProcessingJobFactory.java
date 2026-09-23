@@ -17,7 +17,7 @@ import java.util.UUID;
 public class LocalMediaProcessingJobFactory {
 
     private static final List<ProcessingTarget> DEFAULT_TARGETS =
-            List.of(ProcessingTarget.METADATA, ProcessingTarget.TRANSCODE);
+            List.of(ProcessingTarget.METADATA, ProcessingTarget.THUMBNAIL, ProcessingTarget.TRANSCODE);
 
     private final MediaProcessingLocalTriggerProperties localTriggerProperties;
     private final MediaProcessingStorageProperties storageProperties;

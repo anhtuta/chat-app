@@ -17,11 +17,20 @@ export type AttachmentProcessingStatus =
   | "PROCESSING_PENDING"
   | "PROCESSING_IN_PROGRESS"
   | "PROCESSING_FAILED"
-  | "READY";
+  | "MEDIA_READY";
 
 export interface ChatUser {
   username: string;
   fullname?: string | null;
+}
+
+export interface VideoSource {
+  url: string;
+  mimeType: string;
+  width?: number | null;
+  height?: number | null;
+  sizeBytes?: number | null;
+  role: "CANONICAL" | "MOBILE" | string;
 }
 
 export interface ChatAttachment {
@@ -31,10 +40,17 @@ export interface ChatAttachment {
   originalFilename?: string | null;
   mimeType?: string | null;
   sizeBytes?: number | null;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
   previewUrl?: string | null;
   thumbnailUrl?: string | null;
+  posterUrl?: string | null;
   transcodedUrl?: string | null;
   contentUrl?: string | null;
+  downloadUrl?: string | null;
+  playbackUrl?: string | null;
+  videoSources?: VideoSource[] | null;
   localPreviewUrl?: string | null;
   status?: AttachmentProcessingStatus | LocalUploadStatus | string | null;
 }

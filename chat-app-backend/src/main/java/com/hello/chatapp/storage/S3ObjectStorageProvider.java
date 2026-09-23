@@ -79,4 +79,14 @@ public class S3ObjectStorageProvider implements ObjectStorageProvider {
     public boolean objectExists(String objectKey) {
         return true;
     }
+
+    /**
+     * S3 deletion remains unavailable until the production S3 client implementation is added.
+     *
+     * @param objectKey object key that would be removed
+     */
+    @Override
+    public void deleteObject(String objectKey) {
+        throw new UnsupportedOperationException("S3 object deletion is not implemented yet");
+    }
 }

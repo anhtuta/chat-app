@@ -22,6 +22,46 @@ import org.springframework.lang.NonNull;
 public class RabbitMQConfig {
 
     /**
+     * Declares the durable direct exchange used for media-processing jobs.
+     *
+     * @param properties media-processing topology settings
+     * @return durable processing exchange
+     */
+    @Bean
+    public DirectExchange mediaProcessingExchange(MediaProcessingIntegrationProperties properties) {
+        return new DirectExchange(properties.getExchange(), true, false);
+    }
+
+    /**
+     * Declares the durable queue consumed by media-processing-service.
+     *
+     * @param properties media-processing topology settings
+     * @return durable processing queue
+     */
+    @Bean
+    public Queue mediaProcessingQueue(MediaProcessingIntegrationProperties properties) {
+        return QueueBuilder.durable(properties.getQueue()).build();
+    }
+
+    /**
+     * Binds the processing queue to its direct exchange.
+     *
+     * @param mediaProcessingQueue processing queue
+     * @param mediaProcessingExchange processing exchange
+     * @param properties media-processing topology settings
+     * @return queue binding
+     */
+    @Bean
+    public Binding mediaProcessingBinding(
+            Queue mediaProcessingQueue,
+            DirectExchange mediaProcessingExchange,
+            MediaProcessingIntegrationProperties properties) {
+        return BindingBuilder.bind(mediaProcessingQueue)
+                .to(mediaProcessingExchange)
+                .with(properties.getRoutingKey());
+    }
+
+    /**
      * AmqpAdmin bean for managing RabbitMQ resources (queues, exchanges, bindings).
      * 
      * Used by: CustomRabbitMQBrokerHandler

@@ -12,12 +12,16 @@ import com.hello.chatapp.repository.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Objects;
 
-@Service
+/**
+ * Replaced by RabbitMediaProcessingService, which publishes jobs to RabbitMQ.
+ * Keep this class for reference.
+ * 
+ * @see RabbitMediaProcessingService
+ */
 public class AsyncMediaProcessingService implements MediaProcessingService {
 
     private static final Logger logger = LoggerFactory.getLogger(AsyncMediaProcessingService.class);

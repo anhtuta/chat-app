@@ -3,6 +3,7 @@ package com.hello.mediaprocessing.model;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 
+import java.util.List;
 import java.util.Set;
 
 import io.micronaut.serde.annotation.Serdeable;
@@ -17,8 +18,12 @@ import io.micronaut.serde.annotation.Serdeable;
  * @param videoMetadata extracted video metadata for the processed source
  * @param completedTargets targets completed during the current worker execution
  * @param pendingTargets targets still waiting on later phases
+ * @param originalObjectKey source object key processed by the worker
+ * @param thumbnailObjectKey object key of the generated poster image, or {@code null} when poster generation did not run
  * @param transcodedObjectKey object key of the canonical playback MP4, or {@code null} when transcode did not run
+ * @param canonicalObjectSize size of the canonical playback object, or {@code null} when unavailable
  * @param reusedOriginalObject {@code true} when the original upload is already the playback asset
+ * @param videoRenditions secondary playback renditions produced by the worker
  */
 @Serdeable
 public record MediaProcessingResult(
@@ -29,6 +34,10 @@ public record MediaProcessingResult(
         VideoMetadata videoMetadata,
         Set<ProcessingTarget> completedTargets,
         Set<ProcessingTarget> pendingTargets,
+        String originalObjectKey,
+        String thumbnailObjectKey,
         String transcodedObjectKey,
-        boolean reusedOriginalObject) {
+        Long canonicalObjectSize,
+        boolean reusedOriginalObject,
+        List<VideoRenditionResult> videoRenditions) {
 }

@@ -950,8 +950,10 @@ Recommendation path:
      - show a poster-based video card in the chat bubble instead of raw native controls
      - show filename, duration, and size before playback starts
      - open playback in a larger modal/lightbox or expanded player instead of forcing all controls into the compact bubble
-     - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` and `transcodedUrl` refer to that object, not the original upload
-     - once multiple renditions exist, add low-resolution mobile playback defaults and optional quality selection
+     - prefer explicit contract fields: `posterUrl`, `playbackUrl`, and `downloadUrl`
+     - play and download the canonical transcoded MP4; after processing succeeds, `contentUrl` / `downloadUrl` and `playbackUrl` refer to that object, not the original upload
+     - use `videoSources` when present: prefer the `MOBILE` 480p source on narrow screens, data saver, or reported slow connections, while retaining `playbackUrl` as fallback
+     - a manual quality selector remains optional future UX
 12. Phase 12: Add abuse protection and operational hardening
    - real malware scan integration
    - Redis-based rate limiting
@@ -1241,6 +1243,8 @@ Phase-4 implementation note:
 - the backend can now prepare uploads, accept completion metadata, persist final media messages, and publish them, but the storage-verification and malware-scan steps are still placeholders until the next phases replace them with real provider/scanner integrations
 
 ### Phase 5 - Temporary async media processing inside `chat-app-backend`
+
+> Superseded for video by `docs/29_MEDIA_PROCESSING_SERVICE.md` Phase 7: video jobs now publish to the Micronaut worker and return through an authenticated backend callback. Images use their original object as `MEDIA_READY` until real image processing is added in doc 29 Phase 12. The notes below describe the former temporary implementation.
 
 Implemented in `chat-app-backend`:
 

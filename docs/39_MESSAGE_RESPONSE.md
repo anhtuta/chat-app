@@ -14,7 +14,7 @@ Related code:
 - Chat send: `WebSocketController`
 - Public connect/disconnect: `WebSocketSecurityChannelInterceptor`, `WebSocketEventListener`
 - Membership / profile SYSTEM lines: `GroupMembershipRealtimePublisher`, `GroupProfileRealtimePublisher`
-- Media: `MediaUploadSessionService`, `AsyncMediaProcessingService`
+- Media: `MediaUploadSessionService`, `RabbitMediaProcessingService`, `MediaProcessingResultService`
 
 ## Delivery
 
@@ -525,7 +525,7 @@ Same envelope as case 17 with `"GROUP_DESCRIPTION_UPDATED"`. If one PATCH change
 
 ## Media (mapper + URLs)
 
-Complete goes through `MediaUploadSessionService.completeUploadSession` → `MessageResponseMapper.toResponse` → after-commit publish. Image/video then get extra publishes from `AsyncMediaProcessingService`.
+Complete goes through `MediaUploadSessionService.completeUploadSession` → `MessageResponseMapper.toResponse` → after-commit publish. Video processing is then queued by `RabbitMediaProcessingService`; an authenticated worker callback is applied and republished by `MediaProcessingResultService`.
 
 There is **no** companion `GroupSummaryUpdate` for media today (doc 38).
 
@@ -584,9 +584,9 @@ Video uses `"VIDEO"`; later processing may fill `transcodedUrl` instead of `prev
 
 ### 20. Group image/video processing in progress or ready (republish)
 
-**Trigger:** `AsyncMediaProcessingService.publishUpdatedMessage`.
+**Trigger:** `MediaProcessingResultService.publishUpdatedMessage` after a worker callback commits.
 
-Same topic and `id`. Status becomes `PROCESSING_IN_PROGRESS`, then `MEDIA_READY`. Example when ready (placeholder derived keys; URLs only if the object exists):
+Same topic and `id`. Status becomes `PROCESSING_IN_PROGRESS`, `MEDIA_READY`, or `PROCESSING_FAILED`. For a successful video transcode, `contentUrl` and `transcodedUrl` point to the same canonical MP4 after the original object is replaced:
 
 ```json
 {
@@ -737,8 +737,9 @@ Media complete
   MessageResponseMapper.toResponse
     -> after commit /topic/public or /topic/group.{id}
 
-Image/video processing
-  AsyncMediaProcessingService
+Video processing
+  RabbitMediaProcessingService -> media-processing-service
+    -> internal callback -> MediaProcessingResultService
     -> mapper toResponse
     -> same topic, same message id, updated attachment status/URLs
 ```
