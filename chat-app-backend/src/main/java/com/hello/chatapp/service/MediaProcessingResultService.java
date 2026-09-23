@@ -34,18 +34,21 @@ public class MediaProcessingResultService {
     private final ObjectStorageProviderRegistry storageProviderRegistry;
     private final MessageResponseMapper messageResponseMapper;
     private final RealtimeMessageDeliveryService realtimeMessageDeliveryService;
+    private final ReplacedOriginalObjectCleanupService replacedOriginalObjectCleanupService;
 
     public MediaProcessingResultService(
             MessageMediaRepository messageMediaRepository,
             MessageRepository messageRepository,
             ObjectStorageProviderRegistry storageProviderRegistry,
             MessageResponseMapper messageResponseMapper,
-            RealtimeMessageDeliveryService realtimeMessageDeliveryService) {
+            RealtimeMessageDeliveryService realtimeMessageDeliveryService,
+            ReplacedOriginalObjectCleanupService replacedOriginalObjectCleanupService) {
         this.messageMediaRepository = messageMediaRepository;
         this.messageRepository = messageRepository;
         this.storageProviderRegistry = storageProviderRegistry;
         this.messageResponseMapper = messageResponseMapper;
         this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
+        this.replacedOriginalObjectCleanupService = replacedOriginalObjectCleanupService;
     }
 
     /**
@@ -60,6 +63,7 @@ public class MediaProcessingResultService {
                         "Media " + request.mediaId() + " for message " + request.messageId() + " not found"));
         validateJobId(media, request);
         if (media.getStatus() == MediaStatus.MEDIA_READY) {
+            schedulePendingOriginalCleanup(media);
             logger.info("Ignoring duplicate callback for completed jobId={}", request.jobId());
             return;
         }
@@ -74,6 +78,7 @@ public class MediaProcessingResultService {
             case MEDIA_READY -> applyReadyResult(media, request);
         }
         messageMediaRepository.save(media);
+        schedulePendingOriginalCleanup(media);
 
         Long messageId = request.messageId();
         AfterCommit.run(
@@ -152,7 +157,7 @@ public class MediaProcessingResultService {
     }
 
     /**
-     * Verifies and switches to the canonical playback object, then schedules deletion of a replaced original.
+     * Verifies and switches to the canonical playback object, and persists replaced-original cleanup work.
      */
     private void applyReadyResult(MessageMedia media, MediaProcessingResultRequest request) {
         String canonicalKey = request.transcodedObjectKey();
@@ -177,19 +182,39 @@ public class MediaProcessingResultService {
         media.setStatus(MediaStatus.MEDIA_READY);
 
         if (replaceOriginal && !request.originalObjectKey().equals(canonicalKey)) {
-            String originalObjectKey = request.originalObjectKey();
-            AfterCommit.run(
-                    () -> deleteOriginal(provider, originalObjectKey),
-                    "Failed to delete replaced original media object " + originalObjectKey);
+            media.setReplacedOriginalObjectKey(request.originalObjectKey());
         }
     }
 
     /**
-     * Deletes a replaced original after the canonical-pointer transaction commits.
+     * Schedules persisted original-object cleanup after the canonical switch has been saved.
      */
-    private void deleteOriginal(ObjectStorageProvider provider, String originalObjectKey) {
-        provider.deleteObject(originalObjectKey);
-        logger.info("Deleted replaced original media object {}", originalObjectKey);
+    private void schedulePendingOriginalCleanup(MessageMedia media) {
+        String originalObjectKey = media.getReplacedOriginalObjectKey();
+        if (originalObjectKey == null || originalObjectKey.isBlank()) {
+            return;
+        }
+        if (originalObjectKey.equals(media.getObjectKey())
+                || originalObjectKey.equals(media.getTranscodedObjectKey())) {
+            logger.warn(
+                    "Refusing to delete canonical media object {} for mediaId={}",
+                    originalObjectKey,
+                    media.getId());
+            return;
+        }
+        ObjectStorageProvider provider = storageProviderRegistry.getProvider(media.getStorageProvider());
+        AfterCommit.run(() -> deleteOriginal(media.getId(), provider, originalObjectKey));
+    }
+
+    /**
+     * Deletes a replaced original after the canonical-pointer transaction commits.
+     *
+     * @param mediaId attachment whose pending original key should be cleared on success
+     * @param provider storage provider that holds the replaced object
+     * @param originalObjectKey replaced original object key
+     */
+    private void deleteOriginal(Long mediaId, ObjectStorageProvider provider, String originalObjectKey) {
+        replacedOriginalObjectCleanupService.deleteOriginal(mediaId, provider, originalObjectKey);
     }
 
     /**

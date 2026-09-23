@@ -1,5 +1,6 @@
 package com.hello.chatapp.service;
 
+import com.hello.chatapp.config.MediaProcessingIntegrationProperties;
 import com.hello.chatapp.constant.MediaProcessingJobStatus;
 import com.hello.chatapp.constant.MediaStatus;
 import com.hello.chatapp.constant.ProcessingTarget;
@@ -20,6 +21,7 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -63,8 +65,16 @@ class MediaProcessingResultServiceTest {
         when(providerRegistry.getProvider(ObjectStorageProviderType.MINIO)).thenReturn(provider);
         when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
         when(responseMapper.toResponse(message)).thenReturn(new MessageResponse());
+        MediaProcessingIntegrationProperties processingProperties = new MediaProcessingIntegrationProperties();
+        ReplacedOriginalObjectCleanupService cleanupService = new ReplacedOriginalObjectCleanupService(
+                mediaRepository, providerRegistry, processingProperties);
         service = new MediaProcessingResultService(
-                mediaRepository, messageRepository, providerRegistry, responseMapper, deliveryService);
+                mediaRepository,
+                messageRepository,
+                providerRegistry,
+                responseMapper,
+                deliveryService,
+                cleanupService);
     }
 
     /**
@@ -75,6 +85,7 @@ class MediaProcessingResultServiceTest {
         when(provider.objectExists("media/7/video/input.thumbnail.jpg")).thenReturn(true);
         when(provider.objectExists("media/7/video/input.transcoded.mp4")).thenReturn(true);
         when(provider.objectExists("media/7/video/input.480p.mp4")).thenReturn(true);
+        when(provider.objectExists("media/7/video/input.mov")).thenReturn(true);
 
         service.apply(readyRequest());
 
@@ -89,24 +100,63 @@ class MediaProcessingResultServiceTest {
         assertThat(media.getHeight()).isEqualTo(1080);
         assertThat(media.getDurationMs()).isEqualTo(12_345L);
         assertThat(media.getStatus()).isEqualTo(MediaStatus.MEDIA_READY);
+        assertThat(media.getReplacedOriginalObjectKey()).isEqualTo("media/7/video/input.mov");
         verify(provider).deleteObject("media/7/video/input.mov");
+        verify(mediaRepository).clearReplacedOriginalObjectKey(20L, "media/7/video/input.mov");
         verify(deliveryService).publishToPublic(org.mockito.ArgumentMatchers.any(MessageResponse.class));
     }
 
     /**
-     * Verifies an idempotent duplicate callback does not delete the original again.
+     * Verifies a duplicate ready callback does not delete again when no cleanup is pending.
      */
     @Test
-    void apply_duplicateReadyResult_doesNotDeleteAgain() {
+    void apply_duplicateReadyResult_doesNotDeleteAgainWhenCleanupComplete() {
         media.setObjectKey("media/7/video/input.transcoded.mp4");
         media.setTranscodedObjectKey("media/7/video/input.transcoded.mp4");
         media.setStatus(MediaStatus.MEDIA_READY);
-        when(provider.objectExists("media/7/video/input.transcoded.mp4")).thenReturn(true);
 
         service.apply(readyRequest());
 
         verify(provider, never()).deleteObject("media/7/video/input.mov");
+        verify(mediaRepository, never()).clearReplacedOriginalObjectKey(20L, "media/7/video/input.mov");
         assertThat(media.getStatus()).isEqualTo(MediaStatus.MEDIA_READY);
+    }
+
+    /**
+     * Verifies a duplicate ready callback retries persisted original cleanup after the canonical switch.
+     */
+    @Test
+    void apply_duplicateReadyResult_retriesPendingOriginalCleanup() {
+        media.setObjectKey("media/7/video/input.transcoded.mp4");
+        media.setTranscodedObjectKey("media/7/video/input.transcoded.mp4");
+        media.setReplacedOriginalObjectKey("media/7/video/input.mov");
+        media.setStatus(MediaStatus.MEDIA_READY);
+        when(provider.objectExists("media/7/video/input.mov")).thenReturn(true);
+
+        service.apply(readyRequest());
+
+        verify(provider).deleteObject("media/7/video/input.mov");
+        verify(mediaRepository).clearReplacedOriginalObjectKey(20L, "media/7/video/input.mov");
+        assertThat(media.getStatus()).isEqualTo(MediaStatus.MEDIA_READY);
+    }
+
+    /**
+     * Verifies a failed original delete keeps pending cleanup instead of depending on AfterCommit logging.
+     */
+    @Test
+    void apply_readyResult_deleteFailureLeavesPendingCleanup() {
+        when(provider.objectExists("media/7/video/input.thumbnail.jpg")).thenReturn(true);
+        when(provider.objectExists("media/7/video/input.transcoded.mp4")).thenReturn(true);
+        when(provider.objectExists("media/7/video/input.480p.mp4")).thenReturn(true);
+        when(provider.objectExists("media/7/video/input.mov")).thenReturn(true);
+        doThrow(new IllegalStateException("MinIO unavailable")).when(provider).deleteObject("media/7/video/input.mov");
+
+        service.apply(readyRequest());
+
+        assertThat(media.getStatus()).isEqualTo(MediaStatus.MEDIA_READY);
+        assertThat(media.getReplacedOriginalObjectKey()).isEqualTo("media/7/video/input.mov");
+        verify(mediaRepository, never()).clearReplacedOriginalObjectKey(20L, "media/7/video/input.mov");
+        verify(deliveryService).publishToPublic(org.mockito.ArgumentMatchers.any(MessageResponse.class));
     }
 
     /**

@@ -97,6 +97,7 @@ chat:
       queue: ${MEDIA_PROCESSING_QUEUE:media.processing.jobs}
       routing-key: ${MEDIA_PROCESSING_ROUTING_KEY:media.processing.video}
       callback-token: ${MEDIA_PROCESSING_CALLBACK_TOKEN:change-me-in-production}
+      replaced-original-cleanup-interval-ms: ${MEDIA_PROCESSING_REPLACED_ORIGINAL_CLEANUP_INTERVAL_MS:60000}
     max-size:
       image-bytes: ${CHAT_MEDIA_MAX_SIZE_IMAGE_BYTES:10485760}
       audio-bytes: ${CHAT_MEDIA_MAX_SIZE_AUDIO_BYTES:52428800}

@@ -28,4 +28,9 @@ public class MediaProcessingIntegrationProperties {
 
     @NotBlank
     private String callbackToken = "change-me-in-production";
+
+    /**
+     * Delay between sweeps of {@code message_media.replaced_original_object_key} leftovers.
+     */
+    private long replacedOriginalCleanupIntervalMs = 60_000L;
 }
