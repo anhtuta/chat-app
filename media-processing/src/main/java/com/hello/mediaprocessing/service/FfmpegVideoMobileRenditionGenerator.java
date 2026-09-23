@@ -5,6 +5,7 @@ import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.exception.VideoRenditionGenerationException;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import jakarta.inject.Singleton;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -61,7 +62,7 @@ public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRendition
             Duration configuredTimeout = Duration.ofSeconds(renditionProperties.getTimeoutSeconds());
             boolean completed = process.waitFor(configuredTimeout.toSeconds(), TimeUnit.SECONDS);
             if (!completed) {
-                process.destroyForcibly();
+                destroyTimedOutProcess(process);
                 awaitReadersQuietly(stdoutFuture, stderrFuture);
                 throw new VideoRenditionGenerationException(
                         MediaProcessingFailureReason.RENDITION_GENERATION_FAILED,
@@ -154,6 +155,48 @@ public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRendition
         command.add("+faststart");
         command.add(outputFile.toString());
         return command;
+    }
+
+    /**
+     * Forcibly stops a timed-out ffmpeg process, waits briefly, and closes pipes if it stays alive.
+     *
+     * @param process ffmpeg process that exceeded the configured timeout
+     */
+    private void destroyTimedOutProcess(Process process) {
+        process.destroyForcibly();
+        try {
+            boolean terminated = process.waitFor(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
+            if (!terminated) {
+                closeProcessStreamsQuietly(process);
+            }
+        } catch (InterruptedException e) {
+            closeProcessStreamsQuietly(process);
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Closes stdin, stdout, and stderr so blocked reader threads can unblock after a kill.
+     *
+     * @param process ffmpeg process whose streams should be closed
+     */
+    private void closeProcessStreamsQuietly(Process process) {
+        closeQuietly(process.getOutputStream());
+        closeQuietly(process.getInputStream());
+        closeQuietly(process.getErrorStream());
+    }
+
+    /**
+     * Closes a process stream and ignores close failures.
+     *
+     * @param closeable process stream to close
+     */
+    private void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+            // Best-effort unblock of reader tasks after destroyForcibly.
+        }
     }
 
     /**
