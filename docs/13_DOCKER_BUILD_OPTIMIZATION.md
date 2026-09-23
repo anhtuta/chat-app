@@ -37,6 +37,39 @@ Docker layer caching alone was not enough: when the `pom.xml` layer was invalida
 | Rebuild, only `src/` changed | ~360s  | ~15–40s               |
 | Rebuild, `pom.xml` changed   | ~360s  | ~30–90s (incremental) |
 
+### Explain the code
+
+```dockerfile
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r spring && useradd -r -g spring spring
+```
+
+It does three things in one step:
+
+1. Install `curl` (`curl` is needed because the image defines a health check later) (first 3 lines)
+
+- Updates package lists.
+- Installs `curl` with minimal extra packages (`--no-install-recommends`).
+- Deletes apt cache so the image stays smaller.
+
+2. Create a non-root user (last line)
+
+- Creates a system group `spring` (`-r` = system account).
+- Creates a system user `spring` in that group.
+
+Later the Dockerfile switches to this user:
+
+```Dockerfile
+RUN chown -R spring:spring /app
+USER spring:spring
+```
+
+So the JVM does **not** run as root, which is a common security practice.
+
+In short: **prepare the runtime image with `curl` for health checks and a dedicated `spring` user to run the app safely.**
+
 ## Future Higher-Scale Path
 
 - Use Spring Boot layered JAR extraction in the runtime image for faster container restarts when only app code changes.
