@@ -286,6 +286,7 @@ function ChatPage({
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
     messagesRef.current = [];
+    setIsLoadingOlder(false);
     setHasMoreGroupMessages(true);
     oldestGroupCursorRef.current = null;
 
