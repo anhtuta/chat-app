@@ -7,6 +7,7 @@ import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import jakarta.inject.Singleton;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -166,6 +167,8 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
 
     /**
      * Destroys a live ffmpeg process and waits briefly for it to exit.
+     * If the process is still running after the grace period, closes its pipes so reader
+     * tasks can unblock before the caller cancels them.
      *
      * @param process ffmpeg process, or {@code null} if it never started
      */
@@ -175,9 +178,36 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
         }
         process.destroyForcibly();
         try {
-            process.waitFor(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
+            boolean terminated = process.waitFor(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
+            if (!terminated && process.isAlive()) {
+                closeProcessStreamsQuietly(process);
+            }
         } catch (InterruptedException ignored) {
             // Interrupt status is restored by the caller after reader cleanup.
+        }
+    }
+
+    /**
+     * Closes stdin, stdout, and stderr so blocked reader threads can unblock after a kill.
+     *
+     * @param process ffmpeg process whose streams should be closed
+     */
+    private void closeProcessStreamsQuietly(Process process) {
+        closeQuietly(process.getOutputStream());
+        closeQuietly(process.getInputStream());
+        closeQuietly(process.getErrorStream());
+    }
+
+    /**
+     * Closes a process stream and ignores close failures.
+     *
+     * @param closeable process stream to close
+     */
+    private void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+            // Best-effort unblock of reader tasks after destroyForcibly.
         }
     }
 
