@@ -106,6 +106,42 @@ function ChatPage({
     return nextMessages;
   };
 
+  const mergeMessagesById = (fetchedMessages: ChatMessage[], currentMessages: ChatMessage[]) => {
+    const merged: ChatMessage[] = [];
+    const indexById = new Map<number, number>();
+
+    const addMessage = (message: ChatMessage) => {
+      if (message.id === undefined || message.id === null) {
+        merged.push(message);
+        return;
+      }
+
+      const existingIndex = indexById.get(message.id);
+      if (existingIndex === undefined) {
+        indexById.set(message.id, merged.length);
+        merged.push(message);
+        return;
+      }
+
+      merged[existingIndex] = message;
+    };
+
+    fetchedMessages.forEach(addMessage);
+    currentMessages.forEach(addMessage);
+    return merged;
+  };
+
+  const compareMessagesChronologically = (left: ChatMessage, right: ChatMessage) => {
+    const timestampDiff = toEpochMillis(left.timestamp) - toEpochMillis(right.timestamp);
+    if (timestampDiff !== 0) {
+      return timestampDiff;
+    }
+
+    const leftId = left.id ?? Number.MAX_SAFE_INTEGER;
+    const rightId = right.id ?? Number.MAX_SAFE_INTEGER;
+    return leftId - rightId;
+  };
+
   const isRoleChangeSystemMessage = (message: ChatMessage | null | undefined): boolean => (
     message?.messageType === "SYSTEM"
     && (
@@ -369,9 +405,13 @@ function ChatPage({
         return uniqueOlder;
       }
 
-      messagesRef.current = messagesData;
-      updateOldestGroupCursor(messagesData[0]);
-      setMessages(messagesData);
+      setMessages((currentMessages) => {
+        const mergedMessages = mergeMessagesById(messagesData, currentMessages)
+          .sort(compareMessagesChronologically);
+        messagesRef.current = mergedMessages;
+        updateOldestGroupCursor(mergedMessages[0]);
+        return mergedMessages;
+      });
       setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
       return messagesData;
     } catch (error) {
