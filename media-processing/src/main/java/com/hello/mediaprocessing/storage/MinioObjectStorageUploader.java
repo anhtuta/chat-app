@@ -10,6 +10,7 @@ import io.minio.ObjectWriteResponse;
 import io.minio.PutObjectArgs;
 import jakarta.inject.Singleton;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -24,6 +25,7 @@ public class MinioObjectStorageUploader implements ObjectStorageUploader {
 
     public MinioObjectStorageUploader(MediaProcessingStorageProperties storageProperties) {
         MediaProcessingStorageProperties.Minio minio = storageProperties.getMinio();
+        requireHttpsEndpointUnlessLocalDevelopment(minio.getEndpoint(), storageProperties.isLocalDevelopment());
         MinioClient minioClient = MinioClient.builder()
                 .endpoint(minio.getEndpoint())
                 .credentials(minio.getAccessKey(), minio.getSecretKey())
@@ -85,5 +87,30 @@ public class MinioObjectStorageUploader implements ObjectStorageUploader {
                     "Failed to upload derived object to MinIO: " + bucket + "/" + objectKey,
                     e);
         }
+    }
+
+    /**
+     * Rejects non-HTTPS MinIO endpoints unless local-development HTTP is explicitly allowed.
+     *
+     * @param endpoint configured MinIO endpoint
+     * @param localDevelopment whether HTTP is permitted for local development
+     */
+    private static void requireHttpsEndpointUnlessLocalDevelopment(String endpoint, boolean localDevelopment) {
+        URI uri;
+        try {
+            uri = URI.create(endpoint);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Invalid MinIO endpoint: " + endpoint, e);
+        }
+        String scheme = uri.getScheme();
+        if (scheme != null && scheme.equalsIgnoreCase("https")) {
+            return;
+        }
+        if (localDevelopment && scheme != null && scheme.equalsIgnoreCase("http")) {
+            return;
+        }
+        throw new IllegalStateException(
+                "MinIO endpoint must use HTTPS unless media-processing.storage.local-development is enabled: "
+                        + endpoint);
     }
 }

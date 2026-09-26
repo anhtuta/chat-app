@@ -1,0 +1,81 @@
+@startuml
+
+header "Video processing after send (doc 29 Phases 7–9)"
+footer "Source: docs/logs/29_user-upload-video-24mb.md\nCaptured WS: PROCESSING_PENDING then MEDIA_READY\nWorker never publishes WebSocket"
+
+actor "Group members\n(STOMP /topic/group.5)" as Clients
+participant "chat-app-backend" as Backend
+database "PostgreSQL\n(messages, message_media)" as DB
+participant "RabbitMQ\nmedia.processing" as Jobs
+participant "media-processing-service" as Worker
+participant "MinIO\n(chat-media)" as MinIO
+participant "Realtime\n(STOMP + chat.groups)" as Realtime
+
+note over Clients, Realtime
+  Starts **after** prepare / multipart / complete have already persisted
+  message 213634 + attachment 84 (VIDEO, original .mov, SCAN_PASSED).
+  This diagram is the doc 29 path only.
+end note
+
+== 1. After complete commit: first WebSocket message ==
+
+Backend -> Backend: AfterCommit:\n1) publish MessageResponse snapshot\n2) enqueueProcessing(messageId)
+
+Backend -> Realtime: publishToGroup(5, MessageResponse)
+Realtime -> Clients: **WS #1** same payload for every member\n(including sender)
+
+note over Clients
+  WS #1 — attachment.status = PROCESSING_PENDING
+  playbackUrl / contentUrl / videoSources[CANONICAL]
+  still point at the original .mov
+  posterUrl = null, no MOBILE source yet
+end note
+
+Backend -> Jobs: MediaProcessingJobMessage\nexchange=media.processing\nroutingKey=media.processing.video\nqueue=media.processing.jobs\njobId=media-84\ntargets=METADATA, THUMBNAIL, TRANSCODE
+
+note over Backend, Jobs
+  Enqueue is skipped if MEDIA_PROCESSING_ENABLED=false.
+  The worker does **not** send this (or any) WebSocket.
+end note
+
+== 2. Worker consumes and writes derivatives (no WS) ==
+
+Jobs -> Worker: deliver job (RabbitMQ consumer)
+Worker -> MinIO: GET original objectKey (.mov)
+Worker -> Worker: ffprobe METADATA\nffmpeg poster → {stem}.thumbnail.jpg\nffmpeg TRANSCODE → {stem}.transcoded.mp4\noptional 480p → {stem}.480p.mp4
+
+Worker -> MinIO: PUT thumbnail.jpg
+Worker -> MinIO: PUT transcoded.mp4
+Worker -> MinIO: PUT 480p.mp4\n(skip if already ≤480p / too short / too small;\n480p failure does not fail MEDIA_READY)
+
+note over Worker
+  One callback at the end of the job.
+  Happy path here: pendingTargets=[] → status=MEDIA_READY.
+  No PROCESSING_IN_PROGRESS WebSocket in this capture.
+end note
+
+Worker -> Backend: POST /api/internal/media-processing/results\nX-Media-Processing-Token\nstatus=MEDIA_READY\nthumbnailObjectKey, transcodedObjectKey,\nvideoMetadata, videoRenditions[{480p}]
+
+== 3. Backend applies result: second WebSocket message ==
+
+Backend -> DB: lock MessageMedia 84\nwrite width/height/durationMs,\nthumbnail, canonical keys, 480p key\nstatus=MEDIA_READY\nobjectKey := transcoded.mp4
+
+Backend -> Backend: AfterCommit:\n1) map MessageResponse + presigned URLs\n2) delete replaced original .mov
+
+Backend -> Realtime: publishToGroup(5, MessageResponse)
+Realtime -> Clients: **WS #2** same message id 213634
+
+note over Clients
+  WS #2 — attachment.status = MEDIA_READY
+  mimeType=video/mp4, duration/width/height set
+  playbackUrl / downloadUrl / contentUrl = transcoded.mp4
+  posterUrl = thumbnail.jpg
+  videoSources:
+    CANONICAL = transcoded.mp4 (3024×1964)
+    MOBILE = 480p.mp4 (740×480)
+end note
+
+Backend -> MinIO: DELETE original .mov\n(after commit; only if not reused)
+Worker -> Jobs: ACK job\n(after HTTP 204; failed callback → redelivery)
+
+@enduml

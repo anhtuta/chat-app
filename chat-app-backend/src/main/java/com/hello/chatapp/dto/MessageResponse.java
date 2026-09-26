@@ -3,6 +3,7 @@ package com.hello.chatapp.dto;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.constant.SystemEventType;
 import com.hello.chatapp.entity.Message;
+import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.model.SystemEventPayload;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -33,6 +34,7 @@ public class MessageResponse {
     private LocalDateTime updatedAt;
     private UserResponse deletedBy;
     private LocalDateTime deletedAt;
+    private String freshnessKey;
     private List<MessageAttachmentResponse> attachments;
     private LocalDateTime timestamp;
 
@@ -57,9 +59,19 @@ public class MessageResponse {
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)
                 .deletedAt(message.getDeletedAt())
+                .freshnessKey(resolveFreshnessKey(message))
                 .attachments(resolveAttachments(message))
                 .timestamp(message.getTimestamp())
                 .build();
+    }
+
+    /**
+     * Returns a server-generated revision key that advances for message edits, deletes,
+     * and attachment lifecycle changes.
+     */
+    public static String resolveFreshnessKey(Message message) {
+        LocalDateTime latestChange = resolveLatestMessageOrAttachmentChange(message);
+        return latestChange != null ? latestChange.toString() : null;
     }
 
     private static String resolveContent(Message message) {
@@ -76,6 +88,45 @@ public class MessageResponse {
         return message.getAttachments() == null
                 ? Collections.emptyList()
                 : message.getAttachments().stream().map(MessageAttachmentResponse::fromEntity).toList();
+    }
+
+    /**
+     * Returns the latest meaningful revision timestamp across the message row and its attachments.
+     */
+    private static LocalDateTime resolveLatestMessageOrAttachmentChange(Message message) {
+        if (message == null) {
+            return null;
+        }
+
+        LocalDateTime latestChange = message.getTimestamp();
+        latestChange = max(latestChange, message.getUpdatedAt());
+        latestChange = max(latestChange, message.getDeletedAt());
+
+        if (message.getAttachments() == null) {
+            return latestChange;
+        }
+
+        for (MessageMedia attachment : message.getAttachments()) {
+            if (attachment == null) {
+                continue;
+            }
+            latestChange = max(latestChange, attachment.getUpdatedAt());
+        }
+
+        return latestChange;
+    }
+
+    /**
+     * Returns the later non-null timestamp, or the non-null value when only one exists.
+     */
+    private static LocalDateTime max(LocalDateTime left, LocalDateTime right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null || !right.isAfter(left)) {
+            return left;
+        }
+        return right;
     }
 
     private static SystemEventType resolveSystemEventType(Message message) {

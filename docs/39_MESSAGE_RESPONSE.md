@@ -48,6 +48,7 @@ Jackson typically includes `null` fields. `attachments` is an empty list `[]` wh
 | `systemEventPayload`      | Extra JSON; batch add uses `subjectNames`. `null` otherwise                                                         |
 | `updatedBy` / `updatedAt` | Last **text edit**. For `SYSTEM`, `updatedBy` is the same user as `systemEventActor`; `updatedAt` is usually `null` |
 | `deletedBy` / `deletedAt` | Soft-delete. WS paths below do **not** currently republish deletes                                                  |
+| `freshnessKey`            | Server-computed revision key. Uses the latest meaningful change across the message row and its attachments so clients can keep the newer duplicate record |
 | `attachments`             | Media rows; empty for text/`SYSTEM`                                                                                 |
 | `timestamp`               | Message time                                                                                                        |
 
@@ -747,5 +748,12 @@ Video processing
 ## Implementation details
 
 Already implemented. This file catalogs live WebSocket publishes of `MessageResponse`.
+
+`freshnessKey` was added so clients can reconcile duplicate message ids without relying on arrival order, `Message.version`, or `updatedAt` alone. The backend now computes it from the latest meaningful change among:
+
+- `messages.timestamp`
+- `messages.updated_at`
+- `messages.deleted_at`
+- each attachment row's `message_media.updated_at`
 
 `contentUrl` host/path in examples is illustrative; real URLs come from the configured object-storage provider.

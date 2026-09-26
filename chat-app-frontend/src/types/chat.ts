@@ -86,6 +86,7 @@ export interface ChatMessage {
   updatedAt?: string | null;
   deletedBy?: ChatUser | null;
   deletedAt?: string | null;
+  freshnessKey?: string | null;
   attachments?: ChatAttachment[];
   localUploadState?: LocalUploadState | null;
 }

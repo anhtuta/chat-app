@@ -21,6 +21,11 @@ public class MediaProcessingStorageProperties {
     @NotNull
     private ObjectStorageProviderType provider = ObjectStorageProviderType.MINIO;
 
+    /**
+     * When true, HTTP MinIO endpoints are allowed. Production must leave this false and use HTTPS.
+     */
+    private boolean localDevelopment = false;
+
     @Valid
     @NotNull
     private Minio minio = new Minio();

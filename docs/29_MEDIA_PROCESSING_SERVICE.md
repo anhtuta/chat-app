@@ -638,8 +638,10 @@ Recommended path:
   - Callback updates remain owned by `chat-app-backend`; the worker does not write the chat database.
   - The callback takes a pessimistic lock on `MessageMedia`, updates duration/width/height/status, and verifies the canonical object exists before switching keys.
   - On success, `objectKey` and `transcodedObjectKey` both identify the canonical MP4, so `contentUrl` and `transcodedUrl` resolve to the same file.
-  - The replaced original is deleted from MinIO only after the DB transaction commits. Cleanup failure is logged and leaves an orphan rather than breaking the canonical media row.
-  - Duplicate callbacks for an attachment already at `MEDIA_READY` return successfully without deleting or downgrading it. This handles a lost HTTP response followed by RabbitMQ redelivery after the original was deleted.
+  - The replaced original is deleted from MinIO only after the DB transaction commits. The pending original key is stored on `message_media.replaced_original_object_key` so cleanup can retry independently of the `MEDIA_READY` guard. Delete is idempotent (missing object counts as success). Duplicate `MEDIA_READY` callbacks retry leftover cleanup without switching pointers again. A periodic sweep also retries persisted leftovers. Cleanup failure does not roll back the canonical media row.
+    - Canonical switch means: this attachment’s main file is no longer the uploaded original. It is now the chat-friendly MP4 (H.264 + AAC).
+    - Column `replaced_original_object_key` is a to-do list for MinIO delete. If delete fails, the column stays set. The next duplicate callback or the sweep tries again.
+  - A finished job sends `pendingTargets: []`. Micronaut Serde would otherwise omit that empty set, and the backend `@NotNull` check used to reject the callback. Empty collections on the result payload are now always serialized, and the backend treats omitted collections as empty.
   - The updated `MessageResponse` is republished through the existing realtime path after commit.
 - What changed in `media-processing-service`:
   - Added `ChatBackendMediaProcessingResultSink`, enabled by `media-processing.callback.enabled=true`.

@@ -55,6 +55,35 @@ function ChatPage({
     return Number.isNaN(parsed) ? 0 : parsed;
   };
 
+  const getMessageFreshnessEpochMillis = (message: ChatMessage | null | undefined): number => {
+    if (!message) {
+      return 0;
+    }
+
+    // Prefer the server-computed revision key. Fall back to the original timestamp only
+    // during mixed-version rollouts where older responses may not include freshnessKey yet.
+    const freshnessMillis = toEpochMillis(message.freshnessKey);
+    if (freshnessMillis > 0) {
+      return freshnessMillis;
+    }
+
+    return toEpochMillis(message.timestamp);
+  };
+
+  const keepFresherMessage = (
+    currentMessage: ChatMessage,
+    candidateMessage: ChatMessage,
+  ): ChatMessage => {
+    const freshnessDiff = getMessageFreshnessEpochMillis(candidateMessage)
+      - getMessageFreshnessEpochMillis(currentMessage);
+
+    if (freshnessDiff > 0) {
+      return candidateMessage;
+    }
+
+    return currentMessage;
+  };
+
   const navigate = useNavigate();
   const location = useLocation();
   const { groupId } = useParams<{ groupId?: string }>();
@@ -75,6 +104,7 @@ function ChatPage({
   // Hold the current topic's unsubscribe function so we can cleanly unsubscribe when switching chats or unmounting.
   const currentUnsubscribeRef = useRef<Unsubscribe | null>(null);
   const oldestGroupCursorRef = useRef<GroupMessageCursor | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const groupsRef = useRef<ChatGroup[]>([]);
   const lastMarkedMessagePerGroupRef = useRef<Map<number, number>>(new Map());
 
@@ -101,8 +131,44 @@ function ChatPage({
     }
 
     const nextMessages = [...previousMessages];
-    nextMessages[existingIndex] = incomingMessage;
+    nextMessages[existingIndex] = keepFresherMessage(nextMessages[existingIndex], incomingMessage);
     return nextMessages;
+  };
+
+  const mergeMessagesById = (fetchedMessages: ChatMessage[], currentMessages: ChatMessage[]) => {
+    const merged: ChatMessage[] = [];
+    const indexById = new Map<number, number>();
+
+    const addMessage = (message: ChatMessage) => {
+      if (message.id === undefined || message.id === null) {
+        merged.push(message);
+        return;
+      }
+
+      const existingIndex = indexById.get(message.id);
+      if (existingIndex === undefined) {
+        indexById.set(message.id, merged.length);
+        merged.push(message);
+        return;
+      }
+
+      merged[existingIndex] = keepFresherMessage(merged[existingIndex], message);
+    };
+
+    fetchedMessages.forEach(addMessage);
+    currentMessages.forEach(addMessage);
+    return merged;
+  };
+
+  const compareMessagesChronologically = (left: ChatMessage, right: ChatMessage) => {
+    const timestampDiff = toEpochMillis(left.timestamp) - toEpochMillis(right.timestamp);
+    if (timestampDiff !== 0) {
+      return timestampDiff;
+    }
+
+    const leftId = left.id ?? Number.MAX_SAFE_INTEGER;
+    const rightId = right.id ?? Number.MAX_SAFE_INTEGER;
+    return leftId - rightId;
   };
 
   const isRoleChangeSystemMessage = (message: ChatMessage | null | undefined): boolean => (
@@ -144,6 +210,10 @@ function ChatPage({
   useEffect(() => {
     groupsRef.current = groups;
   }, [groups]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Register sidebar update handler. The STOMP subscription itself is owned by WebSocketProvider
   // for the whole login session and is not tied to chat switching.
@@ -200,10 +270,8 @@ function ChatPage({
       });
   }, [currentChatId, messages, isLoading]);
 
-  // Maintain a cursor for the oldest loaded message so "load older" can page correctly.
-  useEffect(() => {
-    const oldestMessage = messages[0];
-    if (!oldestMessage?.timestamp || oldestMessage?.id === undefined || oldestMessage?.id === null) {
+  const updateOldestGroupCursor = (oldestMessage: ChatMessage | undefined) => {
+    if (!oldestMessage?.timestamp || oldestMessage.id === undefined || oldestMessage.id === null) {
       oldestGroupCursorRef.current = null;
       return;
     }
@@ -212,6 +280,10 @@ function ChatPage({
       timestamp: oldestMessage.timestamp,
       id: oldestMessage.id,
     };
+  };
+
+  useEffect(() => {
+    updateOldestGroupCursor(messages[0]);
   }, [messages]);
 
   useEffect(() => {
@@ -278,6 +350,8 @@ function ChatPage({
     setCurrentChatId(chatId);
     setCurrentChatName(chatName || "Public Chat");
     setMessages([]);
+    messagesRef.current = [];
+    setIsLoadingOlder(false);
     setHasMoreGroupMessages(true);
     oldestGroupCursorRef.current = null;
 
@@ -285,7 +359,11 @@ function ChatPage({
     const topicPath = chatId === "public" ? "/topic/public" : `/topic/group.${chatId}`;
     const unsubscribe = subscribeSingleGroup(topicPath, (message) => {
       if (currentChatIdRef.current === chatId) {
-        setMessages((prev) => upsertMessage(prev, message));
+        setMessages((prev) => {
+          const nextMessages = upsertMessage(prev, message);
+          messagesRef.current = nextMessages;
+          return nextMessages;
+        });
         if (chatId !== "public" && isRoleChangeSystemMessage(message)) {
           setRoleChangeSignal((previous) => previous + 1);
         }
@@ -308,6 +386,7 @@ function ChatPage({
     setIsLoading(true);
     try {
       const messagesData = await getPublicMessages();
+      messagesRef.current = messagesData;
       setMessages(messagesData);
     } catch (error) {
       console.error("Error loading messages:", error);
@@ -327,30 +406,56 @@ function ChatPage({
     }
 
     try {
-      const messagesData = await getGroupMessages(targetGroupId, {
-        size: GROUP_PAGE_SIZE,
-        beforeTimestamp: cursor?.timestamp,
-        beforeId: cursor?.id,
-      });
+      const messagesData = prepend
+        ? await getGroupMessages(targetGroupId, {
+          size: GROUP_PAGE_SIZE,
+          beforeTimestamp: cursor?.timestamp,
+          beforeId: cursor?.id,
+        })
+        : await fetchLatestGroupMessages(targetGroupId, GROUP_PAGE_SIZE);
 
-      if (prepend) {
-        setMessages((prev) => {
-          const existingIds = new Set(prev.map((message) => message.id));
-          const uniqueOlder = messagesData.filter((message) => !existingIds.has(message.id));
-          return [...uniqueOlder, ...prev];
-        });
-      } else {
-        setMessages(messagesData);
+      if (currentChatIdRef.current !== targetGroupId) {
+        return [];
       }
 
+      if (prepend) {
+        const previousMessages = messagesRef.current;
+        const nextMessages = mergeMessagesById(messagesData, previousMessages)
+          .sort(compareMessagesChronologically);
+        const didChange = nextMessages.length !== previousMessages.length
+          || nextMessages.some((message, index) => message !== previousMessages[index]);
+
+        if (!didChange) {
+          setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
+          return [];
+        }
+
+        messagesRef.current = nextMessages;
+        updateOldestGroupCursor(nextMessages[0]);
+        setMessages(nextMessages);
+        setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
+        return messagesData;
+      }
+
+      setMessages((currentMessages) => {
+        const mergedMessages = mergeMessagesById(messagesData, currentMessages)
+          .sort(compareMessagesChronologically);
+        messagesRef.current = mergedMessages;
+        updateOldestGroupCursor(mergedMessages[0]);
+        return mergedMessages;
+      });
       setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
+      return messagesData;
     } catch (error) {
       console.error("Error loading group messages:", error);
+      return [];
     } finally {
-      if (prepend) {
-        setIsLoadingOlder(false);
-      } else {
-        setIsLoading(false);
+      if (currentChatIdRef.current === targetGroupId) {
+        if (prepend) {
+          setIsLoadingOlder(false);
+        } else {
+          setIsLoading(false);
+        }
       }
     }
   };
@@ -360,11 +465,16 @@ function ChatPage({
       return false;
     }
 
-    await loadGroupMessages(currentChatId, {
+    const cursor = oldestGroupCursorRef.current;
+    if (!cursor) {
+      return false;
+    }
+
+    const olderMessages = await loadGroupMessages(currentChatId, {
       prepend: true,
-      cursor: oldestGroupCursorRef.current,
+      cursor,
     });
-    return true;
+    return olderMessages.length > 0;
   };
 
   const sendMessage = (content: string) => {
@@ -394,7 +504,11 @@ function ChatPage({
       return;
     }
 
-    setMessages((prev) => upsertMessage(prev, message));
+    setMessages((prev) => {
+      const nextMessages = upsertMessage(prev, message);
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
   };
 
   const handleMessageModerated = (updatedMessage: ChatMessage | null | undefined) => {
@@ -409,7 +523,11 @@ function ChatPage({
       return;
     }
 
-    setMessages((prev) => upsertMessage(prev, updatedMessage));
+    setMessages((prev) => {
+      const nextMessages = upsertMessage(prev, updatedMessage);
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
 
     if (updatedMessage.groupId === undefined || updatedMessage.groupId === null) {
       return;
@@ -528,3 +646,18 @@ function ChatPage({
 }
 
 export default ChatPage;
+
+const inFlightInitialGroupMessageLoads = new Map<number, Promise<ChatMessage[]>>();
+
+function fetchLatestGroupMessages(groupId: number, size: number): Promise<ChatMessage[]> {
+  const existingRequest = inFlightInitialGroupMessageLoads.get(groupId);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  const request = getGroupMessages(groupId, { size }).finally(() => {
+    inFlightInitialGroupMessageLoads.delete(groupId);
+  });
+  inFlightInitialGroupMessageLoads.set(groupId, request);
+  return request;
+}

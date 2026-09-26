@@ -1,5 +1,6 @@
 package com.hello.mediaprocessing.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.hello.mediaprocessing.constant.MediaProcessingJobStatus;
 import com.hello.mediaprocessing.constant.ProcessingTarget;
 
@@ -26,6 +27,7 @@ import io.micronaut.serde.annotation.Serdeable;
  * @param videoRenditions secondary playback renditions produced by the worker
  */
 @Serdeable
+@JsonInclude(JsonInclude.Include.ALWAYS)
 public record MediaProcessingResult(
         String jobId,
         Long messageId,

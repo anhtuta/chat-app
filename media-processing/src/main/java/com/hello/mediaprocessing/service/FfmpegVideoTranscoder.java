@@ -7,6 +7,7 @@ import com.hello.mediaprocessing.exception.VideoTranscodeException;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import com.hello.mediaprocessing.model.VideoTranscodeResult;
 import jakarta.inject.Singleton;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -50,13 +51,16 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
             return new VideoTranscodeResult(mode, sourceFile);
         }
 
+        Process process = null;
+        CompletableFuture<String> stdoutFuture = null;
+        CompletableFuture<String> stderrFuture = null;
         try {
             Files.createDirectories(outputFile.getParent());
-            Process process = new ProcessBuilder(buildCommand(mode, sourceFile, outputFile, sourceMetadata)).start();
-            CompletableFuture<String> stdoutFuture =
-                    CompletableFuture.supplyAsync(() -> readStreamToString(process.getInputStream()));
-            CompletableFuture<String> stderrFuture =
-                    CompletableFuture.supplyAsync(() -> readStreamToString(process.getErrorStream()));
+            process = new ProcessBuilder(buildCommand(mode, sourceFile, outputFile, sourceMetadata)).start();
+            InputStream stdout = process.getInputStream();
+            InputStream stderrStream = process.getErrorStream();
+            stdoutFuture = CompletableFuture.supplyAsync(() -> readStreamToString(stdout));
+            stderrFuture = CompletableFuture.supplyAsync(() -> readStreamToString(stderrStream));
 
             Duration configuredTimeout = Duration.ofSeconds(transcodeProperties.getTimeoutSeconds());
             boolean completed = process.waitFor(configuredTimeout.toSeconds(), TimeUnit.SECONDS);
@@ -83,6 +87,8 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
             }
             return new VideoTranscodeResult(mode, outputFile);
         } catch (InterruptedException e) {
+            terminateLiveProcessQuietly(process);
+            awaitReadersQuietly(stdoutFuture, stderrFuture);
             Thread.currentThread().interrupt();
             throw new VideoTranscodeException(
                     MediaProcessingFailureReason.TRANSCODE_FAILED,
@@ -160,6 +166,52 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
     }
 
     /**
+     * Destroys a live ffmpeg process and waits briefly for it to exit.
+     * If the process is still running after the grace period, closes its pipes so reader
+     * tasks can unblock before the caller cancels them.
+     *
+     * @param process ffmpeg process, or {@code null} if it never started
+     */
+    private void terminateLiveProcessQuietly(Process process) {
+        if (process == null || !process.isAlive()) {
+            return;
+        }
+        process.destroyForcibly();
+        try {
+            boolean terminated = process.waitFor(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
+            if (!terminated && process.isAlive()) {
+                closeProcessStreamsQuietly(process);
+            }
+        } catch (InterruptedException ignored) {
+            // Interrupt status is restored by the caller after reader cleanup.
+        }
+    }
+
+    /**
+     * Closes stdin, stdout, and stderr so blocked reader threads can unblock after a kill.
+     *
+     * @param process ffmpeg process whose streams should be closed
+     */
+    private void closeProcessStreamsQuietly(Process process) {
+        closeQuietly(process.getOutputStream());
+        closeQuietly(process.getInputStream());
+        closeQuietly(process.getErrorStream());
+    }
+
+    /**
+     * Closes a process stream and ignores close failures.
+     *
+     * @param closeable process stream to close
+     */
+    private void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+            // Best-effort unblock of reader tasks after destroyForcibly.
+        }
+    }
+
+    /**
      * Drains leftover ffmpeg streams after a timeout or failure without failing the caller.
      *
      * @param stdoutFuture task draining standard output
@@ -173,10 +225,13 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
     /**
      * Waits briefly for a reader task so ffmpeg cannot fill a pipe after the worker has moved on.
      *
-     * @param readerFuture task draining a process stream
+     * @param readerFuture task draining a process stream, or {@code null} if it never started
      * @return captured stream contents, or an empty string when unavailable
      */
     private String awaitReadersQuietly(CompletableFuture<String> readerFuture) {
+        if (readerFuture == null) {
+            return "";
+        }
         try {
             return readerFuture.get(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
         } catch (Exception e) {

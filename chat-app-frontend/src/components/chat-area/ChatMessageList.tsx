@@ -7,6 +7,7 @@ import "./ChatMessageList.css";
 
 interface ChatMessageListProps {
   chatMessagesRef: React.RefObject<HTMLDivElement | null>;
+  messagesContentRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   messages: DisplayChatMessage[];
   username: string | null;
@@ -24,6 +25,7 @@ interface ChatMessageListProps {
 
 function ChatMessageList({
   chatMessagesRef,
+  messagesContentRef,
   messagesEndRef,
   messages,
   username,
@@ -48,44 +50,46 @@ function ChatMessageList({
       )}
 
       <Box className="chat-message-list-container" ref={chatMessagesRef} onScroll={onScroll}>
-        {showLoadOlderFallback && !isLoadingOlder && (
-          <Box className="chat-message-list-load-older-action">
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              title="Load older messages"
-              aria-label="Load older messages"
-              onClick={onLoadOlderFallback}
-            >
-              Load older messages
-            </Button>
-          </Box>
-        )}
+        <div className="chat-message-list-content" ref={messagesContentRef}>
+          {showLoadOlderFallback && !isLoadingOlder && (
+            <Box className="chat-message-list-load-older-action">
+              <Button
+                type="button"
+                variant="outlined"
+                size="small"
+                title="Load older messages"
+                aria-label="Load older messages"
+                onClick={onLoadOlderFallback}
+              >
+                Load older messages
+              </Button>
+            </Box>
+          )}
 
-        {isLoadingOlder && (
-          <Box className="chat-message-list-loading-older-container">
-            <CircularProgress size={24} />
-            <Typography variant="body2" className="chat-message-list-loading-older-text">
-              Loading older messages...
-            </Typography>
-          </Box>
-        )}
+          {isLoadingOlder && (
+            <Box className="chat-message-list-loading-older-container">
+              <CircularProgress size={24} />
+              <Typography variant="body2" className="chat-message-list-loading-older-text">
+                Loading older messages...
+              </Typography>
+            </Box>
+          )}
 
-        {messages.map((message, index) => (
-          <ChatMessageItem
-            key={message.id || getPendingLocalId(message) || index}
-            message={message}
-            username={username}
-            currentUserPermissions={currentUserPermissions}
-            onRetryPendingMessage={onRetryPendingMessage}
-            onCancelPendingMessage={onCancelPendingMessage}
-            onDismissPendingMessage={onDismissPendingMessage}
-            onMessageModerated={onMessageModerated}
-          />
-        ))}
+          {messages.map((message, index) => (
+            <ChatMessageItem
+              key={message.id || getPendingLocalId(message) || index}
+              message={message}
+              username={username}
+              currentUserPermissions={currentUserPermissions}
+              onRetryPendingMessage={onRetryPendingMessage}
+              onCancelPendingMessage={onCancelPendingMessage}
+              onDismissPendingMessage={onDismissPendingMessage}
+              onMessageModerated={onMessageModerated}
+            />
+          ))}
 
-        <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} />
+        </div>
       </Box>
     </div>
   );

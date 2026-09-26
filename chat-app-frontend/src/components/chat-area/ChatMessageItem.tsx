@@ -21,18 +21,8 @@ import { deleteMessage, updateMessage } from "../../services/api";
 import { canDeleteMessage, canEditMessage } from "../../utils/messageModeration";
 import { formatStructuredSystemMessage } from "../../utils/systemEventCopy";
 import { formatAbsoluteTimeVi, formatRelativeTime } from "../../utils/dateUtils";
-import type {
-  ChatAttachment,
-  ChatMessage,
-  LocalUploadState,
-  MessageType,
-  ProcessingIndicator,
-} from "../../types/chat";
-import {
-  getProcessingIndicator,
-  isMediaMessageType,
-  MESSAGE_TYPES,
-} from "./mediaUtils";
+import type { ChatMessage, MessageType } from "../../types/chat";
+import { isMediaMessageType, MESSAGE_TYPES } from "./mediaUtils";
 import { type DisplayChatMessage } from "./displayChatMessage";
 import MessageMediaContent from "./MessageMediaContent";
 
@@ -64,9 +54,6 @@ interface FormattedChatBubble {
   isEdited: boolean;
   editedByLabel: string;
   messageType: MessageType;
-  attachments: ChatAttachment[];
-  localUploadState: LocalUploadState | null;
-  processingIndicator: ProcessingIndicator | null;
 }
 
 type FormattedMessage = FormattedSystemMessage | FormattedChatBubble;
@@ -122,9 +109,6 @@ function formatMessage(message: DisplayChatMessage, username: string | null): Fo
       ? ` (edited by ${editorName})`
       : (message.updatedAt && !message.deletedAt ? " (edited)" : ""),
     messageType: message.messageType || MESSAGE_TYPES.TEXT,
-    attachments: Array.isArray(message.attachments) ? message.attachments : [],
-    localUploadState: message.localUploadState || null,
-    processingIndicator: getProcessingIndicator(message),
   };
 }
 
@@ -347,7 +331,6 @@ function ChatMessageItem({
               {isMediaMessageType(formatted.messageType) && !message.deletedAt ? (
                 <MessageMediaContent
                   message={message}
-                  formatted={formatted}
                   onRetryPendingMessage={onRetryPendingMessage}
                   onCancelPendingMessage={onCancelPendingMessage}
                   onDismissPendingMessage={onDismissPendingMessage}

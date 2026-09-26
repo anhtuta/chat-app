@@ -2,7 +2,10 @@ package com.hello.mediaprocessing.service;
 
 import com.hello.mediaprocessing.config.MediaProcessingVideoRenditionProperties;
 import com.hello.mediaprocessing.model.VideoMetadata;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -55,6 +58,9 @@ class FfmpegVideoMobileRenditionGeneratorTest {
                 new VideoMetadata(30_000L, 1920, 1080, "video/mp4", "mp4", "h264", "aac")))
                         .containsSequence(
                                 "ffmpeg",
+                                "-hide_banner",
+                                "-loglevel",
+                                "error",
                                 "-y",
                                 "-i",
                                 "/tmp/input.mp4",
@@ -64,5 +70,21 @@ class FfmpegVideoMobileRenditionGeneratorTest {
                                 "libx264")
                         .contains("+faststart")
                         .contains("/tmp/output.480p.mp4");
+    }
+
+    /**
+     * Verifies diagnostic capture keeps only the configured cap and still consumes the rest of the stream.
+     */
+    @Test
+    void readStreamToString_capsRetainedDiagnostics() {
+        FfmpegVideoMobileRenditionGenerator generator =
+                new FfmpegVideoMobileRenditionGenerator(new MediaProcessingVideoRenditionProperties());
+        byte[] payload = new byte[FfmpegVideoMobileRenditionGenerator.MAX_DIAGNOSTIC_BYTES + 128];
+        Arrays.fill(payload, (byte) 'a');
+
+        String captured = generator.readStreamToString(new ByteArrayInputStream(payload));
+
+        assertThat(captured.getBytes(StandardCharsets.UTF_8))
+                .hasSize(FfmpegVideoMobileRenditionGenerator.MAX_DIAGNOSTIC_BYTES);
     }
 }

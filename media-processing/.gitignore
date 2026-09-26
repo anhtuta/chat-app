@@ -16,3 +16,6 @@ out/
 
 # Not sure if we should commit this file?
 .mvn/wrapper/maven-wrapper.jar
+
+# Environment
+.env

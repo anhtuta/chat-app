@@ -31,6 +31,10 @@ import type { DisplayChatMessage } from "./chat-area/displayChatMessage";
 import "./ChatArea.css";
 
 const MULTIPART_PART_URL_BATCH_SIZE = 4;
+const AUTO_FILL_MAX_BATCHES = 3;
+const AUTO_FILL_LAYOUT_SETTLE_MS = 150;
+const AUTO_FILL_MEDIA_WAIT_MS = 600;
+const NEAR_BOTTOM_PX = 120;
 
 type ChatRouteId = "public" | number;
 
@@ -72,17 +76,18 @@ function ChatArea({
   onLoadOlderMessages,
   onOpenGroupDetails,
 }: ChatAreaProps) {
-  const AUTO_FILL_MAX_BATCHES = 3;
   const [selectedMedia, setSelectedMedia] = useState<PendingChatAttachment[]>([]);
   const [mediaComposerError, setMediaComposerError] = useState("");
   const [pendingMediaMessages, setPendingMediaMessages] = useState<PendingMediaMessage[]>([]);
   const [showLoadOlderFallback, setShowLoadOlderFallback] = useState(false);
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+  const messagesContentRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isPrependingRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
   const prevMessagesRef = useRef<DisplayChatMessage[]>([]);
   const forceScrollToBottomRef = useRef(true);
+  const shouldStickToBottomRef = useRef(true);
   const pendingMediaMessagesRef = useRef<PendingMediaMessage[]>([]);
   const selectedMediaRef = useRef<PendingChatAttachment[]>([]);
   const uploadTasksRef = useRef(new Map<string, MediaUploadTask>());
@@ -122,8 +127,28 @@ function ChatArea({
     [messages, visiblePendingMediaMessages],
   );
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const container = chatMessagesRef.current;
+    if (container) {
+      if (behavior === "smooth") {
+        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        return;
+      }
+
+      pinContainerToBottom(container);
+      return;
+    }
+
     messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  const pinToBottomIfNeeded = useCallback(() => {
+    const container = chatMessagesRef.current;
+    if (!container || isPrependingRef.current || !shouldStickToBottomRef.current) {
+      return;
+    }
+
+    pinContainerToBottom(container);
   }, []);
 
   useEffect(() => {
@@ -147,26 +172,53 @@ function ChatArea({
     const distanceFromBottom = container
       ? container.scrollHeight - container.scrollTop - container.clientHeight
       : Number.MAX_SAFE_INTEGER;
-    const wasNearBottom = distanceFromBottom < 120;
+    const wasNearBottom = distanceFromBottom < NEAR_BOTTOM_PX;
 
     if (!isPrependingRef.current && !didPrepend) {
       if (forceScrollToBottomRef.current || (didAppend && wasNearBottom)) {
-        scrollToBottom();
+        shouldStickToBottomRef.current = true;
+        scrollToBottom(forceScrollToBottomRef.current ? "auto" : "smooth");
+        requestAnimationFrame(pinToBottomIfNeeded);
       }
     }
 
     forceScrollToBottomRef.current = false;
     prevMessagesRef.current = displayMessages;
-  }, [displayMessages, scrollToBottom]);
+  }, [displayMessages, pinToBottomIfNeeded, scrollToBottom]);
 
   useEffect(() => {
     isPrependingRef.current = false;
     forceScrollToBottomRef.current = true;
+    shouldStickToBottomRef.current = true;
     prevMessagesRef.current = [];
     autoFillBatchCountRef.current = 0;
     isAutoFillingRef.current = false;
     setShowLoadOlderFallback(false);
   }, [chatId]);
+
+  useEffect(() => {
+    const container = chatMessagesRef.current;
+    const content = messagesContentRef.current;
+    if (!container) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      pinToBottomIfNeeded();
+    });
+    observer.observe(container);
+    if (content) {
+      observer.observe(content);
+    }
+    container.addEventListener("load", pinToBottomIfNeeded, true);
+    container.addEventListener("loadedmetadata", pinToBottomIfNeeded, true);
+
+    return () => {
+      observer.disconnect();
+      container.removeEventListener("load", pinToBottomIfNeeded, true);
+      container.removeEventListener("loadedmetadata", pinToBottomIfNeeded, true);
+    };
+  }, [chatId, isLoading, displayMessages.length, pinToBottomIfNeeded]);
 
   const isContainerScrollable = useCallback((container: HTMLDivElement | null) => {
     if (!container) {
@@ -220,6 +272,10 @@ function ChatArea({
 
   const handleMessagesScroll = async (event: React.UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
+    if (!isPrependingRef.current) {
+      shouldStickToBottomRef.current = isNearBottom(container);
+    }
+
     if (
       container.scrollTop > 40 ||
       !hasMoreMessages ||
@@ -253,47 +309,53 @@ function ChatArea({
       return;
     }
 
-    if (isContainerScrollable(container)) {
-      setShowLoadOlderFallback(false);
-      return;
-    }
-
-    if (autoFillBatchCountRef.current >= AUTO_FILL_MAX_BATCHES) {
-      setShowLoadOlderFallback(true);
-      return;
-    }
-
-    if (isAutoFillingRef.current) {
-      return;
-    }
-
     let canceled = false;
-    isAutoFillingRef.current = true;
 
-    requestAnimationFrame(async () => {
+    const evaluateAutoFill = async () => {
+      if (canceled || isAutoFillingRef.current || isLoadingOlderRef.current) {
+        return;
+      }
+
+      await waitForMessageMediaToSettle(container, AUTO_FILL_MEDIA_WAIT_MS);
       if (canceled) {
-        isAutoFillingRef.current = false;
         return;
       }
 
-      const currentContainer = chatMessagesRef.current;
-      if (!currentContainer || isContainerScrollable(currentContainer) || !hasMoreMessages) {
-        isAutoFillingRef.current = false;
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, AUTO_FILL_LAYOUT_SETTLE_MS);
+      });
+      if (canceled) {
         return;
       }
 
-      // Auto-top-off the first load so tall viewports still expose older history.
+      pinToBottomIfNeeded();
+
+      if (isContainerScrollable(container)) {
+        setShowLoadOlderFallback(false);
+        return;
+      }
+
+      if (autoFillBatchCountRef.current >= AUTO_FILL_MAX_BATCHES) {
+        setShowLoadOlderFallback(true);
+        return;
+      }
+
+      isAutoFillingRef.current = true;
       autoFillBatchCountRef.current += 1;
       setShowLoadOlderFallback(false);
-      await loadOlderMessages({ preserveViewport: false });
+      const loaded = await loadOlderMessages({ preserveViewport: false });
       isAutoFillingRef.current = false;
-    });
+      if (!loaded && !canceled && !isContainerScrollable(container) && hasMoreMessages) {
+        setShowLoadOlderFallback(true);
+      }
+    };
+
+    void evaluateAutoFill();
 
     return () => {
       canceled = true;
     };
   }, [
-    AUTO_FILL_MAX_BATCHES,
     chatId,
     displayMessages,
     hasMoreMessages,
@@ -302,6 +364,7 @@ function ChatArea({
     isLoadingOlder,
     loadOlderMessages,
     onLoadOlderMessages,
+    pinToBottomIfNeeded,
   ]);
 
   const handleLoadOlderFallbackClick = async () => {
@@ -698,6 +761,7 @@ function ChatArea({
         />
         <ChatMessageList
           chatMessagesRef={chatMessagesRef}
+          messagesContentRef={messagesContentRef}
           messagesEndRef={messagesEndRef}
           messages={displayMessages}
           username={username}
@@ -744,4 +808,69 @@ function createAbortError() {
   const abortError = new Error("Upload canceled");
   abortError.name = "AbortError";
   return abortError;
+}
+
+function isNearBottom(container: HTMLDivElement, thresholdPx = NEAR_BOTTOM_PX) {
+  return container.scrollHeight - container.scrollTop - container.clientHeight < thresholdPx;
+}
+
+function pinContainerToBottom(container: HTMLDivElement) {
+  container.scrollTop = container.scrollHeight;
+}
+
+function waitForMessageMediaToSettle(container: HTMLDivElement, timeoutMs: number) {
+  const mediaElements = Array.from(container.querySelectorAll("img, video"));
+  const pendingElements = mediaElements.filter((element) => {
+    if (element instanceof HTMLImageElement) {
+      return !element.complete;
+    }
+    if (element instanceof HTMLVideoElement) {
+      return element.readyState < HTMLMediaElement.HAVE_METADATA;
+    }
+    return false;
+  });
+
+  if (!pendingElements.length) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      pendingElements.forEach((element) => {
+        element.removeEventListener("load", onReady);
+        element.removeEventListener("loadedmetadata", onReady);
+        element.removeEventListener("error", onReady);
+      });
+      resolve();
+    };
+
+    const onReady = () => {
+      const stillPending = pendingElements.some((element) => {
+        if (element instanceof HTMLImageElement) {
+          return !element.complete;
+        }
+        if (element instanceof HTMLVideoElement) {
+          return element.readyState < HTMLMediaElement.HAVE_METADATA;
+        }
+        return false;
+      });
+      if (!stillPending) {
+        finish();
+      }
+    };
+
+    const timeoutId = window.setTimeout(finish, timeoutMs);
+    pendingElements.forEach((element) => {
+      element.addEventListener("load", onReady);
+      element.addEventListener("loadedmetadata", onReady);
+      element.addEventListener("error", onReady);
+    });
+  });
 }

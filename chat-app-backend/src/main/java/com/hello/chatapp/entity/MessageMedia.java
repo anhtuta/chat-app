@@ -111,6 +111,13 @@ public class MessageMedia {
     @Column(name = "transcoded_object_key", length = 512)
     private String transcodedObjectKey;
 
+    /**
+     * Object key of a replaced original that still needs deletion after the canonical switch.
+     * Null when there is no pending cleanup (reuse, already deleted, or never replaced).
+     */
+    @Column(name = "replaced_original_object_key", length = 512)
+    private String replacedOriginalObjectKey;
+
     @Column(name = "rendition_480p_object_key", length = 512)
     private String rendition480pObjectKey;
 

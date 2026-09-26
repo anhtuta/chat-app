@@ -5,9 +5,12 @@ import com.hello.mediaprocessing.constant.MediaProcessingFailureReason;
 import com.hello.mediaprocessing.exception.VideoRenditionGenerationException;
 import com.hello.mediaprocessing.model.VideoMetadata;
 import jakarta.inject.Singleton;
+import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -23,7 +26,14 @@ import java.util.concurrent.TimeUnit;
 @Singleton
 public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRenditionGenerator {
 
+    /**
+     * Bytes retained from one ffmpeg pipe. Chat video uploads are capped at 200 MiB, while this worker
+     * keeps only a small diagnostic slice per stream so captured logs stay inside the process heap.
+     */
+    static final int MAX_DIAGNOSTIC_BYTES = 64 * 1024;
+
     private static final Duration READER_JOIN_GRACE_AFTER_KILL = Duration.ofSeconds(2);
+    private static final int DIAGNOSTIC_READ_BUFFER_BYTES = 8 * 1024;
 
     private final MediaProcessingVideoRenditionProperties renditionProperties;
 
@@ -61,7 +71,7 @@ public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRendition
             Duration configuredTimeout = Duration.ofSeconds(renditionProperties.getTimeoutSeconds());
             boolean completed = process.waitFor(configuredTimeout.toSeconds(), TimeUnit.SECONDS);
             if (!completed) {
-                process.destroyForcibly();
+                destroyTimedOutProcess(process);
                 awaitReadersQuietly(stdoutFuture, stderrFuture);
                 throw new VideoRenditionGenerationException(
                         MediaProcessingFailureReason.RENDITION_GENERATION_FAILED,
@@ -128,6 +138,9 @@ public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRendition
     List<String> buildCommand(Path canonicalInputFile, Path outputFile, VideoMetadata sourceMetadata) {
         List<String> command = new ArrayList<>();
         command.add(renditionProperties.getFfmpegPath());
+        command.add("-hide_banner");
+        command.add("-loglevel");
+        command.add("error");
         command.add("-y");
         command.add("-i");
         command.add(canonicalInputFile.toString());
@@ -157,14 +170,69 @@ public class FfmpegVideoMobileRenditionGenerator implements VideoMobileRendition
     }
 
     /**
-     * Reads an ffmpeg stream to completion on a background thread.
+     * Forcibly stops a timed-out ffmpeg process, waits briefly, and closes pipes if it stays alive.
+     *
+     * @param process ffmpeg process that exceeded the configured timeout
+     */
+    private void destroyTimedOutProcess(Process process) {
+        process.destroyForcibly();
+        try {
+            boolean terminated = process.waitFor(READER_JOIN_GRACE_AFTER_KILL.toMillis(), TimeUnit.MILLISECONDS);
+            if (!terminated) {
+                closeProcessStreamsQuietly(process);
+            }
+        } catch (InterruptedException e) {
+            closeProcessStreamsQuietly(process);
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Closes stdin, stdout, and stderr so blocked reader threads can unblock after a kill.
+     *
+     * @param process ffmpeg process whose streams should be closed
+     */
+    private void closeProcessStreamsQuietly(Process process) {
+        closeQuietly(process.getOutputStream());
+        closeQuietly(process.getInputStream());
+        closeQuietly(process.getErrorStream());
+    }
+
+    /**
+     * Closes a process stream and ignores close failures.
+     *
+     * @param closeable process stream to close
+     */
+    private void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+            // Best-effort unblock of reader tasks after destroyForcibly.
+        }
+    }
+
+    /**
+     * Drains an ffmpeg pipe, retaining at most {@link #MAX_DIAGNOSTIC_BYTES}.
+     * Extra bytes are discarded so a full pipe cannot stall ffmpeg before the process timeout.
      *
      * @param inputStream process stream to drain
-     * @return captured stream contents
+     * @return captured stream contents, truncated to the diagnostic cap
      */
-    private String readStreamToString(InputStream inputStream) {
+    String readStreamToString(InputStream inputStream) {
         try {
-            return new String(inputStream.readAllBytes());
+            byte[] buffer = new byte[DIAGNOSTIC_READ_BUFFER_BYTES];
+            ByteArrayOutputStream captured = new ByteArrayOutputStream();
+            int retained = 0;
+            int read;
+            while ((read = inputStream.read(buffer)) != -1) {
+                int remaining = MAX_DIAGNOSTIC_BYTES - retained;
+                if (remaining > 0) {
+                    int toCopy = Math.min(remaining, read);
+                    captured.write(buffer, 0, toCopy);
+                    retained += toCopy;
+                }
+            }
+            return captured.toString(StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

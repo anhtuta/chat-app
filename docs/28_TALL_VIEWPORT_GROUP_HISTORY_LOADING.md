@@ -184,10 +184,24 @@ Why this path:
   - No backend API change was required.
   - Existing cursor-based pagination remains unchanged.
 
+### Phase 2
+
+- What changed:
+  - Opening or switching a group now loads the latest page once. Auto-fill no longer refetches `GET /api/messages/groups/{id}?size=10` because the older-page cursor is set as soon as the first page arrives, and older fetches are skipped until that cursor exists.
+  - Auto-fill waits for image/video layout to settle before measuring whether the list is scrollable, so tall media no longer looks like an unfilled viewport and trigger a second first-page request.
+  - The message list stays pinned to the newest messages while media finishes loading or grows in height, using instant `scrollTop` pinning instead of a one-shot `scrollIntoView`.
+- Why it changed:
+  - After Phase 1, ChatArea measured the list before media had intrinsic height, then requested "older" messages with a null cursor, which repeated the initial API call and left the user in the middle of the thread.
+- Rollout, migration, or backward-compatibility notes:
+  - No backend API change was required.
+  - Viewport auto-fill and the manual fallback still apply to sparse text histories.
+
 ## Lesson (look back here)
 
 - A scroll-triggered pagination design should not assume the viewport is always smaller than the first page of content.
 - For chat UIs, "can fetch more" and "user can physically trigger fetch more" are different conditions and should both be designed explicitly.
+- Older-page fetches must not run until the first-page cursor is set; a null cursor repeats the latest-page request.
+- Chat open should pin to the newest messages as media height arrives, not only after the first paint.
 
 ## Future Higher-Scale Path
 
