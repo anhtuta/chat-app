@@ -66,19 +66,18 @@ List core entities/models and their relationships.
 
 Usually should align with the use cases. Each use case should have a corresponding API draft. An use case may have multiple API drafts, or no API at all.
 
-## Recommendation (optional)
-
-(Just a recommendation path, do NOT implement anything in this section. Keep this short and concise.)
-
 ## Implementation details
 
-(Implementation summary with phase numbers. After implementing a phase, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+List of implementation summary with phase numbers, such as: "Phase 1 - Service Scaffold"
 
-For each phase, include the following sections:
+In planning phase: draft all phases that are planned to be implemented, keep it concise, no details.
 
-- What changed (mandatory, keep it concise and to the point)
-- Why it changed (optional, keep it concise and to the point)
-- Rollout, migration, or backward-compatibility notes (if applicable)
+After implementing a phase:
+- Update docs in this section, and title of each phase, such as "Phase 1 - Service Scaffold" -> "Phase 1 - Service Scaffold **Done**".
+- Include the following sections:
+  - What changed (mandatory, keep it concise and to the point)
+  - Why it changed (optional, keep it concise and to the point)
+  - Rollout, migration, or backward-compatibility notes (if applicable)
 
 ## Future Higher-Scale Path
 
@@ -116,19 +115,18 @@ Use following format:
 
 (Draw a component diagram, flowchart, or sequence diagram, to show how they interact with each other.)
 
-## Recommendation
-
-(Just a recommendation path, or recommended solution, do NOT implement anything in this section. Keep this short and concise.)
-
 ## Implementation details
 
-(Implementation summary for each phase, or the selected solution. After implementing, update docs in this section, NOT modify the `Recommendation` section. In planning phase, do NOT write anything in this section.)
+List of implementation summary with phase numbers, such as: "Phase 1 - Service Scaffold"
 
-For each phase, include the following sections:
+In planning phase: draft all phases that are planned to be implemented, keep it concise, no details.
 
-- What changed (mandatory, keep it concise and to the point)
-- Why it changed (optional, keep it concise and to the point)
-- Rollout, migration, or backward-compatibility notes (if applicable)
+After implementing a phase:
+- Update docs in this section, and title of each phase, such as "Phase 1 - Service Scaffold" -> "Phase 1 - Service Scaffold **Done**".
+- Include the following sections:
+  - What changed (mandatory, keep it concise and to the point)
+  - Why it changed (optional, keep it concise and to the point)
+  - Rollout, migration, or backward-compatibility notes (if applicable)
 
 ## Examples (after the fix)
 
