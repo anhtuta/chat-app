@@ -22,6 +22,11 @@ FROM eclipse-temurin:25-jre-jammy
 
 WORKDIR /app
 
+# Phase 0 UTC migration guardrail: keep container and JVM wall-clock writes in UTC
+# until all persisted event timestamps are migrated to Instant + timestamptz.
+ENV TZ=UTC
+ENV JAVA_TOOL_OPTIONS="-Duser.timezone=UTC"
+
 # curl is used by HEALTHCHECK; create the non-root user in the same layer
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

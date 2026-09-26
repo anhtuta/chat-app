@@ -57,7 +57,9 @@ Related logic (not exhaustive):
 - Frontend: `dateUtils.ts`, `ChatPage` `toEpochMillis`, join-link expiry UI (already Instant-aware for `expiresAt`)
 - Seeders: `UserSeeder`, `GroupSeeder`, `MessageSeeder`
 
-No app-level pin of `TZ` / `user.timezone` / `spring.jackson.time-zone` today.
+Phase 0 now pins the backend container runtime to UTC via `chat-app-backend/Dockerfile`
+(`TZ=UTC`, `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC`). This reduces new naive-write drift
+during the migration window, but it does **not** change the persisted schema/types yet.
 
 ## Possible Solutions
 
@@ -151,19 +153,23 @@ Writer (service / @PrePersist)
 
 ## Implementation details
 
-### Phase 0 - rollout guardrails and legacy-data check
+### Phase 0 - rollout guardrails and legacy-data check - **Done**
 
 - What changed:
-  - Define the rollout assumptions before any schema/type change:
-    - existing naive DB values are treated as UTC wall-clock unless we find evidence otherwise
-    - deploy/runtime should be pinned to UTC during the migration window
-  - Re-verify there is still no app-level UTC pin in config (`application.yaml` has no `TZ`, `user.timezone`, `hibernate.jdbc.time_zone`, or Jackson timezone pin today).
-  - Keep this doc as the migration source of truth and update it phase-by-phase instead of rewriting the recommendation.
+  - Implemented the repo-side UTC runtime pin in `chat-app-backend/Dockerfile`:
+    - `TZ=UTC`
+    - `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC`
+  - Re-verified that `application.yaml` still has no `hibernate.jdbc.time_zone` or Jackson timezone pin; this phase intentionally solves the `LocalDateTime.now()` writer problem first instead of pretending serialization settings fix it.
+  - Kept this doc as the migration source of truth and recorded Phase 0 here instead of rewriting the recommendation.
+  - Documented the remaining legacy-data assumption for future Flyway conversions:
+    existing naive DB values will be treated as UTC wall-clock unless evidence shows a different historical JVM timezone.
 - Why it changed:
   - We need a safe baseline before touching DB types. Even after we migrate one feature area, many remaining writes still call `LocalDateTime.now()` and can drift if JVM timezone differs between environments.
 - Rollout, migration, or backward-compatibility notes:
+  - Status: implemented in repo for Docker-based runtime paths.
   - This phase is intentionally low-risk and can land before any Flyway migration.
-  - If we discover production rows were historically written under a non-UTC JVM, we must stop and replace `AT TIME ZONE 'UTC'` with the real source zone for the affected migration.
+  - Remaining manual check: if we discover production rows were historically written under a non-UTC JVM, we must stop and replace `AT TIME ZONE 'UTC'` with the real source zone for the affected migration.
+  - Local non-Docker runs still inherit the host timezone unless launched with an explicit UTC JVM setting.
 
 ### Phase 1 - media upload session expiry / TTL
 
@@ -191,8 +197,8 @@ ALTER TABLE media_uploads
     );
 ```
 
-  - Mixed FE/BE rollout should be safe because the JSON field names can stay the same; only the serialized format changes from naive ISO to ISO with `Z`.
-  - Do not rename `completeBy` in the same phase unless necessary; changing the semantic type is already enough for Phase 1.
+- Mixed FE/BE rollout should be safe because the JSON field names can stay the same; only the serialized format changes from naive ISO to ISO with `Z`.
+- Do not rename `completeBy` in the same phase unless necessary; changing the semantic type is already enough for Phase 1.
 
 ### Phase 2 - chat timeline ordering and sidebar freshness
 
