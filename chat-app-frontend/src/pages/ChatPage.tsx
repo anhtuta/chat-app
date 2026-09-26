@@ -55,6 +55,35 @@ function ChatPage({
     return Number.isNaN(parsed) ? 0 : parsed;
   };
 
+  const getMessageFreshnessEpochMillis = (message: ChatMessage | null | undefined): number => {
+    if (!message) {
+      return 0;
+    }
+
+    // Prefer the server-computed revision key. Fall back to the original timestamp only
+    // during mixed-version rollouts where older responses may not include freshnessKey yet.
+    const freshnessMillis = toEpochMillis(message.freshnessKey);
+    if (freshnessMillis > 0) {
+      return freshnessMillis;
+    }
+
+    return toEpochMillis(message.timestamp);
+  };
+
+  const keepFresherMessage = (
+    currentMessage: ChatMessage,
+    candidateMessage: ChatMessage,
+  ): ChatMessage => {
+    const freshnessDiff = getMessageFreshnessEpochMillis(candidateMessage)
+      - getMessageFreshnessEpochMillis(currentMessage);
+
+    if (freshnessDiff > 0) {
+      return candidateMessage;
+    }
+
+    return currentMessage;
+  };
+
   const navigate = useNavigate();
   const location = useLocation();
   const { groupId } = useParams<{ groupId?: string }>();
@@ -102,7 +131,7 @@ function ChatPage({
     }
 
     const nextMessages = [...previousMessages];
-    nextMessages[existingIndex] = incomingMessage;
+    nextMessages[existingIndex] = keepFresherMessage(nextMessages[existingIndex], incomingMessage);
     return nextMessages;
   };
 
@@ -123,7 +152,7 @@ function ChatPage({
         return;
       }
 
-      merged[existingIndex] = message;
+      merged[existingIndex] = keepFresherMessage(merged[existingIndex], message);
     };
 
     fetchedMessages.forEach(addMessage);
@@ -390,19 +419,22 @@ function ChatPage({
       }
 
       if (prepend) {
-        const existingIds = new Set(messagesRef.current.map((message) => message.id));
-        const uniqueOlder = messagesData.filter((message) => !existingIds.has(message.id));
-        if (!uniqueOlder.length) {
+        const previousMessages = messagesRef.current;
+        const nextMessages = mergeMessagesById(messagesData, previousMessages)
+          .sort(compareMessagesChronologically);
+        const didChange = nextMessages.length !== previousMessages.length
+          || nextMessages.some((message, index) => message !== previousMessages[index]);
+
+        if (!didChange) {
           setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
           return [];
         }
 
-        const nextMessages = [...uniqueOlder, ...messagesRef.current];
         messagesRef.current = nextMessages;
         updateOldestGroupCursor(nextMessages[0]);
         setMessages(nextMessages);
         setHasMoreGroupMessages(messagesData.length === GROUP_PAGE_SIZE);
-        return uniqueOlder;
+        return messagesData;
       }
 
       setMessages((currentMessages) => {

@@ -14,6 +14,7 @@ import com.hello.chatapp.storage.ObjectStorageProviderType;
 import com.hello.chatapp.storage.S3ObjectStorageProvider;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -189,5 +190,49 @@ class MessageResponseMapperTest {
 
         assertThat(response.getSystemEventPayload()).isNotNull();
         assertThat(response.getSystemEventPayload().getSubjectNames()).containsExactly("Bob", "Carol");
+    }
+
+    /**
+     * Freshness keys advance for attachment processing updates, not just message edits.
+     */
+    @Test
+    void toResponse_usesAttachmentUpdatesForFreshnessKey() {
+        MediaStorageProperties properties = new MediaStorageProperties();
+        properties.setProvider(ObjectStorageProviderType.S3);
+
+        MessageResponseMapper mapper = new MessageResponseMapper(
+                new ObjectStorageProviderRegistry(
+                        List.of(new S3ObjectStorageProvider(properties)),
+                        properties));
+
+        LocalDateTime messageTimestamp = LocalDateTime.of(2026, 9, 24, 11, 0, 0);
+        LocalDateTime attachmentUpdatedAt = messageTimestamp.plusMinutes(2);
+
+        User user = new User("alice", "secret", "Alice");
+        user.setId(1L);
+
+        Message message = new Message();
+        message.setId(14L);
+        message.setUser(user);
+        message.setMessageType(MessageType.VIDEO);
+        message.setTimestamp(messageTimestamp);
+
+        MessageMedia attachment = new MessageMedia();
+        attachment.setId(102L);
+        attachment.setAttachmentOrder(0);
+        attachment.setStorageProvider(ObjectStorageProviderType.S3);
+        attachment.setBucket("chat-media");
+        attachment.setObjectKey("media/1/demo.mp4");
+        attachment.setOriginalFilename("demo.mp4");
+        attachment.setDeclaredMimeType("video/mp4");
+        attachment.setSizeBytes(3_210L);
+        attachment.setStatus(MediaStatus.MEDIA_READY);
+        attachment.setScanStatus(MediaScanStatus.SCAN_PASSED);
+        attachment.setUpdatedAt(attachmentUpdatedAt);
+        message.addAttachment(attachment);
+
+        MessageResponse response = mapper.toResponse(message);
+
+        assertThat(response.getFreshnessKey()).isEqualTo(attachmentUpdatedAt.toString());
     }
 }

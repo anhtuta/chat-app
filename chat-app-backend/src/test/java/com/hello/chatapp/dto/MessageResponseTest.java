@@ -10,10 +10,18 @@ import com.hello.chatapp.entity.User;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Verifies `MessageResponse.fromMessage` mappings for API and WebSocket payloads.
+ */
 class MessageResponseTest {
 
+    /**
+     * Media attachments retain their core metadata in the lightweight DTO mapping path.
+     */
     @Test
     void fromMessage_mapsMediaFieldsAndAttachments() {
         User user = new User("alice", "secret", "Alice");
@@ -51,6 +59,9 @@ class MessageResponseTest {
         assertThat(response.getAttachments().getFirst().getScanStatus()).isEqualTo(MediaScanStatus.SCAN_PASSED);
     }
 
+    /**
+     * Structured system messages expose actor and subject metadata separately.
+     */
     @Test
     void fromMessage_mapsStructuredSystemEventMetadata() {
         User actor = new User("alice", "secret", "Alice");
@@ -75,5 +86,42 @@ class MessageResponseTest {
         assertThat(response.getSystemEventActor().getUsername()).isEqualTo("alice");
         assertThat(response.getUser()).isNotNull();
         assertThat(response.getUser().getUsername()).isEqualTo("bob");
+    }
+
+    /**
+     * Freshness advances when either the message row or an attachment changes later.
+     */
+    @Test
+    void fromMessage_usesLatestAttachmentOrMessageChangeForFreshnessKey() {
+        LocalDateTime messageEditedAt = LocalDateTime.of(2026, 9, 24, 11, 0, 0);
+        LocalDateTime attachmentUpdatedAt = messageEditedAt.plusMinutes(5);
+
+        User user = new User("alice", "secret", "Alice");
+        user.setId(1L);
+
+        Message message = new Message();
+        message.setId(12L);
+        message.setUser(user);
+        message.setMessageType(MessageType.IMAGE);
+        message.setTimestamp(messageEditedAt.minusMinutes(10));
+        message.setUpdatedAt(messageEditedAt);
+
+        MessageMedia attachment = new MessageMedia();
+        attachment.setId(101L);
+        attachment.setAttachmentOrder(0);
+        attachment.setStorageProvider(ObjectStorageProviderType.MINIO);
+        attachment.setBucket("chat-media");
+        attachment.setObjectKey("media/2.png");
+        attachment.setOriginalFilename("updated-photo.png");
+        attachment.setDeclaredMimeType("image/png");
+        attachment.setSizeBytes(5678L);
+        attachment.setStatus(MediaStatus.PROCESSING_IN_PROGRESS);
+        attachment.setScanStatus(MediaScanStatus.SCAN_PASSED);
+        attachment.setUpdatedAt(attachmentUpdatedAt);
+        message.addAttachment(attachment);
+
+        MessageResponse response = MessageResponse.fromMessage(message);
+
+        assertThat(response.getFreshnessKey()).isEqualTo(attachmentUpdatedAt.toString());
     }
 }

@@ -45,6 +45,7 @@ public class MessageResponseMapper {
                 .updatedAt(message.getUpdatedAt())
                 .deletedBy(message.getDeletedBy() != null ? UserResponse.fromUser(message.getDeletedBy()) : null)
                 .deletedAt(message.getDeletedAt())
+                .freshnessKey(MessageResponse.resolveFreshnessKey(message))
                 .attachments(resolveAttachments(message))
                 .timestamp(message.getTimestamp())
                 .build();
