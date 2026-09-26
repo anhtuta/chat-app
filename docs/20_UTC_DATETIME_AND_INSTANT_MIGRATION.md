@@ -151,7 +151,107 @@ Writer (service / @PrePersist)
 
 ## Implementation details
 
-(Planned — not implemented yet.)
+### Phase 0 - rollout guardrails and legacy-data check
+
+- What changed:
+  - Define the rollout assumptions before any schema/type change:
+    - existing naive DB values are treated as UTC wall-clock unless we find evidence otherwise
+    - deploy/runtime should be pinned to UTC during the migration window
+  - Re-verify there is still no app-level UTC pin in config (`application.yaml` has no `TZ`, `user.timezone`, `hibernate.jdbc.time_zone`, or Jackson timezone pin today).
+  - Keep this doc as the migration source of truth and update it phase-by-phase instead of rewriting the recommendation.
+- Why it changed:
+  - We need a safe baseline before touching DB types. Even after we migrate one feature area, many remaining writes still call `LocalDateTime.now()` and can drift if JVM timezone differs between environments.
+- Rollout, migration, or backward-compatibility notes:
+  - This phase is intentionally low-risk and can land before any Flyway migration.
+  - If we discover production rows were historically written under a non-UTC JVM, we must stop and replace `AT TIME ZONE 'UTC'` with the real source zone for the affected migration.
+
+### Phase 1 - media upload session expiry / TTL
+
+- What changed:
+  - Migrate `media_uploads.expires_at` from `timestamp(6)` to `timestamptz` using the same pattern as `V9__join_link_expires_at_timestamptz.sql`.
+  - Convert the expiry path from `LocalDateTime` to `Instant` in:
+    - entity: `MediaUpload.expiresAt`
+    - service: `MediaUploadSessionService` (`prepareUploadSession`, `ensureNotExpired`, `createUploadRecord`)
+    - DTOs returned to FE: `PrepareMediaMessageResponse.expiresAt`, `PreparedMediaAttachmentResponse.completeBy`
+    - tests covering prepare/parts/complete and expiry rejection
+  - Keep `media_uploads.created_at` and `media_uploads.updated_at` for a later phase so Phase 1 stays focused on TTL correctness only.
+- Why it changed:
+  - This is the highest remaining correctness risk after join-link expiry. The current code computes expiry with `LocalDateTime.now().plusMinutes(...)` and validates with `isBefore(LocalDateTime.now())`, so TTL behavior depends on JVM timezone.
+- Rollout, migration, or backward-compatibility notes:
+  - Reuse the V9 migration style:
+
+```sql
+ALTER TABLE media_uploads
+    ALTER COLUMN expires_at TYPE timestamptz
+    USING (
+        CASE
+            WHEN expires_at IS NULL THEN NULL
+            ELSE expires_at AT TIME ZONE 'UTC'
+        END
+    );
+```
+
+  - Mixed FE/BE rollout should be safe because the JSON field names can stay the same; only the serialized format changes from naive ISO to ISO with `Z`.
+  - Do not rename `completeBy` in the same phase unless necessary; changing the semantic type is already enough for Phase 1.
+
+### Phase 2 - chat timeline ordering and sidebar freshness
+
+- What changed:
+  - Migrate timeline/order-defining columns to absolute instants:
+    - `messages.timestamp`
+    - `groups.latest_message_at`
+  - Convert the backend message/history pipeline from `LocalDateTime` to `Instant` in:
+    - entities / DTOs: `Message.timestamp`, `MessageResponse.timestamp`, `GroupResponse.latestMessageAt`, `GroupSummaryUpdate.latestMessageAt`
+    - controller/service/repo cursor flow: `MessageController.beforeTimestamp`, `MessageHistoryService`, `MessageRepository.findGroupMessageIdsBeforeCursor`
+    - group latest-message CAS logic: `GroupRepository.updateLatestMessageIfNewer`, `updateLatestMessageIfNotStale`
+    - freshness-key generation in `MessageResponse`
+  - Update FE consumers that compare or sort timestamps:
+    - `ChatPage.tsx` cursor handling and chronological sort
+    - `groupSummaryUpdates.ts` merge/reorder logic
+    - relative/absolute display helpers in `dateUtils.ts`
+- Why it changed:
+  - These paths decide message ordering, cursor pagination, sidebar recency, and unread movement. They are the most user-visible timezone-sensitive behavior after upload expiry.
+- Rollout, migration, or backward-compatibility notes:
+  - DB migration and API type changes should ship together in one backend release so cursor queries and latest-message comparisons all speak the same instant format.
+  - FE already uses `Date.parse(...)` / `new Date(...)`; once backend sends ISO-8601 with `Z`, those callers become correct without timezone compensation hacks.
+  - Expect test churn in service, repository, DTO-mapper, and websocket/sidebar merge tests because many assertions currently use naive `LocalDateTime`.
+
+### Phase 3 - audit, lifecycle, and membership metadata
+
+- What changed:
+  - Migrate all remaining persisted event/audit moments from `LocalDateTime` to `Instant`, including:
+    - `users.created_at`
+    - `groups.created_at`, `groups.archived_at`
+    - `group_participants.joined_at`
+    - `group_bans.banned_at`
+    - `group_join_links.created_at`, `group_join_links.revoked_at`
+    - `messages.updated_at`, `messages.deleted_at`
+    - `message_edit_history.updated_at`
+    - `message_media.created_at`, `message_media.updated_at`
+    - `media_uploads.created_at`, `media_uploads.updated_at`
+  - Update corresponding entities, response DTOs, websocket payloads, service methods, seeders, and tests.
+  - Replace remaining persisted-moment writers such as `@PrePersist`, `@PreUpdate`, and service-level `LocalDateTime.now()` calls with `Instant.now()`.
+- Why it changed:
+  - This finishes the consistency story. After Phase 2, the app may render and order messages correctly, but audit/history metadata would still be a mix of naive and absolute timestamps unless we migrate the rest.
+- Rollout, migration, or backward-compatibility notes:
+  - This phase can be split into smaller PRs by aggregate if needed (`group membership`, `message audit`, `media metadata`), but each sub-phase should keep the same end-state rule: persisted moments use `Instant` and `timestamptz`.
+  - Use the same Flyway `AT TIME ZONE 'UTC'` conversion pattern for every migrated legacy column.
+
+### Phase 4 - cleanup, guardrails, and regression prevention
+
+- What changed:
+  - Do a final sweep for persisted-moment leftovers:
+    - entity fields still typed as `LocalDateTime`
+    - repository signatures that still accept wall-clock cursors
+    - DTOs/websocket payloads still exposing naive timestamps
+    - seeders/tests still creating persisted moments with `LocalDateTime.now()`
+  - Introduce a small shared clock abstraction (`Clock` / `InstantSource`) if testability or deterministic assertions start getting noisy after the migration.
+  - Update feature docs and developer conventions so new event-time columns default to `timestamptz` + `Instant`.
+- Why it changed:
+  - The biggest risk after a phased migration is partial regression: new code accidentally reintroduces `LocalDateTime` for persisted event times because the older pattern still exists in some corners.
+- Rollout, migration, or backward-compatibility notes:
+  - No DB contract change is required here if the earlier phases are complete.
+  - This is the right phase to decide whether to add optional hardening such as DB defaults (`DEFAULT now()`) or stricter code-review checks for new persisted datetime fields.
 
 ## Future Higher-Scale Path
 
