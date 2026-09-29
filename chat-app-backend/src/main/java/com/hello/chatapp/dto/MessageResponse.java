@@ -10,7 +10,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 
@@ -36,7 +38,7 @@ public class MessageResponse {
     private LocalDateTime deletedAt;
     private String freshnessKey;
     private List<MessageAttachmentResponse> attachments;
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
     /**
      * Maps a persisted message for APIs that do not go through {@link MessageResponseMapper}
@@ -70,7 +72,7 @@ public class MessageResponse {
      * and attachment lifecycle changes.
      */
     public static String resolveFreshnessKey(Message message) {
-        LocalDateTime latestChange = resolveLatestMessageOrAttachmentChange(message);
+        Instant latestChange = resolveLatestMessageOrAttachmentChange(message);
         return latestChange != null ? latestChange.toString() : null;
     }
 
@@ -93,14 +95,14 @@ public class MessageResponse {
     /**
      * Returns the latest meaningful revision timestamp across the message row and its attachments.
      */
-    private static LocalDateTime resolveLatestMessageOrAttachmentChange(Message message) {
+    private static Instant resolveLatestMessageOrAttachmentChange(Message message) {
         if (message == null) {
             return null;
         }
 
-        LocalDateTime latestChange = message.getTimestamp();
-        latestChange = max(latestChange, message.getUpdatedAt());
-        latestChange = max(latestChange, message.getDeletedAt());
+        Instant latestChange = message.getTimestamp();
+        latestChange = max(latestChange, toUtcInstant(message.getUpdatedAt()));
+        latestChange = max(latestChange, toUtcInstant(message.getDeletedAt()));
 
         if (message.getAttachments() == null) {
             return latestChange;
@@ -110,7 +112,7 @@ public class MessageResponse {
             if (attachment == null) {
                 continue;
             }
-            latestChange = max(latestChange, attachment.getUpdatedAt());
+            latestChange = max(latestChange, toUtcInstant(attachment.getUpdatedAt()));
         }
 
         return latestChange;
@@ -119,7 +121,7 @@ public class MessageResponse {
     /**
      * Returns the later non-null timestamp, or the non-null value when only one exists.
      */
-    private static LocalDateTime max(LocalDateTime left, LocalDateTime right) {
+    private static Instant max(Instant left, Instant right) {
         if (left == null) {
             return right;
         }
@@ -127,6 +129,13 @@ public class MessageResponse {
             return left;
         }
         return right;
+    }
+
+    /**
+     * Treats legacy naive wall-clock datetimes as UTC during the phased migration.
+     */
+    private static Instant toUtcInstant(LocalDateTime value) {
+        return value == null ? null : value.toInstant(ZoneOffset.UTC);
     }
 
     private static SystemEventType resolveSystemEventType(Message message) {

@@ -5,10 +5,12 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.model.SystemEventPayload;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -77,7 +79,7 @@ public class Message {
     private SystemEventPayload systemEventPayload;
 
     @Column(nullable = false)
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
     /**
      * Second user reference ({@code messages.updated_by}). Meaning depends on message type:
@@ -127,7 +129,7 @@ public class Message {
     @PrePersist
     protected void onCreate() {
         if (timestamp == null) {
-            timestamp = LocalDateTime.now();
+            timestamp = Instant.now();
         }
         if (messageType == null) {
             messageType = MessageType.TEXT;
@@ -138,7 +140,15 @@ public class Message {
         this.user = user;
         this.messageType = MessageType.TEXT;
         this.content = content;
-        this.timestamp = LocalDateTime.now();
+        this.timestamp = Instant.now();
+    }
+
+    /**
+     * Transitional helper for tests and still-naive callers during the phased UTC migration.
+     * Interprets the provided wall-clock value as UTC.
+     */
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp == null ? null : timestamp.toInstant(ZoneOffset.UTC);
     }
 
     public void addAttachment(MessageMedia attachment) {

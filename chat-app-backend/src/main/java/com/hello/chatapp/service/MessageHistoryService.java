@@ -9,7 +9,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,7 +35,7 @@ public class MessageHistoryService {
     @Transactional(readOnly = true)
     public List<MessageResponse> getGroupMessages(
             Group group,
-            LocalDateTime beforeTimestamp,
+            Instant beforeTimestamp,
             Long beforeId,
             int size) {
         boolean hasCursor = beforeTimestamp != null && beforeId != null;

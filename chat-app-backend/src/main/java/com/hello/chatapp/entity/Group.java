@@ -14,7 +14,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 /**
  * Persisted chat group, including optional member capacity ({@code maxMembers}).
@@ -57,7 +59,7 @@ public class Group {
     private String latestMessageSender;
 
     @Column(name = "latest_message_at")
-    private LocalDateTime latestMessageAt;
+    private Instant latestMessageAt;
 
     @Column(name = "archived_at")
     private LocalDateTime archivedAt;
@@ -80,5 +82,13 @@ public class Group {
         this.name = name;
         this.createdBy = createdBy;
         this.createdAt = LocalDateTime.now();
+    }
+
+    /**
+     * Transitional helper for tests and still-naive callers during the phased UTC migration.
+     * Interprets the provided wall-clock value as UTC.
+     */
+    public void setLatestMessageAt(LocalDateTime latestMessageAt) {
+        this.latestMessageAt = latestMessageAt == null ? null : latestMessageAt.toInstant(ZoneOffset.UTC);
     }
 }

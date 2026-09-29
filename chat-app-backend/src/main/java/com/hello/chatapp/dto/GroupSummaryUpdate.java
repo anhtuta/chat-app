@@ -7,7 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.lang.NonNull;
@@ -29,7 +29,7 @@ public class GroupSummaryUpdate {
     private String description;
     private String latestMessage;
     private String latestMessageSender;
-    private LocalDateTime latestMessageAt;
+    private Instant latestMessageAt;
     private Long unreadCount;
     private GroupRole currentUserRole;
     private List<GroupPermission> currentUserPermissions;
@@ -70,7 +70,7 @@ public class GroupSummaryUpdate {
             Long groupId,
             String groupName,
             String latestMessagePreview,
-            LocalDateTime latestMessageAt) {
+            Instant latestMessageAt) {
         return GroupSummaryUpdate.builder()
                 .groupId(groupId)
                 .name(groupName)
@@ -82,7 +82,7 @@ public class GroupSummaryUpdate {
     }
 
     /**
-     * Same as {@link #forSystemEvent(Long, String, String, LocalDateTime)} but also carries the
+     * Same as {@link #forSystemEvent(Long, String, String, Instant)} but also carries the
      * recipient's refreshed role and permissions.
      *
      * @param currentUserRole effective role for the recipient after the change
@@ -93,7 +93,7 @@ public class GroupSummaryUpdate {
             Long groupId,
             String groupName,
             String latestMessagePreview,
-            LocalDateTime latestMessageAt,
+            Instant latestMessageAt,
             GroupRole currentUserRole,
             List<GroupPermission> currentUserPermissions) {
         return GroupSummaryUpdate.builder()
@@ -119,7 +119,7 @@ public class GroupSummaryUpdate {
             String groupName,
             String groupDescription,
             String latestMessagePreview,
-            LocalDateTime latestMessageAt) {
+            Instant latestMessageAt) {
         return GroupSummaryUpdate.builder()
                 .groupId(groupId)
                 .name(groupName)

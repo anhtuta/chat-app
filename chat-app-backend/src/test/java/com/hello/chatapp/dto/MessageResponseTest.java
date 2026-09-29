@@ -11,6 +11,7 @@ import com.hello.chatapp.storage.ObjectStorageProviderType;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -122,6 +123,6 @@ class MessageResponseTest {
 
         MessageResponse response = MessageResponse.fromMessage(message);
 
-        assertThat(response.getFreshnessKey()).isEqualTo(attachmentUpdatedAt.toString());
+        assertThat(response.getFreshnessKey()).isEqualTo(attachmentUpdatedAt.toInstant(ZoneOffset.UTC).toString());
     }
 }

@@ -39,23 +39,33 @@ Media upload session **`expires_at`** is now also migrated end-to-end:
 
 The same entity still uses `LocalDateTime` for `createdAt` / `updatedAt`.
 
+Chat timeline ordering fields are now also migrated end-to-end:
+
+- DB: `messages.timestamp`, `groups.latest_message_at` as `timestamptz` (`V16__messages_timestamp_and_groups_latest_message_at_timestamptz.sql`)
+- Java: `Instant`
+- API / WS / FE: `MessageResponse.timestamp`, `MessageResponse.freshnessKey`, `GroupResponse.latestMessageAt`, and `GroupSummaryUpdate.latestMessageAt` now serialize as ISO-8601 with `Z`
+
+The same rows still use `LocalDateTime` for `messages.updatedAt`, `messages.deletedAt`, and other audit fields scheduled for Phase 3.
+
 Exception responses already use `Instant.now()` for `timestamp` — inconsistent with the rest of the API.
 
 ### Inventory (as of this doc)
 
-| Entity / table                                | Columns                                      | Java            | DB                |
-| --------------------------------------------- | -------------------------------------------- | --------------- | ----------------- |
-| `User` / `users`                              | `createdAt`                                  | `LocalDateTime` | `timestamp(6)`    |
-| `Group` / `groups`                            | `createdAt`, `latestMessageAt`, `archivedAt` | `LocalDateTime` | `timestamp(6)`    |
-| `GroupParticipant` / `group_participants`     | `joinedAt`                                   | `LocalDateTime` | `timestamp(6)`    |
-| `Message` / `messages`                        | `timestamp`, `updatedAt`, `deletedAt`        | `LocalDateTime` | `timestamp(6)`    |
-| `MessageEditHistory` / `message_edit_history` | `updatedAt`                                  | `LocalDateTime` | `timestamp(6)`    |
-| `MessageMedia` / `message_media`              | `createdAt`, `updatedAt`                     | `LocalDateTime` | `timestamp(6)`    |
-| `MediaUpload` / `media_uploads`               | `createdAt`, `updatedAt`                     | `LocalDateTime` | `timestamp(6)`    |
-| `MediaUpload` / `media_uploads`               | `expiresAt`                                  | **`Instant`**   | **`timestamptz`** |
-| `GroupBan` / `group_bans`                     | `bannedAt`                                   | `LocalDateTime` | `timestamp(6)`    |
-| `GroupJoinLink` / `group_join_links`          | `createdAt`, `revokedAt`                     | `LocalDateTime` | `timestamp(6)`    |
-| `GroupJoinLink` / `group_join_links`          | `expiresAt`                                  | **`Instant`**   | **`timestamptz`** |
+| Entity / table                                | Columns                   | Java            | DB                |
+| --------------------------------------------- | ------------------------- | --------------- | ----------------- |
+| `User` / `users`                              | `createdAt`               | `LocalDateTime` | `timestamp(6)`    |
+| `Group` / `groups`                            | `createdAt`, `archivedAt` | `LocalDateTime` | `timestamp(6)`    |
+| `Group` / `groups`                            | `latestMessageAt`         | **`Instant`**   | **`timestamptz`** |
+| `GroupParticipant` / `group_participants`     | `joinedAt`                | `LocalDateTime` | `timestamp(6)`    |
+| `Message` / `messages`                        | `timestamp`               | **`Instant`**   | **`timestamptz`** |
+| `Message` / `messages`                        | `updatedAt`, `deletedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `MessageEditHistory` / `message_edit_history` | `updatedAt`               | `LocalDateTime` | `timestamp(6)`    |
+| `MessageMedia` / `message_media`              | `createdAt`, `updatedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `MediaUpload` / `media_uploads`               | `createdAt`, `updatedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `MediaUpload` / `media_uploads`               | `expiresAt`               | **`Instant`**   | **`timestamptz`** |
+| `GroupBan` / `group_bans`                     | `bannedAt`                | `LocalDateTime` | `timestamp(6)`    |
+| `GroupJoinLink` / `group_join_links`          | `createdAt`, `revokedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `GroupJoinLink` / `group_join_links`          | `expiresAt`               | **`Instant`**   | **`timestamptz`** |
 
 Related logic (not exhaustive):
 
@@ -158,7 +168,7 @@ Writer (service / @PrePersist)
 4. **Phase 2 — chat ordering & UX:** `messages.timestamp`, `groups.latest_message_at`, cursor `beforeTimestamp`, `GroupSummaryUpdate.latestMessageAt`, related DTOs/repos/tests/FE. Fixes relative time and sidebar “latest” comparisons across TZs.
 5. **Phase 3 — audit / membership metadata:** `createdAt`, `joinedAt`, `bannedAt`, `archivedAt`, `updatedAt`, `deletedAt`, `revokedAt`, media created/updated, edit history, etc.
 6. **Convention:** new moment columns must be `timestamptz` + `Instant` from day one; do not add more `timestamp` + `LocalDateTime` for events.
-7. Defer coding until phases are scheduled; this doc is the design placeholder.
+7. Track completed rollout work in `Implementation details`; keep `Recommendation` focused on the intended end state.
 
 ## Implementation details
 
@@ -180,10 +190,9 @@ Writer (service / @PrePersist)
   - Remaining manual check: if we discover production rows were historically written under a non-UTC JVM, we must stop and replace `AT TIME ZONE 'UTC'` with the real source zone for the affected migration.
   - Local non-Docker runs still inherit the host timezone unless launched with an explicit UTC JVM setting.
 
-### Phase 1 - media upload session expiry / TTL
+### Phase 1 - media upload session expiry / TTL - **Done**
 
 - What changed:
-  - Status: implemented.
   - Migrated `media_uploads.expires_at` from `timestamp(6)` to `timestamptz` in `V15__media_upload_expires_at_timestamptz.sql`, following the same `AT TIME ZONE 'UTC'` pattern as `V9__join_link_expires_at_timestamptz.sql`.
   - Converted the expiry path from `LocalDateTime` to `Instant` in:
     - entity: `MediaUpload.expiresAt`
@@ -207,30 +216,27 @@ ALTER TABLE media_uploads
     );
 ```
 
-  - JSON field names stayed the same; only the serialized format changed from naive ISO to ISO with `Z`.
-  - The prepared-attachment response now uses `expiresAt` so both session-level and attachment-level expiry fields share the same name and instant semantics.
+- JSON field names stayed the same; only the serialized format changed from naive ISO to ISO with `Z`.
+- The prepared-attachment response now uses `expiresAt` so both session-level and attachment-level expiry fields share the same name and instant semantics.
 
-### Phase 2 - chat timeline ordering and sidebar freshness
+### Phase 2 - chat timeline ordering and sidebar freshness - **Done**
 
 - What changed:
-  - Migrate timeline/order-defining columns to absolute instants:
+  - Migrated timeline/order-defining columns to absolute instants in `V16__messages_timestamp_and_groups_latest_message_at_timestamptz.sql`:
     - `messages.timestamp`
     - `groups.latest_message_at`
-  - Convert the backend message/history pipeline from `LocalDateTime` to `Instant` in:
+  - Converted the backend message/history pipeline from `LocalDateTime` to `Instant` in:
     - entities / DTOs: `Message.timestamp`, `MessageResponse.timestamp`, `GroupResponse.latestMessageAt`, `GroupSummaryUpdate.latestMessageAt`
     - controller/service/repo cursor flow: `MessageController.beforeTimestamp`, `MessageHistoryService`, `MessageRepository.findGroupMessageIdsBeforeCursor`
     - group latest-message CAS logic: `GroupRepository.updateLatestMessageIfNewer`, `updateLatestMessageIfNotStale`
     - freshness-key generation in `MessageResponse`
-  - Update FE consumers that compare or sort timestamps:
-    - `ChatPage.tsx` cursor handling and chronological sort
-    - `groupSummaryUpdates.ts` merge/reorder logic
-    - relative/absolute display helpers in `dateUtils.ts`
+  - Kept FE sort/merge/parsing code unchanged because it already consumed timestamp strings via `Date.parse(...)` / `new Date(...)`; once the backend started emitting ISO-8601 with `Z`, those paths became correct without compensating logic.
 - Why it changed:
-  - These paths decide message ordering, cursor pagination, sidebar recency, and unread movement. They are the most user-visible timezone-sensitive behavior after upload expiry.
+  - These paths decide message ordering, cursor pagination, sidebar recency, and unread movement. They were the most user-visible timezone-sensitive behavior after upload expiry.
 - Rollout, migration, or backward-compatibility notes:
-  - DB migration and API type changes should ship together in one backend release so cursor queries and latest-message comparisons all speak the same instant format.
-  - FE already uses `Date.parse(...)` / `new Date(...)`; once backend sends ISO-8601 with `Z`, those callers become correct without timezone compensation hacks.
-  - Expect test churn in service, repository, DTO-mapper, and websocket/sidebar merge tests because many assertions currently use naive `LocalDateTime`.
+  - DB migration and API type changes shipped together so cursor queries and latest-message comparisons now speak the same instant format.
+  - During Phase 2 only, `MessageResponse.freshnessKey` bridges mixed timestamp types by interpreting still-naive `updatedAt` / `deletedAt` / attachment `updatedAt` values as UTC when computing the latest revision instant. Those source fields themselves remain scheduled for Phase 3.
+  - Backend test sources compile cleanly after the type migration. Full runtime test execution is still subject to the existing local Mockito/Byte Buddy attach issue on Java 25.
 
 ### Phase 3 - audit, lifecycle, and membership metadata
 

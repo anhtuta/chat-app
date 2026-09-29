@@ -13,7 +13,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.TaskScheduler;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -275,7 +274,7 @@ class GroupSummaryUpdatePublisherTest {
                 .groupId(groupId)
                 .latestMessage(latestMessage)
                 .latestMessageSender("sender")
-                .latestMessageAt(LocalDateTime.of(2026, 7, 3, 12, 0))
+                .latestMessageAt(Instant.parse("2026-07-03T12:00:00Z"))
                 .build();
     }
 }

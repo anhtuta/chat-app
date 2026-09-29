@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.List;
@@ -291,7 +292,7 @@ public class MessageService {
             Long groupId,
             String latestMessagePreview,
             String latestMessageSender,
-            java.time.LocalDateTime latestMessageAt,
+            Instant latestMessageAt,
             Long messageId) {
         int rowsUpdated = groupRepository.updateLatestMessageIfNewer(
                 groupId,

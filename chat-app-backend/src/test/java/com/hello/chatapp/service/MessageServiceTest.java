@@ -12,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.Optional;
@@ -59,7 +60,7 @@ class MessageServiceTest {
 
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
         when(messageRepository.saveAndFlush(notNull())).thenReturn(savedMessage);
-        when(groupRepository.updateLatestMessageIfNewer(anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong()))
+        when(groupRepository.updateLatestMessageIfNewer(anyLong(), anyString(), anyString(), any(Instant.class), anyLong()))
                 .thenReturn(1);
 
         Message result = messageService.saveGroupMessage(group, user, "hello world");
@@ -122,7 +123,7 @@ class MessageServiceTest {
         messageService.refreshGroupLatestMessage(groupId, 300L);
 
         verify(groupRepository, never()).updateLatestMessageIfNotStale(
-                anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong());
+                anyLong(), anyString(), anyString(), any(Instant.class), anyLong());
         verify(groupRepository, never()).clearLatestMessageIfEmpty(anyLong());
     }
 
@@ -134,7 +135,7 @@ class MessageServiceTest {
         when(groupRepository.existsById(groupId)).thenReturn(true);
         when(messageRepository.findTopByGroup_IdOrderByTimestampDescIdDesc(groupId)).thenReturn(Optional.of(latest));
         when(groupRepository.updateLatestMessageIfNotStale(
-                anyLong(), anyString(), anyString(), any(LocalDateTime.class), anyLong())).thenReturn(0);
+                anyLong(), anyString(), anyString(), any(Instant.class), anyLong())).thenReturn(0);
 
         messageService.refreshGroupLatestMessage(groupId, 300L);
 
