@@ -21,6 +21,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -109,8 +110,11 @@ public class MediaUpload {
     @Column(nullable = false, length = 64)
     private UploadSessionStatus status = UploadSessionStatus.UPLOAD_INITIATED;
 
+    /**
+     * Absolute upload-session expiry instant
+     */
     @Column(name = "expires_at", nullable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

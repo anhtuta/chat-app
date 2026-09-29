@@ -40,7 +40,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,9 @@ public class MediaUploadSessionService {
         this.realtimeMessageDeliveryService = realtimeMessageDeliveryService;
     }
 
+    /**
+     * Creates a new upload session and returns expiry metadata as an absolute instant.
+     */
     @Transactional
     public PrepareMediaMessageResponse prepareUploadSession(User user, PrepareMediaMessageRequest request) {
         logger.debug("Prepare upload session for user {} with groupId {}", user.getUsername(), request.getGroupId());
@@ -92,7 +96,7 @@ public class MediaUploadSessionService {
         validateAttachmentCount(request.getMessageType(), request.getAttachments());
 
         String uploadSessionId = UUID.randomUUID().toString();
-        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(mediaStorageProperties.getUploadSessionTtlMinutes());
+        Instant expiresAt = Instant.now().plus(mediaStorageProperties.getUploadSessionTtlMinutes(), ChronoUnit.MINUTES);
 
         ObjectStorageProvider provider = objectStorageProviderRegistry.getActiveProvider();
         ObjectStorageProviderDescriptor descriptor = provider.describe();
@@ -233,13 +237,16 @@ public class MediaUploadSessionService {
         return response;
     }
 
+    /**
+     * Persists one prepared attachment row and returns the client-facing upload instructions.
+     */
     private PreparedMediaAttachmentResponse createUploadRecord(
             User user,
             Group group,
             ChatScope chatScope,
             MessageType messageType,
             String uploadSessionId,
-            LocalDateTime expiresAt,
+            Instant expiresAt,
             ObjectStorageProviderDescriptor descriptor,
             ObjectStorageProvider provider,
             PrepareMediaAttachmentRequest attachment,
@@ -275,7 +282,7 @@ public class MediaUploadSessionService {
                 .recommendedPartSize(uploadStrategy == UploadStrategy.MULTIPART
                         ? mediaStorageProperties.getMultipartThresholdBytes()
                         : null)
-                .completeBy(expiresAt)
+                .expiresAt(expiresAt)
                 .build();
     }
 
@@ -332,8 +339,11 @@ public class MediaUploadSessionService {
         }
     }
 
+    /**
+     * Rejects attachment operations after the prepared upload session has expired.
+     */
     private void ensureNotExpired(MediaUpload mediaUpload) {
-        if (mediaUpload.getExpiresAt() != null && mediaUpload.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (mediaUpload.getExpiresAt() != null && !mediaUpload.getExpiresAt().isAfter(Instant.now())) {
             throw new BadRequestException("Upload session has expired");
         }
     }

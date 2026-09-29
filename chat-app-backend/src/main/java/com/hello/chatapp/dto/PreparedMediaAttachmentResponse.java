@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * One attachment plan returned by prepare-upload. For {@link UploadStrategy#MULTIPART},
@@ -21,6 +21,5 @@ public class PreparedMediaAttachmentResponse {
     private UploadStrategy uploadStrategy;
     private String presignedUrl;
     private Long recommendedPartSize;
-    // TODO: rename to expiresAt?
-    private LocalDateTime completeBy;
+    private Instant expiresAt;
 }

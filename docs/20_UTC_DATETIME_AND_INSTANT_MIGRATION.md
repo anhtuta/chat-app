@@ -31,6 +31,14 @@ Join-link **`expires_at`** was migrated to absolute UTC end-to-end:
 
 Documented under Feature 15 (join links). The same entity still uses `LocalDateTime` for `createdAt` / `revokedAt`.
 
+Media upload session **`expires_at`** is now also migrated end-to-end:
+
+- DB: `timestamptz` (`V15__media_upload_expires_at_timestamptz.sql`)
+- Java: `Instant`
+- API / FE: prepare-upload response fields `expiresAt` serialize as ISO-8601 with `Z`, compared to `Instant.now()` in backend expiry checks
+
+The same entity still uses `LocalDateTime` for `createdAt` / `updatedAt`.
+
 Exception responses already use `Instant.now()` for `timestamp` — inconsistent with the rest of the API.
 
 ### Inventory (as of this doc)
@@ -43,7 +51,8 @@ Exception responses already use `Instant.now()` for `timestamp` — inconsistent
 | `Message` / `messages`                        | `timestamp`, `updatedAt`, `deletedAt`        | `LocalDateTime` | `timestamp(6)`    |
 | `MessageEditHistory` / `message_edit_history` | `updatedAt`                                  | `LocalDateTime` | `timestamp(6)`    |
 | `MessageMedia` / `message_media`              | `createdAt`, `updatedAt`                     | `LocalDateTime` | `timestamp(6)`    |
-| `MediaUpload` / `media_uploads`               | `expiresAt`, `createdAt`, `updatedAt`        | `LocalDateTime` | `timestamp(6)`    |
+| `MediaUpload` / `media_uploads`               | `createdAt`, `updatedAt`                     | `LocalDateTime` | `timestamp(6)`    |
+| `MediaUpload` / `media_uploads`               | `expiresAt`                                  | **`Instant`**   | **`timestamptz`** |
 | `GroupBan` / `group_bans`                     | `bannedAt`                                   | `LocalDateTime` | `timestamp(6)`    |
 | `GroupJoinLink` / `group_join_links`          | `createdAt`, `revokedAt`                     | `LocalDateTime` | `timestamp(6)`    |
 | `GroupJoinLink` / `group_join_links`          | `expiresAt`                                  | **`Instant`**   | **`timestamptz`** |
@@ -145,7 +154,7 @@ Writer (service / @PrePersist)
 
 1. Treat this as a **phased correctness migration**, not a one-shot mega-PR.
 2. **Pin deploy JVM to UTC** early (ops / Docker `TZ=UTC`) so new naive writes (until migrated) are at least consistent.
-3. **Phase 1 — expiry / TTL:** migrate `media_uploads.expires_at` (and API fields `expiresAt` / `completeBy`) to `Instant` + `timestamptz`, mirroring join-link V9. Highest remaining correctness risk.
+3. **Phase 1 — expiry / TTL:** migrate `media_uploads.expires_at` (and API fields `expiresAt`) to `Instant` + `timestamptz`, mirroring join-link V9. Highest remaining correctness risk.
 4. **Phase 2 — chat ordering & UX:** `messages.timestamp`, `groups.latest_message_at`, cursor `beforeTimestamp`, `GroupSummaryUpdate.latestMessageAt`, related DTOs/repos/tests/FE. Fixes relative time and sidebar “latest” comparisons across TZs.
 5. **Phase 3 — audit / membership metadata:** `createdAt`, `joinedAt`, `bannedAt`, `archivedAt`, `updatedAt`, `deletedAt`, `revokedAt`, media created/updated, edit history, etc.
 6. **Convention:** new moment columns must be `timestamptz` + `Instant` from day one; do not add more `timestamp` + `LocalDateTime` for events.
@@ -174,17 +183,18 @@ Writer (service / @PrePersist)
 ### Phase 1 - media upload session expiry / TTL
 
 - What changed:
-  - Migrate `media_uploads.expires_at` from `timestamp(6)` to `timestamptz` using the same pattern as `V9__join_link_expires_at_timestamptz.sql`.
-  - Convert the expiry path from `LocalDateTime` to `Instant` in:
+  - Status: implemented.
+  - Migrated `media_uploads.expires_at` from `timestamp(6)` to `timestamptz` in `V15__media_upload_expires_at_timestamptz.sql`, following the same `AT TIME ZONE 'UTC'` pattern as `V9__join_link_expires_at_timestamptz.sql`.
+  - Converted the expiry path from `LocalDateTime` to `Instant` in:
     - entity: `MediaUpload.expiresAt`
     - service: `MediaUploadSessionService` (`prepareUploadSession`, `ensureNotExpired`, `createUploadRecord`)
-    - DTOs returned to FE: `PrepareMediaMessageResponse.expiresAt`, `PreparedMediaAttachmentResponse.completeBy`
-    - tests covering prepare/parts/complete and expiry rejection
-  - Keep `media_uploads.created_at` and `media_uploads.updated_at` for a later phase so Phase 1 stays focused on TTL correctness only.
+    - DTOs returned to FE: `PrepareMediaMessageResponse.expiresAt`, `PreparedMediaAttachmentResponse.expiresAt`
+    - tests covering prepare-response expiry propagation and expired-session rejection
+  - Kept `media_uploads.created_at` and `media_uploads.updated_at` unchanged for a later phase so Phase 1 stays focused on TTL correctness only.
 - Why it changed:
-  - This is the highest remaining correctness risk after join-link expiry. The current code computes expiry with `LocalDateTime.now().plusMinutes(...)` and validates with `isBefore(LocalDateTime.now())`, so TTL behavior depends on JVM timezone.
+  - This was the highest remaining correctness risk after join-link expiry. The old code computed expiry with `LocalDateTime.now().plusMinutes(...)` and validated with `isBefore(LocalDateTime.now())`, so TTL behavior depended on JVM timezone.
 - Rollout, migration, or backward-compatibility notes:
-  - Reuse the V9 migration style:
+  - Migration used the V9 pattern:
 
 ```sql
 ALTER TABLE media_uploads
@@ -197,8 +207,8 @@ ALTER TABLE media_uploads
     );
 ```
 
-- Mixed FE/BE rollout should be safe because the JSON field names can stay the same; only the serialized format changes from naive ISO to ISO with `Z`.
-- Do not rename `completeBy` in the same phase unless necessary; changing the semantic type is already enough for Phase 1.
+  - JSON field names stayed the same; only the serialized format changed from naive ISO to ISO with `Z`.
+  - The prepared-attachment response now uses `expiresAt` so both session-level and attachment-level expiry fields share the same name and instant semantics.
 
 ### Phase 2 - chat timeline ordering and sidebar freshness
 
