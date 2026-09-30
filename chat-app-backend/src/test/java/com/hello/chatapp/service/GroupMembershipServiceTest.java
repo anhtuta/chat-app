@@ -203,7 +203,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         GroupParticipant savedParticipant = new GroupParticipant(group, targetUser);
         savedParticipant.setRole(GroupRole.MEMBER);
-        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class))).thenReturn(1);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(Instant.class))).thenReturn(1);
         when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L))).thenReturn(List.of(savedParticipant));
         when(systemMessageService.recordGroupEvent(
                 eq(group),
@@ -218,7 +218,7 @@ class GroupMembershipServiceTest {
         order.verify(groupRepository).findByIdForUpdate(100L);
         order.verify(groupAuthorizationService).requireActivePermission(actor, 100L, GroupPermission.ADD_MEMBERS);
 
-        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class));
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(Instant.class));
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
 
         assertThat(responses).hasSize(1);
@@ -255,7 +255,7 @@ class GroupMembershipServiceTest {
         when(userRepository.findById(3L)).thenReturn(Optional.of(thirdUser));
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 2L)).thenReturn(Optional.empty());
         when(groupParticipantRepository.findByGroupIdAndUserId(100L, 3L)).thenReturn(Optional.empty());
-        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L, 3L)), any(LocalDateTime.class))).thenReturn(2);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L, 3L)), any(Instant.class))).thenReturn(2);
         when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L, 3L)))
                 .thenReturn(List.of(carolParticipant, bobParticipant));
         when(systemMessageService.recordGroupEvent(
@@ -268,7 +268,7 @@ class GroupMembershipServiceTest {
         List<GroupMemberResponse> responses = groupMembershipService.addMembers(actor, 100L, List.of(2L, 3L, 2L));
 
         assertThat(responses).extracting(GroupMemberResponse::getUserId).containsExactly(2L, 3L);
-        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L, 3L)), any(LocalDateTime.class));
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L, 3L)), any(Instant.class));
         verify(groupParticipantRepository, never()).save(any(GroupParticipant.class));
         verify(systemMessageService).recordGroupEvent(
                 group,
@@ -377,7 +377,7 @@ class GroupMembershipServiceTest {
         when(groupParticipantRepository.countByGroupId(100L)).thenReturn(1L);
         GroupParticipant savedParticipant = new GroupParticipant(group, targetUser);
         savedParticipant.setRole(GroupRole.MEMBER);
-        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class))).thenReturn(1);
+        when(groupParticipantRepository.insertMembers(eq(100L), eq(List.of(2L)), any(Instant.class))).thenReturn(1);
         when(groupParticipantRepository.findByGroupIdAndUserIdIn(100L, List.of(2L))).thenReturn(List.of(savedParticipant));
         when(systemMessageService.recordGroupEvent(
                 eq(group),
@@ -390,7 +390,7 @@ class GroupMembershipServiceTest {
 
         assertThat(responses).hasSize(1);
         assertThat(responses.getFirst().getUserId()).isEqualTo(2L);
-        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(LocalDateTime.class));
+        verify(groupParticipantRepository).insertMembers(eq(100L), eq(List.of(2L)), any(Instant.class));
     }
 
     /**

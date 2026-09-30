@@ -243,7 +243,6 @@ class MediaUploadSessionServiceTest {
                 "http://minio:9000",
                 true,
                 true));
-        when(objectStorageProvider.buildUploadUrl(anyString())).thenReturn("https://upload.local/put");
         when(mediaUploadRepository.save(any(MediaUpload.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         var response = mediaUploadSessionService.prepareUploadSession(

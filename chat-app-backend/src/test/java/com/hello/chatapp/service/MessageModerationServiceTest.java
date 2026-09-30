@@ -18,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -144,7 +145,7 @@ class MessageModerationServiceTest {
      */
     @Test
     void deleteMessage_setsDeletedMetadataAndRefreshesGroupSummary() {
-        MessageResponse response = MessageResponse.builder().id(10L).deletedAt(LocalDateTime.now()).build();
+        MessageResponse response = MessageResponse.builder().id(10L).deletedAt(Instant.now()).build();
 
         when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
         when(messageRepository.save(message)).thenReturn(message);
