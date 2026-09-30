@@ -10,7 +10,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -27,7 +26,7 @@ public class GroupResponse {
     private Integer maxMembers;
     private Long createdById;
     private String createdByUsername;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
     private String latestMessage;
     private String latestMessageSender;
     private Instant latestMessageAt;

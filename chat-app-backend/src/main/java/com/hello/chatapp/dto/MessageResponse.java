@@ -11,8 +11,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 
@@ -33,9 +31,9 @@ public class MessageResponse {
     private UserResponse systemEventActor;
     private SystemEventPayload systemEventPayload;
     private UserResponse updatedBy;
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
     private UserResponse deletedBy;
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
     private String freshnessKey;
     private List<MessageAttachmentResponse> attachments;
     private Instant timestamp;
@@ -101,8 +99,8 @@ public class MessageResponse {
         }
 
         Instant latestChange = message.getTimestamp();
-        latestChange = max(latestChange, toUtcInstant(message.getUpdatedAt()));
-        latestChange = max(latestChange, toUtcInstant(message.getDeletedAt()));
+        latestChange = max(latestChange, message.getUpdatedAt());
+        latestChange = max(latestChange, message.getDeletedAt());
 
         if (message.getAttachments() == null) {
             return latestChange;
@@ -112,7 +110,7 @@ public class MessageResponse {
             if (attachment == null) {
                 continue;
             }
-            latestChange = max(latestChange, toUtcInstant(attachment.getUpdatedAt()));
+            latestChange = max(latestChange, attachment.getUpdatedAt());
         }
 
         return latestChange;
@@ -129,13 +127,6 @@ public class MessageResponse {
             return left;
         }
         return right;
-    }
-
-    /**
-     * Treats legacy naive wall-clock datetimes as UTC during the phased migration.
-     */
-    private static Instant toUtcInstant(LocalDateTime value) {
-        return value == null ? null : value.toInstant(ZoneOffset.UTC);
     }
 
     private static SystemEventType resolveSystemEventType(Message message) {

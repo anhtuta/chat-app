@@ -6,7 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * Setup-only seeder for unlimited groups ({@code max_members} left {@code NULL}).
@@ -30,7 +30,7 @@ public class GroupSeeder {
     }
 
     private static void seedGroups(Connection connection) throws SQLException {
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        Timestamp now = Timestamp.from(Instant.now());
 
         // First, verify that user with id=1 exists (we'll use it as created_by)
         String checkUserSql = "SELECT id FROM users WHERE id = 1";

@@ -13,7 +13,7 @@ import com.hello.chatapp.util.AfterCommit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -67,7 +67,7 @@ public class MessageModerationService {
 
         message.setContent(normalizedContent);
         message.setUpdatedBy(actor);
-        message.setUpdatedAt(LocalDateTime.now());
+        message.setUpdatedAt(Instant.now());
 
         Message savedMessage = messageRepository.save(message);
         // Map before refresh: refreshGroupLatestMessage may run @Modifying(clearAutomatically=true)
@@ -87,7 +87,7 @@ public class MessageModerationService {
         }
 
         message.setDeletedBy(actor);
-        message.setDeletedAt(LocalDateTime.now());
+        message.setDeletedAt(Instant.now());
 
         Message savedMessage = messageRepository.save(message);
         MessageResponse response = messageResponseMapper.toResponse(savedMessage);

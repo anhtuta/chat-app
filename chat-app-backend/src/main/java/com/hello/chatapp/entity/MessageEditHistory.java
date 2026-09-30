@@ -14,7 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "message_edit_history")
@@ -39,12 +39,12 @@ public class MessageEditHistory {
     private User updatedBy;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     protected void onCreate() {
         if (updatedAt == null) {
-            updatedAt = LocalDateTime.now();
+            updatedAt = Instant.now();
         }
     }
 }

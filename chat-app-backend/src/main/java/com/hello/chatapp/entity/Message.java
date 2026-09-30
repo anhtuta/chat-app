@@ -97,7 +97,7 @@ public class Message {
     private User updatedBy;
 
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /**
      * Who soft-deleted this message ({@code messages.deleted_by}), with {@code deletedAt}.
@@ -109,7 +109,7 @@ public class Message {
     private User deletedBy;
 
     @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
 
     /**
      * Optimistic lock counter ({@code messages.version}). Hibernate includes it in
@@ -143,12 +143,38 @@ public class Message {
         this.timestamp = Instant.now();
     }
 
+    public void setTimestamp(Instant timestamp) {
+        this.timestamp = timestamp;
+    }
+
     /**
      * Transitional helper for tests and still-naive callers during the phased UTC migration.
      * Interprets the provided wall-clock value as UTC.
      */
     public void setTimestamp(LocalDateTime timestamp) {
         this.timestamp = timestamp == null ? null : timestamp.toInstant(ZoneOffset.UTC);
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    /**
+     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
+     */
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt == null ? null : updatedAt.toInstant(ZoneOffset.UTC);
+    }
+
+    public void setDeletedAt(Instant deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    /**
+     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
+     */
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt == null ? null : deletedAt.toInstant(ZoneOffset.UTC);
     }
 
     public void addAttachment(MessageMedia attachment) {

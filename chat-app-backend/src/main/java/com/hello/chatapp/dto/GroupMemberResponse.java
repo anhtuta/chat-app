@@ -9,7 +9,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -20,7 +20,7 @@ public class GroupMemberResponse {
     private String username;
     private String fullname;
     private GroupRole role;
-    private LocalDateTime joinedAt;
+    private Instant joinedAt;
     private Long groupId;
     private String groupName;
 

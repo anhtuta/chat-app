@@ -17,7 +17,9 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "group_participants", uniqueConstraints = {
@@ -41,7 +43,7 @@ public class GroupParticipant {
     private User user;
 
     @Column(nullable = false)
-    private LocalDateTime joinedAt;
+    private Instant joinedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -53,13 +55,24 @@ public class GroupParticipant {
     @PrePersist
     protected void onCreate() {
         if (joinedAt == null) {
-            joinedAt = LocalDateTime.now();
+            joinedAt = Instant.now();
         }
     }
 
     public GroupParticipant(Group group, User user) {
         this.group = group;
         this.user = user;
-        this.joinedAt = LocalDateTime.now();
+        this.joinedAt = Instant.now();
+    }
+
+    public void setJoinedAt(Instant joinedAt) {
+        this.joinedAt = joinedAt;
+    }
+
+    /**
+     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
+     */
+    public void setJoinedAt(LocalDateTime joinedAt) {
+        this.joinedAt = joinedAt == null ? null : joinedAt.toInstant(ZoneOffset.UTC);
     }
 }

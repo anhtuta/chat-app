@@ -50,7 +50,7 @@ public class Group {
     private User createdBy;
 
     @Column(nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "latest_message", length = 1000)
     private String latestMessage;
@@ -62,7 +62,7 @@ public class Group {
     private Instant latestMessageAt;
 
     @Column(name = "archived_at")
-    private LocalDateTime archivedAt;
+    private Instant archivedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "archived_by")
@@ -74,14 +74,33 @@ public class Group {
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = Instant.now();
         }
     }
 
     public Group(String name, User createdBy) {
         this.name = name;
         this.createdBy = createdBy;
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    /**
+     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
+     */
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt == null ? null : createdAt.toInstant(ZoneOffset.UTC);
+    }
+
+    /**
+     * Transitional helper for tests and still-naive callers during the phased UTC migration.
+     * Interprets the provided wall-clock value as UTC.
+     */
+    public void setLatestMessageAt(Instant latestMessageAt) {
+        this.latestMessageAt = latestMessageAt;
     }
 
     /**
@@ -90,5 +109,16 @@ public class Group {
      */
     public void setLatestMessageAt(LocalDateTime latestMessageAt) {
         this.latestMessageAt = latestMessageAt == null ? null : latestMessageAt.toInstant(ZoneOffset.UTC);
+    }
+
+    public void setArchivedAt(Instant archivedAt) {
+        this.archivedAt = archivedAt;
+    }
+
+    /**
+     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
+     */
+    public void setArchivedAt(LocalDateTime archivedAt) {
+        this.archivedAt = archivedAt == null ? null : archivedAt.toInstant(ZoneOffset.UTC);
     }
 }

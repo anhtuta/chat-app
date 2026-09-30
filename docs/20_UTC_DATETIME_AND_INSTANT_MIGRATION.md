@@ -30,6 +30,7 @@ Join-link **`expires_at`** was migrated to absolute UTC end-to-end:
 - API / FE: ISO-8601 with `Z`, compared to `Instant.now()` / `Date.now()`
 
 Documented under Feature 15 (join links). The same entity still uses `LocalDateTime` for `createdAt` / `revokedAt`.
+Phase 3 later migrated `createdAt` / `revokedAt` too, so join-link datetime fields are now fully on `Instant`.
 
 Media upload session **`expires_at`** is now also migrated end-to-end:
 
@@ -37,7 +38,7 @@ Media upload session **`expires_at`** is now also migrated end-to-end:
 - Java: `Instant`
 - API / FE: prepare-upload response fields `expiresAt` serialize as ISO-8601 with `Z`, compared to `Instant.now()` in backend expiry checks
 
-The same entity still uses `LocalDateTime` for `createdAt` / `updatedAt`.
+Phase 3 later migrated `createdAt` / `updatedAt` too, so media-upload session datetime fields are now fully on `Instant`.
 
 Chat timeline ordering fields are now also migrated end-to-end:
 
@@ -45,31 +46,31 @@ Chat timeline ordering fields are now also migrated end-to-end:
 - Java: `Instant`
 - API / WS / FE: `MessageResponse.timestamp`, `MessageResponse.freshnessKey`, `GroupResponse.latestMessageAt`, and `GroupSummaryUpdate.latestMessageAt` now serialize as ISO-8601 with `Z`
 
-The same rows still use `LocalDateTime` for `messages.updatedAt`, `messages.deletedAt`, and other audit fields scheduled for Phase 3.
+Phase 3 later migrated `messages.updatedAt`, `messages.deletedAt`, and the remaining audit fields too, so the timeline path is now fully on `Instant`.
 
-Exception responses already use `Instant.now()` for `timestamp` — inconsistent with the rest of the API.
+Exception responses already use `Instant.now()` for `timestamp` and now align with the rest of the API contract.
 
 ### Inventory (as of this doc)
 
 | Entity / table                                | Columns                   | Java            | DB                |
 | --------------------------------------------- | ------------------------- | --------------- | ----------------- |
-| `User` / `users`                              | `createdAt`               | `LocalDateTime` | `timestamp(6)`    |
-| `Group` / `groups`                            | `createdAt`, `archivedAt` | `LocalDateTime` | `timestamp(6)`    |
+| `User` / `users`                              | `createdAt`               | **`Instant`**   | **`timestamptz`** |
+| `Group` / `groups`                            | `createdAt`, `archivedAt` | **`Instant`**   | **`timestamptz`** |
 | `Group` / `groups`                            | `latestMessageAt`         | **`Instant`**   | **`timestamptz`** |
-| `GroupParticipant` / `group_participants`     | `joinedAt`                | `LocalDateTime` | `timestamp(6)`    |
+| `GroupParticipant` / `group_participants`     | `joinedAt`                | **`Instant`**   | **`timestamptz`** |
 | `Message` / `messages`                        | `timestamp`               | **`Instant`**   | **`timestamptz`** |
-| `Message` / `messages`                        | `updatedAt`, `deletedAt`  | `LocalDateTime` | `timestamp(6)`    |
-| `MessageEditHistory` / `message_edit_history` | `updatedAt`               | `LocalDateTime` | `timestamp(6)`    |
-| `MessageMedia` / `message_media`              | `createdAt`, `updatedAt`  | `LocalDateTime` | `timestamp(6)`    |
-| `MediaUpload` / `media_uploads`               | `createdAt`, `updatedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `Message` / `messages`                        | `updatedAt`, `deletedAt`  | **`Instant`**   | **`timestamptz`** |
+| `MessageEditHistory` / `message_edit_history` | `updatedAt`               | **`Instant`**   | **`timestamptz`** |
+| `MessageMedia` / `message_media`              | `createdAt`, `updatedAt`  | **`Instant`**   | **`timestamptz`** |
+| `MediaUpload` / `media_uploads`               | `createdAt`, `updatedAt`  | **`Instant`**   | **`timestamptz`** |
 | `MediaUpload` / `media_uploads`               | `expiresAt`               | **`Instant`**   | **`timestamptz`** |
-| `GroupBan` / `group_bans`                     | `bannedAt`                | `LocalDateTime` | `timestamp(6)`    |
-| `GroupJoinLink` / `group_join_links`          | `createdAt`, `revokedAt`  | `LocalDateTime` | `timestamp(6)`    |
+| `GroupBan` / `group_bans`                     | `bannedAt`                | **`Instant`**   | **`timestamptz`** |
+| `GroupJoinLink` / `group_join_links`          | `createdAt`, `revokedAt`  | **`Instant`**   | **`timestamptz`** |
 | `GroupJoinLink` / `group_join_links`          | `expiresAt`               | **`Instant`**   | **`timestamptz`** |
 
 Related logic (not exhaustive):
 
-- Entities: `@PrePersist` / `@PreUpdate` with `LocalDateTime.now()`
+- Entities: `@PrePersist` / `@PreUpdate` with `Instant.now()`
 - Services: `MessageModerationService`, `MediaUploadSessionService`, `GroupMembershipService`, `MessageService` / latest-message CAS
 - Repos: message cursor pagination (`beforeTimestamp`), `GroupRepository.updateLatestMessageIfNewer`
 - DTOs / WS payloads: `MessageResponse`, `GroupResponse`, `GroupSummaryUpdate`, media prepare responses, etc.
@@ -235,13 +236,13 @@ ALTER TABLE media_uploads
   - These paths decide message ordering, cursor pagination, sidebar recency, and unread movement. They were the most user-visible timezone-sensitive behavior after upload expiry.
 - Rollout, migration, or backward-compatibility notes:
   - DB migration and API type changes shipped together so cursor queries and latest-message comparisons now speak the same instant format.
-  - During Phase 2 only, `MessageResponse.freshnessKey` bridges mixed timestamp types by interpreting still-naive `updatedAt` / `deletedAt` / attachment `updatedAt` values as UTC when computing the latest revision instant. Those source fields themselves remain scheduled for Phase 3.
+  - During Phase 2 only, `MessageResponse.freshnessKey` temporarily bridged mixed timestamp types; Phase 3 removed that bridge once the remaining audit fields also moved to `Instant`.
   - Backend test sources compile cleanly after the type migration. Full runtime test execution is still subject to the existing local Mockito/Byte Buddy attach issue on Java 25.
 
-### Phase 3 - audit, lifecycle, and membership metadata
+### Phase 3 - audit, lifecycle, and membership metadata - **Done**
 
 - What changed:
-  - Migrate all remaining persisted event/audit moments from `LocalDateTime` to `Instant`, including:
+  - Migrated all remaining persisted event/audit moments from `LocalDateTime` to `Instant` in `V17__remaining_audit_timestamps_timestamptz.sql`, including:
     - `users.created_at`
     - `groups.created_at`, `groups.archived_at`
     - `group_participants.joined_at`
@@ -251,26 +252,32 @@ ALTER TABLE media_uploads
     - `message_edit_history.updated_at`
     - `message_media.created_at`, `message_media.updated_at`
     - `media_uploads.created_at`, `media_uploads.updated_at`
-  - Update corresponding entities, response DTOs, websocket payloads, service methods, seeders, and tests.
-  - Replace remaining persisted-moment writers such as `@PrePersist`, `@PreUpdate`, and service-level `LocalDateTime.now()` calls with `Instant.now()`.
+  - Updated corresponding entities, response DTOs, JDBC bulk insert for `group_participants`, service methods, seeders, and tests.
+  - Replaced remaining persisted-moment writers such as `@PrePersist`, `@PreUpdate`, and service-level `LocalDateTime.now()` calls with `Instant.now()`.
+  - Finished the public API migration for audit/lifecycle fields such as:
+    - `UserResponse.createdAt`
+    - `GroupResponse.createdAt`
+    - `GroupMemberResponse.joinedAt`
+    - `GroupBanResponse.bannedAt`
+    - `GroupJoinLinkResponse.createdAt`, `GroupJoinLinkResponse.revokedAt`
+    - `MessageResponse.updatedAt`, `MessageResponse.deletedAt`
 - Why it changed:
-  - This finishes the consistency story. After Phase 2, the app may render and order messages correctly, but audit/history metadata would still be a mix of naive and absolute timestamps unless we migrate the rest.
+  - This finishes the consistency story. After Phase 2, the app rendered and ordered messages correctly, but audit/history metadata was still a mix of naive and absolute timestamps until this phase completed the migration.
 - Rollout, migration, or backward-compatibility notes:
-  - This phase can be split into smaller PRs by aggregate if needed (`group membership`, `message audit`, `media metadata`), but each sub-phase should keep the same end-state rule: persisted moments use `Instant` and `timestamptz`.
-  - Use the same Flyway `AT TIME ZONE 'UTC'` conversion pattern for every migrated legacy column.
+  - Used the same Flyway `AT TIME ZONE 'UTC'` conversion pattern for every migrated legacy column.
+  - Backend source and test-source compilation now pass with the Phase 3 types. Full runtime test execution is still subject to the existing local Mockito/Byte Buddy attach issue on Java 25.
 
 ### Phase 4 - cleanup, guardrails, and regression prevention
 
 - What changed:
   - Do a final sweep for persisted-moment leftovers:
-    - entity fields still typed as `LocalDateTime`
-    - repository signatures that still accept wall-clock cursors
-    - DTOs/websocket payloads still exposing naive timestamps
-    - seeders/tests still creating persisted moments with `LocalDateTime.now()`
+    - temporary migration helpers that still accept `LocalDateTime` for test/setup convenience
+    - any repository signatures or native JDBC writes that still assume wall-clock timestamps
+    - any docs/examples that still show naive datetime payloads
   - Introduce a small shared clock abstraction (`Clock` / `InstantSource`) if testability or deterministic assertions start getting noisy after the migration.
   - Update feature docs and developer conventions so new event-time columns default to `timestamptz` + `Instant`.
 - Why it changed:
-  - The biggest risk after a phased migration is partial regression: new code accidentally reintroduces `LocalDateTime` for persisted event times because the older pattern still exists in some corners.
+  - The biggest risk after a phased migration is regression: new code accidentally reintroduces `LocalDateTime` for persisted event times or leaves behind temporary compatibility helpers longer than necessary.
 - Rollout, migration, or backward-compatibility notes:
   - No DB contract change is required here if the earlier phases are complete.
   - This is the right phase to decide whether to add optional hardening such as DB defaults (`DEFAULT now()`) or stricter code-review checks for new persisted datetime fields.

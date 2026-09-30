@@ -797,3 +797,19 @@ static class RealtimeStubConfig {
 5. If you hit storage/mapper code, expect `MediaStorageConfig` + `ObjectStorageProviderRegistry` + the provider matching `chat.media.provider` in test `application.yaml`.
 6. Use `IsolatedH2DataSourceSupport` + `@DirtiesContext` for isolation.
 7. Name the class `*IntegrationTest` so Failsafe picks it up.
+
+# What is a wall-clock timestamp in [f-20](./20_UTC_DATETIME_AND_INSTANT_MIGRATION.md)?
+
+A **wall-clock timestamp** here means a datetime that is only a clock-face reading: year, month, day, hour, minute, second, with **no timezone or offset stored with it**.
+
+In this codebase that was `java.time.LocalDateTime` and PostgreSQL `timestamp` (without time zone). A value like `2026-09-30T18:39:00` says “the clock showed 18:39,” but it does not say whether that was UTC, `Asia/Ho_Chi_Minh`, or some other zone.
+
+That is different from an **absolute instant**, which is one specific moment in time. In this migration that is `java.time.Instant` and PostgreSQL `timestamptz`, serialized as ISO-8601 with `Z`, for example `2026-09-30T11:39:00Z`.
+
+The problem shows up when the same wall-clock string is interpreted in different zones:
+
+- The JVM writes `LocalDateTime.now()`, so the stored digits follow the server’s default timezone.
+- The browser parses a string with no offset as **local** time.
+- If the server is UTC and the browser is `Asia/Ho_Chi_Minh` (UTC+7), “5 minutes ago” and expiry checks can be off by 7 hours, even though both sides are looking at the same digits.
+
+The phrase “treat existing naive rows as UTC wall-clock” in the Flyway migrations means: those old rows have no zone stored, so the migration assumes the digits were already written as if the clock were set to UTC, then converts them with `AT TIME ZONE 'UTC'`.
