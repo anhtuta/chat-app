@@ -14,7 +14,7 @@ import com.hello.chatapp.storage.ObjectStorageProviderType;
 import com.hello.chatapp.storage.S3ObjectStorageProvider;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -205,8 +205,8 @@ class MessageResponseMapperTest {
                         List.of(new S3ObjectStorageProvider(properties)),
                         properties));
 
-        LocalDateTime messageTimestamp = LocalDateTime.of(2026, 9, 24, 11, 0, 0);
-        LocalDateTime attachmentUpdatedAt = messageTimestamp.plusMinutes(2);
+        Instant messageTimestamp = Instant.parse("2026-09-24T11:00:00Z");
+        Instant attachmentUpdatedAt = messageTimestamp.plusSeconds(2 * 60L);
 
         User user = new User("alice", "secret", "Alice");
         user.setId(1L);

@@ -8,7 +8,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Random;
 
 public class MessageSeeder {
@@ -63,7 +64,7 @@ public class MessageSeeder {
 
     private static int insertMessagesForGroup(Connection connection, long groupId, PreparedStatement insertStmt) throws SQLException {
         int insertedCount = 0;
-        LocalDateTime baseTime = LocalDateTime.now().minusDays(30); // Messages from last 30 days
+        Instant baseTime = Instant.now().minus(Duration.ofDays(30)); // Messages from last 30 days
 
         for (int i = 0; i < MESSAGES_PER_GROUP; i++) {
             // Random user ID from 1 to 1000
@@ -76,8 +77,11 @@ public class MessageSeeder {
             int daysAgo = random.nextInt(30);
             int hoursAgo = random.nextInt(24);
             int minutesAgo = random.nextInt(60);
-            LocalDateTime messageTime = baseTime.plusDays(daysAgo).plusHours(hoursAgo).plusMinutes(minutesAgo);
-            Timestamp timestamp = Timestamp.valueOf(messageTime);
+            Instant messageTime = baseTime
+                    .plus(Duration.ofDays(daysAgo))
+                    .plus(Duration.ofHours(hoursAgo))
+                    .plus(Duration.ofMinutes(minutesAgo));
+            Timestamp timestamp = Timestamp.from(messageTime);
 
             // Insert message
             insertStmt.setLong(1, userId);

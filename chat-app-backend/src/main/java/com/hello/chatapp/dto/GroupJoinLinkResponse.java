@@ -7,7 +7,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 
 @Data
 @Builder
@@ -19,9 +18,9 @@ public class GroupJoinLinkResponse {
     private String token;
     private Long createdById;
     private String createdByUsername;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
     private Instant expiresAt;
-    private LocalDateTime revokedAt;
+    private Instant revokedAt;
 
     public static GroupJoinLinkResponse fromJoinLink(GroupJoinLink joinLink, String token) {
         if (joinLink == null) {

@@ -35,7 +35,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.ArrayList;
@@ -167,7 +166,7 @@ public class GroupMembershipService {
         ensureGroupHasCapacityForNewMembers(group, targets.size());
 
         // Save all members to DB
-        LocalDateTime joinedAt = LocalDateTime.now();
+        Instant joinedAt = Instant.now();
         List<Long> targetIds = targets.stream().map(u -> u.getId()).toList();
         groupParticipantRepository.insertMembers(groupId, targetIds, joinedAt);
         List<GroupParticipant> savedParticipants = groupParticipantRepository.findByGroupIdAndUserIdIn(
@@ -263,7 +262,7 @@ public class GroupMembershipService {
         GroupJoinLink joinLink = groupJoinLinkRepository.findByIdAndGroupId(joinLinkId, groupId)
                 .orElseThrow(() -> new NotFoundException("Join link not found"));
         if (joinLink.getRevokedAt() == null) {
-            joinLink.setRevokedAt(LocalDateTime.now());
+            joinLink.setRevokedAt(Instant.now());
             joinLink.setRevokedBy(actor);
         }
     }
@@ -410,7 +409,7 @@ public class GroupMembershipService {
         }
 
         if (memberCount <= 1) {
-            group.setArchivedAt(LocalDateTime.now());
+            group.setArchivedAt(Instant.now());
             group.setArchivedBy(actor);
             group.setArchiveReason(ARCHIVE_REASON_LAST_MEMBER_LEFT);
             groupRepository.save(group);

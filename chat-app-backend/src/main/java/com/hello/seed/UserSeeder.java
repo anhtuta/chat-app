@@ -6,7 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public class UserSeeder {
 
@@ -29,7 +29,7 @@ public class UserSeeder {
         String checkSql = "SELECT COUNT(*) FROM users WHERE username = ?";
         String insertSql = "INSERT INTO users (username, password, fullname, created_at) VALUES (?, ?, ?, ?)";
 
-        Timestamp now = Timestamp.valueOf(LocalDateTime.now());
+        Timestamp now = Timestamp.from(Instant.now());
         int insertedCount = 0;
         int skippedCount = 0;
 

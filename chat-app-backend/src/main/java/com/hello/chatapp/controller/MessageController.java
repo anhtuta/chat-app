@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @RestController
@@ -52,7 +52,7 @@ public class MessageController {
     @GetMapping("/groups/{groupId}")
     public ResponseEntity<List<MessageResponse>> getGroupMessages(
             @PathVariable @NonNull Long groupId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime beforeTimestamp,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant beforeTimestamp,
             @RequestParam(required = false) Long beforeId,
             @RequestParam(defaultValue = "10") int size,
             HttpSession session) {

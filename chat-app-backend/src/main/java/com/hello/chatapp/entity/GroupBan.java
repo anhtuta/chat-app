@@ -15,7 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "group_bans", uniqueConstraints = {
@@ -46,12 +46,16 @@ public class GroupBan {
     private String reason;
 
     @Column(name = "banned_at", nullable = false)
-    private LocalDateTime bannedAt;
+    private Instant bannedAt;
 
     @PrePersist
     protected void onCreate() {
         if (bannedAt == null) {
-            bannedAt = LocalDateTime.now();
+            bannedAt = Instant.now();
         }
+    }
+
+    public void setBannedAt(Instant bannedAt) {
+        this.bannedAt = bannedAt;
     }
 }

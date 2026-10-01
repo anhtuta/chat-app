@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -67,7 +67,7 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
             @Param("groupId") Long groupId,
             @Param("latestMessage") String latestMessage,
             @Param("latestMessageSender") String latestMessageSender,
-            @Param("latestMessageAt") LocalDateTime latestMessageAt,
+            @Param("latestMessageAt") Instant latestMessageAt,
             @Param("messageId") Long messageId);
 
     /**
@@ -103,7 +103,7 @@ public interface GroupRepository extends JpaRepository<Group, Long> {
             @Param("groupId") Long groupId,
             @Param("latestMessage") String latestMessage,
             @Param("latestMessageSender") String latestMessageSender,
-            @Param("latestMessageAt") LocalDateTime latestMessageAt,
+            @Param("latestMessageAt") Instant latestMessageAt,
             @Param("messageId") Long messageId);
 
     /**

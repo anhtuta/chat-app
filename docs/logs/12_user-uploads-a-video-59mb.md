@@ -39,7 +39,7 @@ Response:
       "presignedUrl": null,
       "multipartUploadId": null,
       "recommendedPartSize": 10485760,
-      "completeBy": "2026-08-08T16:55:28.439328"
+      "expiresAt": "2026-08-08T16:55:28.439328"
     }
   ]
 }

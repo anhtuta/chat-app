@@ -26,7 +26,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -67,7 +67,7 @@ class MessageHistoryServiceIntegrationTest {
         Message message = new Message();
         message.setUser(user);
         message.setMessageType(MessageType.IMAGE);
-        message.setTimestamp(LocalDateTime.now());
+        message.setTimestamp(Instant.now());
 
         MessageMedia attachment = buildAttachment("public-photo.png", 0);
         message.addAttachment(attachment);
@@ -89,14 +89,14 @@ class MessageHistoryServiceIntegrationTest {
 
         Message older = new Message(user, "hello");
         older.setGroup(group);
-        older.setTimestamp(LocalDateTime.now().minusMinutes(1));
+        older.setTimestamp(Instant.now().minusSeconds(60));
         older = messageRepository.saveAndFlush(older);
 
         Message newer = new Message();
         newer.setUser(user);
         newer.setGroup(group);
         newer.setMessageType(MessageType.FILE);
-        newer.setTimestamp(LocalDateTime.now());
+        newer.setTimestamp(Instant.now());
         newer.addAttachment(buildAttachment("report.pdf", 0));
         messageRepository.saveAndFlush(newer);
 
@@ -119,10 +119,10 @@ class MessageHistoryServiceIntegrationTest {
         message.setUser(sender);
         message.setGroup(group);
         message.setMessageType(MessageType.FILE);
-        message.setTimestamp(LocalDateTime.now());
+        message.setTimestamp(Instant.now());
         message.setContent("should-hide");
         message.setDeletedBy(deleter);
-        message.setDeletedAt(LocalDateTime.now());
+        message.setDeletedAt(Instant.now());
         message.addAttachment(buildAttachment("hidden.pdf", 0));
         messageRepository.saveAndFlush(message);
 

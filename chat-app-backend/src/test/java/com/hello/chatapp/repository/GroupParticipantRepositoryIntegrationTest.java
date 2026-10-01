@@ -13,7 +13,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +50,7 @@ class GroupParticipantRepositoryIntegrationTest {
 
         Group activeGroup = groupRepository.saveAndFlush(new Group("Active Group", creator));
         Group archivedGroup = groupRepository.saveAndFlush(new Group("Archived Group", creator));
-        archivedGroup.setArchivedAt(LocalDateTime.now());
+        archivedGroup.setArchivedAt(Instant.now());
         groupRepository.saveAndFlush(archivedGroup);
 
         groupParticipantRepository.saveAndFlush(new GroupParticipant(activeGroup, member));
@@ -72,7 +72,7 @@ class GroupParticipantRepositoryIntegrationTest {
         User bob = userRepository.saveAndFlush(new User("bob-bulk", "secret", "Bob"));
         User carol = userRepository.saveAndFlush(new User("carol-bulk", "secret", "Carol"));
         Group group = groupRepository.saveAndFlush(new Group("Bulk Group", creator));
-        LocalDateTime joinedAt = LocalDateTime.now().minusMinutes(1);
+        Instant joinedAt = Instant.now().minusSeconds(60);
 
         int inserted = groupParticipantRepository.insertMembers(
                 group.getId(),

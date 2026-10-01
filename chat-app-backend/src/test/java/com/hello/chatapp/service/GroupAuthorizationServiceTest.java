@@ -173,7 +173,7 @@ class GroupAuthorizationServiceTest {
 
     @Test
     void requireActivePermission_rejectsArchivedGroup() {
-        group.setArchivedAt(java.time.LocalDateTime.now());
+        group.setArchivedAt(java.time.Instant.now());
         GroupParticipant participant = buildParticipant(group, actor, GroupRole.MEMBER);
         stubMembership(actor, participant);
 

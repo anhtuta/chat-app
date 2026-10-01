@@ -25,13 +25,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -218,6 +219,69 @@ class MediaUploadSessionServiceTest {
         verify(messageService, never()).saveGroupMediaMessage(any(), any(), any(), anyList());
         verify(realtimeMessageDeliveryService, never()).publishToGroup(anyLong(), any());
         assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+    }
+
+    /**
+     * Prepare-upload returns and persists one absolute expiry instant for the whole upload session.
+     */
+    @Test
+    void prepareUploadSession_usesInstantExpiryAcrossResponseAndPersistedUpload() {
+        Instant before = Instant.now();
+        MediaStorageProperties.MaxSize maxSize = new MediaStorageProperties.MaxSize();
+        maxSize.setImageBytes(5_000_000L);
+
+        when(mediaStorageProperties.getUploadSessionTtlMinutes()).thenReturn(15);
+        when(mediaStorageProperties.getMaxSize()).thenReturn(maxSize);
+        when(mediaStorageProperties.getMaxImageCount()).thenReturn(50);
+        when(mediaStorageProperties.getRetentionDays()).thenReturn(60);
+        when(objectStorageProviderRegistry.getActiveProvider()).thenReturn(objectStorageProvider);
+        when(objectStorageProvider.describe()).thenReturn(new com.hello.chatapp.storage.ObjectStorageProviderDescriptor(
+                ObjectStorageProviderType.MINIO,
+                "media-bucket",
+                "us-east-1",
+                "http://minio:9000",
+                true,
+                true));
+        when(mediaUploadRepository.save(any(MediaUpload.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = mediaUploadSessionService.prepareUploadSession(
+                user,
+                new com.hello.chatapp.dto.PrepareMediaMessageRequest(
+                        ChatScope.PUBLIC,
+                        null,
+                        MessageType.IMAGE,
+                        List.of(new com.hello.chatapp.dto.PrepareMediaAttachmentRequest("photo.jpg", 1024L, "image/jpeg"))));
+        Instant after = Instant.now();
+
+        ArgumentCaptor<MediaUpload> uploadCaptor = ArgumentCaptor.forClass(MediaUpload.class);
+        verify(mediaUploadRepository).save(uploadCaptor.capture());
+
+        MediaUpload savedUpload = uploadCaptor.getValue();
+        assertThat(savedUpload.getExpiresAt()).isNotNull();
+        assertThat(savedUpload.getExpiresAt()).isEqualTo(response.getExpiresAt());
+        assertThat(response.getExpiresAt()).isBetween(before.plusSeconds(15 * 60), after.plusSeconds(15 * 60));
+        assertThat(response.getAttachments()).singleElement().satisfies(attachment ->
+                assertThat(attachment.getExpiresAt()).isEqualTo(savedUpload.getExpiresAt()));
+    }
+
+    /**
+     * Expired upload sessions are rejected using absolute instant comparison before part signing.
+     */
+    @Test
+    void requestMultipartPartUrls_rejectsExpiredUploadSession() {
+        MediaUpload upload = buildUpload(MessageType.IMAGE, ChatScope.PUBLIC, null);
+        upload.setExpiresAt(Instant.now().minusSeconds(1));
+
+        when(mediaUploadRepository.findByUploadSessionIdAndUploadId(UPLOAD_SESSION_ID, ATTACHMENT_ID))
+                .thenReturn(java.util.Optional.of(upload));
+
+        assertThatThrownBy(() -> mediaUploadSessionService.requestMultipartPartUrls(
+                        user,
+                        UPLOAD_SESSION_ID,
+                        ATTACHMENT_ID,
+                        new RequestMultipartPartUrlsRequest(List.of(1))))
+                .isInstanceOf(com.hello.chatapp.exception.BadRequestException.class)
+                .hasMessage("Upload session has expired");
     }
 
     /**
@@ -458,7 +522,7 @@ class MediaUploadSessionServiceTest {
         upload.setBucket("media-bucket");
         upload.setObjectKey("media/7/image/object.jpg");
         upload.setStatus(UploadSessionStatus.UPLOAD_INITIATED);
-        upload.setExpiresAt(LocalDateTime.now().plusHours(1));
+        upload.setExpiresAt(Instant.now().plusSeconds(3600));
         return upload;
     }
 
@@ -468,7 +532,7 @@ class MediaUploadSessionServiceTest {
         message.setUser(user);
         message.setGroup(group);
         message.setMessageType(messageType);
-        message.setTimestamp(LocalDateTime.now());
+        message.setTimestamp(Instant.now());
         return message;
     }
 

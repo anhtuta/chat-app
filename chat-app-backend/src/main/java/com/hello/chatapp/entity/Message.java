@@ -5,10 +5,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.ArrayList;
+import java.time.Instant;
 import java.util.List;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.model.SystemEventPayload;
-import java.time.LocalDateTime;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -77,7 +77,7 @@ public class Message {
     private SystemEventPayload systemEventPayload;
 
     @Column(nullable = false)
-    private LocalDateTime timestamp;
+    private Instant timestamp;
 
     /**
      * Second user reference ({@code messages.updated_by}). Meaning depends on message type:
@@ -95,7 +95,7 @@ public class Message {
     private User updatedBy;
 
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     /**
      * Who soft-deleted this message ({@code messages.deleted_by}), with {@code deletedAt}.
@@ -107,7 +107,7 @@ public class Message {
     private User deletedBy;
 
     @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    private Instant deletedAt;
 
     /**
      * Optimistic lock counter ({@code messages.version}). Hibernate includes it in
@@ -127,7 +127,7 @@ public class Message {
     @PrePersist
     protected void onCreate() {
         if (timestamp == null) {
-            timestamp = LocalDateTime.now();
+            timestamp = Instant.now();
         }
         if (messageType == null) {
             messageType = MessageType.TEXT;
@@ -138,7 +138,19 @@ public class Message {
         this.user = user;
         this.messageType = MessageType.TEXT;
         this.content = content;
-        this.timestamp = LocalDateTime.now();
+        this.timestamp = Instant.now();
+    }
+
+    public void setTimestamp(Instant timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public void setDeletedAt(Instant deletedAt) {
+        this.deletedAt = deletedAt;
     }
 
     public void addAttachment(MessageMedia attachment) {

@@ -1,6 +1,6 @@
 package com.hello.chatapp.repository;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -13,5 +13,5 @@ public interface GroupParticipantBulkInsertRepository {
      *
      * @return number of rows inserted
      */
-    int insertMembers(Long groupId, List<Long> userIds, LocalDateTime joinedAt);
+    int insertMembers(Long groupId, List<Long> userIds, Instant joinedAt);
 }

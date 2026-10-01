@@ -125,7 +125,7 @@ export interface PreparedMediaAttachment {
   presignedUrl?: string | null;
   uploadStrategy: "SINGLE_PART" | "MULTIPART" | string;
   recommendedPartSize?: number | null;
-  completeBy?: string | null;
+  expiresAt?: string | null;
 }
 
 export interface PrepareMediaMessageResponse {

@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -18,7 +18,7 @@ public class GroupBanResponse {
     private String username;
     private String fullname;
     private String reason;
-    private LocalDateTime bannedAt;
+    private Instant bannedAt;
     private Long bannedByUserId;
     private String bannedByUsername;
 

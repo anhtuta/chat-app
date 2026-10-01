@@ -31,7 +31,7 @@
            "presignedUrl": "http://localhost:9000/chat-media/media/2/image/efcc6fcc-4b98-43f5-bb23-0b61b4493775-1.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20260630%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260630T171255Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=11afeb186582508a0ae940acb00084c70cd5f707eb125db072aff5206cf2b786",
            "multipartUploadId": null,
            "recommendedPartSize": null,
-           "completeBy": "2026-07-01T00:27:55.696345"
+           "expiresAt": "2026-07-01T00:27:55.696345"
          },
          {
            "attachmentId": "aa30cd7f-8081-4da3-8276-430294fa47f2",
@@ -40,7 +40,7 @@
            "presignedUrl": "http://localhost:9000/chat-media/media/2/image/21c00511-0a60-41a1-a02e-220b29f0b6e6-2.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20260630%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260630T171255Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=3b314ab9f85c09a6298330cd56c0325b8159361eaa954edaae41c4dcaa6783ad",
            "multipartUploadId": null,
            "recommendedPartSize": null,
-           "completeBy": "2026-07-01T00:27:55.696345"
+           "expiresAt": "2026-07-01T00:27:55.696345"
          }
        ]
      }

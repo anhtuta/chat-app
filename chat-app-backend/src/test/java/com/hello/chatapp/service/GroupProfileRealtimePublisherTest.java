@@ -16,7 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -64,7 +64,7 @@ class GroupProfileRealtimePublisherTest {
         systemMessage.setUpdatedBy(actor);
         systemMessage.setMessageType(MessageType.SYSTEM);
         systemMessage.setContent(SystemEventType.GROUP_NAME_UPDATED.name());
-        systemMessage.setTimestamp(LocalDateTime.of(2026, 8, 1, 12, 0));
+        systemMessage.setTimestamp(Instant.parse("2026-08-01T12:00:00Z"));
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.clear();

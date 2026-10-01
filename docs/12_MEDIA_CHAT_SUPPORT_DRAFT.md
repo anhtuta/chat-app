@@ -514,7 +514,7 @@ Response fields:
   - `presignedUrl` for single-part uploads
   - multipart instructions when required:
     - `recommendedPartSize`
-    - `completeBy`
+    - `expiresAt`
   - note: provider `multipartUploadId` is not returned here; it is created and returned by the parts endpoint on first part-URL request
 - `limits`:
   - `maxSizeBytes`
@@ -846,7 +846,7 @@ Multipart implementation plan:
    - abort multipart uploads when completion fails after provider initialization, when users cancel, or when sessions expire
 3. Frontend API/types
    - add `requestMultipartPartUrls(...)`
-   - extend prepared attachment types with `recommendedPartSize` and `completeBy` (provider `multipartUploadId` comes from the parts response, not prepare)
+   - extend prepared attachment types with `recommendedPartSize` and `expiresAt` (provider `multipartUploadId` comes from the parts response, not prepare)
    - extend completion attachment input with `parts: [{ partNumber, etag }]`
 4. Browser multipart uploader
    - slice files by `recommendedPartSize`

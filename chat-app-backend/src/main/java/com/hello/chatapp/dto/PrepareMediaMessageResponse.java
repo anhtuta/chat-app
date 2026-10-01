@@ -7,7 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Data
@@ -18,7 +18,7 @@ public class PrepareMediaMessageResponse {
     private String uploadSessionId;
     private MessageType messageType;
     private ChatScope chatScope;
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
     private Integer retentionDays;
     private Limits limits;
     private List<PreparedMediaAttachmentResponse> attachments;

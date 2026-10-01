@@ -13,7 +13,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.io.Serializable;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
@@ -41,12 +41,12 @@ public class User implements Serializable {
     private String fullname;
 
     @Column(nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @jakarta.persistence.PrePersist
     protected void onCreate() {
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = Instant.now();
         }
     }
 
@@ -54,14 +54,18 @@ public class User implements Serializable {
         this.username = username;
         this.password = password;
         this.fullname = username; // Default fullname to username
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
     }
 
     public User(String username, String password, String fullname) {
         this.username = username;
         this.password = password;
         this.fullname = fullname;
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
     @Override

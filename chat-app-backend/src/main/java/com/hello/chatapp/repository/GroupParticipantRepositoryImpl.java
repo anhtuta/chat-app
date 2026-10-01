@@ -6,7 +6,7 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
 
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -22,7 +22,7 @@ public class GroupParticipantRepositoryImpl implements GroupParticipantBulkInser
      * Builds {@code INSERT ... VALUES (...), (...)} so Hibernate IDENTITY does not force N persist calls.
      */
     @Override
-    public int insertMembers(Long groupId, List<Long> userIds, LocalDateTime joinedAt) {
+    public int insertMembers(Long groupId, List<Long> userIds, Instant joinedAt) {
         if (userIds == null || userIds.isEmpty()) {
             return 0;
         }
@@ -35,7 +35,7 @@ public class GroupParticipantRepositoryImpl implements GroupParticipantBulkInser
             sql.append("(?, ?, ?, ?)");
         }
         Query query = entityManager.createNativeQuery(sql.toString());
-        Timestamp joinedAtTimestamp = Timestamp.valueOf(joinedAt);
+        Timestamp joinedAtTimestamp = Timestamp.from(joinedAt);
         int parameterIndex = 1;
         for (Long userId : userIds) {
             query.setParameter(parameterIndex++, groupId);

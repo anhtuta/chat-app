@@ -18,7 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,7 +76,7 @@ class MessageModerationServiceTest {
         message.setUser(actor);
         message.setGroup(group);
         message.setContent("hello");
-        message.setTimestamp(LocalDateTime.now().minusMinutes(1));
+        message.setTimestamp(Instant.now().minusSeconds(60));
 
         lenient().when(groupMembershipService.lockActorParticipantForModeration(100L, 1L))
                 .thenReturn(new GroupParticipant());
@@ -144,7 +144,7 @@ class MessageModerationServiceTest {
      */
     @Test
     void deleteMessage_setsDeletedMetadataAndRefreshesGroupSummary() {
-        MessageResponse response = MessageResponse.builder().id(10L).deletedAt(LocalDateTime.now()).build();
+        MessageResponse response = MessageResponse.builder().id(10L).deletedAt(Instant.now()).build();
 
         when(messageRepository.findWithMediaById(10L)).thenReturn(Optional.of(message));
         when(messageRepository.save(message)).thenReturn(message);

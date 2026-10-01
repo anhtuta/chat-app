@@ -10,7 +10,7 @@ import com.hello.chatapp.entity.User;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -93,8 +93,8 @@ class MessageResponseTest {
      */
     @Test
     void fromMessage_usesLatestAttachmentOrMessageChangeForFreshnessKey() {
-        LocalDateTime messageEditedAt = LocalDateTime.of(2026, 9, 24, 11, 0, 0);
-        LocalDateTime attachmentUpdatedAt = messageEditedAt.plusMinutes(5);
+        Instant messageEditedAt = Instant.parse("2026-09-24T11:00:00Z");
+        Instant attachmentUpdatedAt = messageEditedAt.plusSeconds(5 * 60L);
 
         User user = new User("alice", "secret", "Alice");
         user.setId(1L);
@@ -103,7 +103,7 @@ class MessageResponseTest {
         message.setId(12L);
         message.setUser(user);
         message.setMessageType(MessageType.IMAGE);
-        message.setTimestamp(messageEditedAt.minusMinutes(10));
+        message.setTimestamp(messageEditedAt.minusSeconds(10 * 60L));
         message.setUpdatedAt(messageEditedAt);
 
         MessageMedia attachment = new MessageMedia();

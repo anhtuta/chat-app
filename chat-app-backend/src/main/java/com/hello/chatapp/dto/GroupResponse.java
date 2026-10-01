@@ -9,7 +9,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -26,10 +26,10 @@ public class GroupResponse {
     private Integer maxMembers;
     private Long createdById;
     private String createdByUsername;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
     private String latestMessage;
     private String latestMessageSender;
-    private LocalDateTime latestMessageAt;
+    private Instant latestMessageAt;
     private long unreadCount;
     private GroupRole currentUserRole;
     private List<GroupPermission> currentUserPermissions;

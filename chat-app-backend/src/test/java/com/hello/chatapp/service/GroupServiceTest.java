@@ -22,7 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -84,7 +84,7 @@ class GroupServiceTest {
         group = new Group("Backend Team", creator);
         group.setId(100L);
         group.setDescription("Core backend work");
-        group.setCreatedAt(LocalDateTime.now().minusDays(1));
+        group.setCreatedAt(Instant.now().minusSeconds(24 * 60 * 60L));
     }
 
     /**
@@ -288,10 +288,10 @@ class GroupServiceTest {
     void updateGroupDetails_updatesNameAndClearsBlankDescription() {
         Message groupNameUpdatedMessage = new Message();
         groupNameUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
-        groupNameUpdatedMessage.setTimestamp(LocalDateTime.now());
+        groupNameUpdatedMessage.setTimestamp(Instant.now());
         Message groupDescriptionUpdatedMessage = new Message();
         groupDescriptionUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
-        groupDescriptionUpdatedMessage.setTimestamp(LocalDateTime.now().plusSeconds(1));
+        groupDescriptionUpdatedMessage.setTimestamp(Instant.now().plusSeconds(1));
 
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
                 .thenReturn(group);
@@ -349,7 +349,7 @@ class GroupServiceTest {
     void updateGroupDetails_omittedMaxMembers_leavesLimitUnchanged() {
         Message groupNameUpdatedMessage = new Message();
         groupNameUpdatedMessage.setMessageType(com.hello.chatapp.constant.MessageType.SYSTEM);
-        groupNameUpdatedMessage.setTimestamp(LocalDateTime.now());
+        groupNameUpdatedMessage.setTimestamp(Instant.now());
 
         group.setMaxMembers(100);
         when(groupAuthorizationService.requireActivePermission(member, 100L, GroupPermission.MANAGE_GROUP_DETAILS))
