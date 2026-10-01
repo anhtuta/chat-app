@@ -16,8 +16,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "group_bans", uniqueConstraints = {
@@ -59,12 +57,5 @@ public class GroupBan {
 
     public void setBannedAt(Instant bannedAt) {
         this.bannedAt = bannedAt;
-    }
-
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setBannedAt(LocalDateTime bannedAt) {
-        this.bannedAt = bannedAt == null ? null : bannedAt.toInstant(ZoneOffset.UTC);
     }
 }

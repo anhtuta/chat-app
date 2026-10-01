@@ -33,7 +33,6 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -533,7 +532,7 @@ class MediaUploadSessionServiceTest {
         message.setUser(user);
         message.setGroup(group);
         message.setMessageType(messageType);
-        message.setTimestamp(LocalDateTime.now());
+        message.setTimestamp(Instant.now());
         return message;
     }
 

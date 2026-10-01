@@ -15,8 +15,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "group_join_links")
@@ -68,21 +66,7 @@ public class GroupJoinLink {
         this.createdAt = createdAt;
     }
 
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt == null ? null : createdAt.toInstant(ZoneOffset.UTC);
-    }
-
     public void setRevokedAt(Instant revokedAt) {
         this.revokedAt = revokedAt;
-    }
-
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setRevokedAt(LocalDateTime revokedAt) {
-        this.revokedAt = revokedAt == null ? null : revokedAt.toInstant(ZoneOffset.UTC);
     }
 }

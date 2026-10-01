@@ -14,8 +14,6 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.io.Serializable;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 @Entity
 @Table(name = "users", uniqueConstraints = {
@@ -68,13 +66,6 @@ public class User implements Serializable {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
-    }
-
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt == null ? null : createdAt.toInstant(ZoneOffset.UTC);
     }
 
     @Override

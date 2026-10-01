@@ -13,7 +13,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -55,7 +54,7 @@ class MessageServiceTest {
 
     @Test
     void saveGroupMessage_updatesLatestFieldsFromSavedMessage() {
-        Message savedMessage = buildMessage(100L, user, group, "hello world", LocalDateTime.now());
+        Message savedMessage = buildMessage(100L, user, group, "hello world", Instant.now());
         Long groupId = Objects.requireNonNull(group.getId());
 
         when(groupRepository.findById(groupId)).thenReturn(Optional.of(group));
@@ -77,7 +76,7 @@ class MessageServiceTest {
 
     @Test
     void savePublicMessage_persistsMessageWithNullGroup() {
-        Message savedMessage = buildMessage(200L, user, null, "public", LocalDateTime.now());
+        Message savedMessage = buildMessage(200L, user, null, "public", Instant.now());
 
         when(messageRepository.save(notNull())).thenReturn(savedMessage);
 
@@ -89,8 +88,8 @@ class MessageServiceTest {
 
     @Test
     void refreshGroupLatestMessage_usesDeletedPreviewForDeletedLatestMessage() {
-        Message deletedMessage = buildMessage(300L, user, group, "secret", LocalDateTime.now());
-        deletedMessage.setDeletedAt(LocalDateTime.now());
+        Message deletedMessage = buildMessage(300L, user, group, "secret", Instant.now());
+        deletedMessage.setDeletedAt(Instant.now());
         Long groupId = Objects.requireNonNull(group.getId());
 
         when(groupRepository.existsById(groupId)).thenReturn(true);
@@ -114,7 +113,7 @@ class MessageServiceTest {
 
     @Test
     void refreshGroupLatestMessage_skipsWhenModeratedMessageIsNotLatest() {
-        Message latest = buildMessage(400L, user, group, "newest", LocalDateTime.now());
+        Message latest = buildMessage(400L, user, group, "newest", Instant.now());
         Long groupId = Objects.requireNonNull(group.getId());
 
         when(groupRepository.existsById(groupId)).thenReturn(true);
@@ -129,7 +128,7 @@ class MessageServiceTest {
 
     @Test
     void refreshGroupLatestMessage_skipsWhenConcurrentNewerSummaryExists() {
-        Message latest = buildMessage(300L, user, group, "old", LocalDateTime.now());
+        Message latest = buildMessage(300L, user, group, "old", Instant.now());
         Long groupId = Objects.requireNonNull(group.getId());
 
         when(groupRepository.existsById(groupId)).thenReturn(true);
@@ -160,7 +159,7 @@ class MessageServiceTest {
         verify(groupRepository).clearLatestMessageIfEmpty(groupId);
     }
 
-    private Message buildMessage(Long id, User messageUser, Group messageGroup, String content, LocalDateTime timestamp) {
+    private Message buildMessage(Long id, User messageUser, Group messageGroup, String content, Instant timestamp) {
         Message message = new Message();
         message.setId(id);
         message.setUser(messageUser);

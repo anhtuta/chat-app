@@ -35,8 +35,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -101,7 +101,7 @@ class GroupMembershipServiceTest {
         group = new Group();
         group.setId(100L);
         group.setName("Backend Team");
-        group.setCreatedAt(LocalDateTime.now().minusDays(2));
+        group.setCreatedAt(Instant.now().minus(Duration.ofDays(2)));
 
         actor = new User();
         actor.setId(1L);
@@ -116,7 +116,7 @@ class GroupMembershipServiceTest {
         systemMessage.setId(900L);
         systemMessage.setGroup(group);
         systemMessage.setUser(targetUser);
-        systemMessage.setTimestamp(LocalDateTime.now());
+        systemMessage.setTimestamp(Instant.now());
     }
 
     private void stubMembershipRealtime(SystemEventType eventType, User subject, User eventActor) {
@@ -127,7 +127,7 @@ class GroupMembershipServiceTest {
     void listMembers_returnsPagedResultsAndNormalizesSearch() {
         GroupParticipant participant = new GroupParticipant(group, targetUser);
         participant.setRole(GroupRole.MEMBER);
-        participant.setJoinedAt(LocalDateTime.now().minusDays(1));
+        participant.setJoinedAt(Instant.now().minus(Duration.ofDays(1)));
         Page<GroupParticipant> page = new PageImpl<>(
                 List.of(participant),
                 PageRequest.of(0, 100),
@@ -305,7 +305,7 @@ class GroupMembershipServiceTest {
         joinLink.setId(77L);
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
-        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setCreatedAt(Instant.now().minus(Duration.ofHours(1)));
         joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
 
         when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
@@ -345,13 +345,13 @@ class GroupMembershipServiceTest {
         joinLink.setId(77L);
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
-        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setCreatedAt(Instant.now().minus(Duration.ofHours(1)));
         joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
 
         when(groupJoinLinkRepository.findByTokenHashWithGroup(anyString())).thenReturn(Optional.of(joinLink));
         when(groupRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(group));
         doAnswer(invocation -> {
-            joinLink.setRevokedAt(LocalDateTime.now());
+            joinLink.setRevokedAt(Instant.now());
             return null;
         }).when(entityManager).refresh(joinLink);
 
@@ -526,7 +526,7 @@ class GroupMembershipServiceTest {
         joinLink.setId(77L);
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
-        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setCreatedAt(Instant.now().minus(Duration.ofHours(1)));
         joinLink.setExpiresAt(Instant.now().plusSeconds(3600));
         return joinLink;
     }
@@ -537,7 +537,7 @@ class GroupMembershipServiceTest {
         joinLink.setId(77L);
         joinLink.setGroup(group);
         joinLink.setCreatedBy(actor);
-        joinLink.setCreatedAt(LocalDateTime.now().minusHours(1));
+        joinLink.setCreatedAt(Instant.now().minus(Duration.ofHours(1)));
         joinLink.setExpiresAt(Instant.now().plusSeconds(86_400));
 
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.CREATE_JOIN_LINK))
@@ -593,7 +593,7 @@ class GroupMembershipServiceTest {
         ban.setUser(targetUser);
         ban.setBannedBy(actor);
         ban.setReason("spam");
-        ban.setBannedAt(LocalDateTime.now().minusHours(1));
+        ban.setBannedAt(Instant.now().minus(Duration.ofHours(1)));
 
         when(groupAuthorizationService.requireActivePermission(actor, 100L, GroupPermission.UNBAN_MEMBERS))
                 .thenReturn(group);
@@ -747,7 +747,7 @@ class GroupMembershipServiceTest {
         assertThat(groupMembershipService.lockActorParticipantForModeration(100L, 1L)).isSameAs(participant);
         verify(groupRepository, never()).findByIdForUpdate(100L);
 
-        group.setArchivedAt(LocalDateTime.now());
+        group.setArchivedAt(Instant.now());
         assertThatThrownBy(() -> groupMembershipService.lockActorParticipantForModeration(100L, 1L))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Group is archived");

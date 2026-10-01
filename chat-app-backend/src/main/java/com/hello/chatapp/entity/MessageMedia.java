@@ -21,8 +21,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 /**
  * media_uploads is the staging ledger for direct-to-storage uploads;
@@ -152,21 +150,7 @@ public class MessageMedia {
         this.createdAt = createdAt;
     }
 
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt == null ? null : createdAt.toInstant(ZoneOffset.UTC);
-    }
-
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt == null ? null : updatedAt.toInstant(ZoneOffset.UTC);
     }
 }

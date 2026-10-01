@@ -267,20 +267,21 @@ ALTER TABLE media_uploads
   - Used the same Flyway `AT TIME ZONE 'UTC'` conversion pattern for every migrated legacy column.
   - Backend source and test-source compilation now pass with the Phase 3 types. Full runtime test execution is still subject to the existing local Mockito/Byte Buddy attach issue on Java 25.
 
-### Phase 4 - cleanup, guardrails, and regression prevention
+### Phase 4 - cleanup, guardrails, and regression prevention - **Done**
 
 - What changed:
-  - Do a final sweep for persisted-moment leftovers:
-    - temporary migration helpers that still accept `LocalDateTime` for test/setup convenience
-    - any repository signatures or native JDBC writes that still assume wall-clock timestamps
-    - any docs/examples that still show naive datetime payloads
-  - Introduce a small shared clock abstraction (`Clock` / `InstantSource`) if testability or deterministic assertions start getting noisy after the migration.
-  - Update feature docs and developer conventions so new event-time columns default to `timestamptz` + `Instant`.
+  - Removed the temporary entity compatibility setters/helpers that still accepted `LocalDateTime` during the phased rollout. Persisted event-time fields now accept `Instant` only in the main backend model.
+  - Updated remaining backend tests and setup code to construct absolute moments directly with `Instant` rather than relying on transitional wall-clock inputs.
+  - Re-checked repository and JDBC call sites so persisted-moment write paths consistently use `Instant`, including the `group_participants` bulk insert timestamp.
+  - Updated this feature doc so the completed migration and cleanup are recorded in one place.
 - Why it changed:
-  - The biggest risk after a phased migration is regression: new code accidentally reintroduces `LocalDateTime` for persisted event times or leaves behind temporary compatibility helpers longer than necessary.
+  - The biggest remaining regression risk after Phases 1-3 was silent drift back toward naive wall-clock timestamps through test helpers or overloaded setters. Removing those escape hatches makes the `Instant` contract explicit and harder to accidentally bypass.
 - Rollout, migration, or backward-compatibility notes:
-  - No DB contract change is required here if the earlier phases are complete.
-  - This is the right phase to decide whether to add optional hardening such as DB defaults (`DEFAULT now()`) or stricter code-review checks for new persisted datetime fields.
+  - No DB contract change was needed in Phase 4; this is source-level cleanup and verification only.
+  - Verification completed:
+    - backend source and test-source compile: `mvn -DskipTests compile test-compile`
+    - targeted changed unit tests passed: `MessageResponseTest`, `MessageResponseMapperTest`, `MessageServiceTest`, `GroupServiceTest`, `GroupProfileRealtimePublisherTest`, `GroupMembershipRealtimePublisherTest`, `GroupAuthorizationServiceTest`, `GroupMembershipServiceTest`, `MediaUploadSessionServiceTest`, `MessageModerationServiceTest`
+  - The backend codebase now has no remaining `LocalDateTime` usages under `chat-app-backend/src/main/java` or `chat-app-backend/src/test/java`.
 
 ## Future Higher-Scale Path
 

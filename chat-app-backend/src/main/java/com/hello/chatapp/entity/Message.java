@@ -9,8 +9,6 @@ import java.time.Instant;
 import java.util.List;
 import com.hello.chatapp.constant.MessageType;
 import com.hello.chatapp.model.SystemEventPayload;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -147,34 +145,12 @@ public class Message {
         this.timestamp = timestamp;
     }
 
-    /**
-     * Transitional helper for tests and still-naive callers during the phased UTC migration.
-     * Interprets the provided wall-clock value as UTC.
-     */
-    public void setTimestamp(LocalDateTime timestamp) {
-        this.timestamp = timestamp == null ? null : timestamp.toInstant(ZoneOffset.UTC);
-    }
-
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
     }
 
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt == null ? null : updatedAt.toInstant(ZoneOffset.UTC);
-    }
-
     public void setDeletedAt(Instant deletedAt) {
         this.deletedAt = deletedAt;
-    }
-
-    /**
-     * Treats legacy naive wall-clock timestamps as UTC during the datetime migration.
-     */
-    public void setDeletedAt(LocalDateTime deletedAt) {
-        this.deletedAt = deletedAt == null ? null : deletedAt.toInstant(ZoneOffset.UTC);
     }
 
     public void addAttachment(MessageMedia attachment) {
