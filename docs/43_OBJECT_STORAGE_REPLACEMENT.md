@@ -494,6 +494,28 @@ Current Phase 0 bridge:
 - Restart the storage process between multipart parts and after completion.
 - Verify object count, total bytes, content hash, and metadata.
 
+Current Phase 1 coverage:
+
+- Added `chat-app-backend/src/test/java/com/hello/chatapp/storage/ObjectStorageContractIntegrationTest`.
+- The suite starts a disposable MinIO-compatible container through the local
+  Docker CLI instead of relying on a long-running developer stack.
+- Verified:
+  - `GET /minio/health/live`
+  - single-part presigned `PUT` upload
+  - object metadata visibility through storage `stat`
+  - presigned `GET` readback of uploaded bytes
+  - object delete and missing-object behavior
+- Verified locally with:
+  - `./mvnw -Dtest=ObjectStorageContractIntegrationTest test`
+
+Still remaining in Phase 1:
+
+- browser-origin CORS validation
+- multipart create/upload/complete/abort coverage
+- `Range` request coverage for video playback
+- restart/interruption scenarios during multipart flows
+- object count and content-hash inventory assertions
+
 ### Phase 2 - Remove MinIO SDK coupling
 
 - Implement standard S3 operations with AWS SDK v2 in both Java services.
