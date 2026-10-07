@@ -53,6 +53,61 @@ calls the core production-ready, while its repository still labels distributed
 mode as under testing. It is a strong pilot candidate, not yet an automatic
 durability decision.
 
+### What “managed object storage” means
+
+A managed object store is operated by a cloud provider. The application still
+uses the S3 API, but the provider owns the storage servers, disk replacement,
+replication, upgrades, and most availability work. We pay for stored data,
+requests, and sometimes downloaded data instead of running the storage cluster.
+It is not installed in this project's Docker Compose stack.
+
+Suggested production order:
+
+1. **AWS S3** when minimizing compatibility and durability risk matters most,
+   especially if the application already runs on AWS.
+2. **Cloudflare R2** when users frequently stream chat videos and internet
+   egress cost is expected to dominate.
+3. **Backblaze B2** when low storage cost is the priority and its S3 differences
+   pass the application contract suite.
+
+Local development should still use a local S3-compatible container such as
+RustFS. Local and production storage do not need to be the same product if both
+pass the same provider-neutral S3 contract tests.
+
+### Recommendation for the current deployment
+
+Production currently runs on VPS/dedicated hosted servers and serves active
+external users. Managed storage is acceptable for evaluation after comparing
+cost and privacy.
+
+For this context:
+
+- Compare **Cloudflare R2 first against AWS S3**. R2 may reduce the cost of
+  repeatedly delivering chat videos; AWS S3 remains the compatibility and
+  operational baseline.
+- Do not replace production MinIO with a single-node RustFS container. That
+  would restore image availability but would not improve the single-node
+  failure domain.
+- If managed storage is rejected, use a real multi-node self-hosted PoC:
+  SeaweedFS first, Garage second, or RustFS only after its four-node distributed
+  topology passes failure testing.
+- Keep the storage region close to both the production VPS and the majority of
+  users to control latency and network cost.
+
+Current sizing/topology information further narrows the choice:
+
+- Production MinIO currently stores approximately **100 GB–1 TB**.
+- Three production servers can be dedicated to self-hosted object storage.
+- Most users are in Vietnam/Southeast Asia and the VPS is elsewhere in Asia.
+- Garage can use the three available nodes, but three-way replication requires
+  roughly three times the usable media capacity.
+- SeaweedFS remains the first self-hosted PoC at this size.
+- RustFS is not the preferred production choice with only three available
+  servers because its documented production multi-node guidance starts at four.
+- For managed storage, benchmark an APAC placement close to the exact VPS
+  region and users. Include worker traffic between the VPS and storage, not only
+  browser delivery.
+
 ### Immediate build-recovery option
 
 If fresh environments are blocked before the replacement is ready, temporarily
@@ -422,27 +477,77 @@ Garage, Ceph, and managed providers substantially safer.
 - Estimate video egress separately from storage; playback can dominate cost.
 - Test upgrades with old objects and in-progress multipart uploads.
 
-## Open Questions / Required Decisions
+## Confirmed Decisions
 
-These answers can change the production recommendation:
+- The replacement covers **both local development and production**; MinIO is
+  currently used in both environments.
+- Existing MinIO objects are durable application data and must be migrated.
+- AGPL-3.0 infrastructure is acceptable, so Garage remains eligible.
+- A one-time outage of up to 24 hours is tolerable if necessary.
+- Production runs on VPS/dedicated hosted servers and has active external
+  users.
+- Third-party managed storage may be used after cost and privacy comparison.
+- Production media currently occupies approximately 100 GB–1 TB.
+- Three servers are available for a self-hosted production storage cluster.
+- The production VPS is in Asia and most users are in Vietnam/Southeast Asia;
+  the exact VPS region still needs to be recorded.
+- During final cutover, existing media may remain readable while new uploads
+  are paused for up to 30 minutes.
+- Capacity and traffic must be measured for the current state and estimated for
+  the next 12 months.
+- Backup, data residency, encryption/KMS, and disaster recovery are not the
+  first selection criteria, but production must still meet the minimum baseline
+  below.
 
-- TODO: Confirm whether this replacement is only for local Docker Compose or
-  also for production.
-- TODO: Confirm whether a managed cloud object store is allowed and in which
-  region/provider.
-- TODO: Record current and 12-month estimates for stored bytes, object count,
-  peak uploads, peak reads, and monthly video egress.
-- TODO: Define the production hardware/topology and number of independent
-  failure domains available for a self-hosted cluster.
-- TODO: Confirm acceptable maintenance downtime and migration downtime.
-- TODO: Confirm backup retention, data residency, encryption/KMS, and disaster
-  recovery requirements.
-- TODO: Confirm whether AGPL-3.0 is acceptable for infrastructure components.
-- TODO: Inventory existing MinIO data that must be migrated versus disposable
-  local-development data.
+## Recommended Availability and Recovery Targets
 
-Until those questions are answered, the safe decision is **RustFS for a
-reversible local/CI pilot, not a final production commitment**.
+A 24-hour window is acceptable as an **emergency ceiling** or for a pre-launch
+system. It is too long as the normal target for production maintenance because
+uploads, images, audio, files, and video playback would be unavailable.
+
+Recommended initial targets for this chat application:
+
+| Measure                                 | Recommended initial target                                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Planned storage maintenance             | No user-visible outage where possible; otherwise no more than 30 minutes per event                       |
+| One-time migration cutover              | Bulk copy while MinIO remains online, then no more than 30 minutes of upload write-freeze for final sync |
+| Hard migration ceiling                  | 2 hours normally; use the approved 24 hours only if online copy/cutover proves unsafe                    |
+| Emergency recovery time objective (RTO) | Restore media service within 4 hours                                                                     |
+| Recovery point objective (RPO)          | Lose no more than 24 hours of newly written media                                                        |
+| Rollback window                         | Keep old MinIO data read-only for at least 7 days after cutover                                          |
+
+Because the service has active external users, use online bulk copy plus a
+short final upload write-freeze. The approved 24-hour window is a contingency,
+not the planned outage.
+
+Minimum production baseline even when advanced DR is deferred:
+
+- TLS in transit and provider/storage-level encryption at rest;
+- no customer-managed KMS requirement in the first migration;
+- one separately recoverable copy of media data;
+- at least 7 days of backup/rollback retention, without violating the
+  application's configured 60-day media deletion policy;
+- a documented restore procedure and one successful restore test before
+  deleting the old MinIO copy;
+- deploy storage in the same legal region as the application until a specific
+  residency requirement is defined.
+
+## Remaining Questions / Measurements
+
+- TODO: Measure current MinIO bucket bytes, object count, largest object, daily
+  uploads, monthly downloads/egress, and peak requests.
+- TODO: Estimate those measurements at 12 months from expected users and
+  growth.
+- TODO: Record the exact production VPS provider/region, then compare latency
+  and cross-provider transfer charges to APAC R2 and AWS S3 endpoints.
+- TODO: For the three self-hosting servers, record disks per server, usable
+  capacity, network capacity, and whether they are in independent failure
+  domains.
+- TODO: Choose the production path only after cost estimation and contract
+  tests: managed S3, or self-hosted SeaweedFS/Garage/RustFS.
+
+Until those items are answered, use **RustFS for a reversible local/CI pilot**
+and keep the production choice open.
 
 ## Sources
 
