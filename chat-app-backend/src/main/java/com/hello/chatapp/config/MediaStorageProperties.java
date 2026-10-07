@@ -99,6 +99,12 @@ public class MediaStorageProperties {
     public static class S3 {
 
         @NotBlank
+        private String accessKey = "test-access-key";
+
+        @NotBlank
+        private String secretKey = "test-secret-key";
+
+        @NotBlank
         private String bucket = "chat-media";
 
         @NotBlank

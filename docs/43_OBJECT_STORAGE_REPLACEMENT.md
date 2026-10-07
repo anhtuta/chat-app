@@ -529,6 +529,34 @@ Still remaining in Phase 1:
 - Run existing media tests plus the new contract suite against current MinIO
   and the candidate to detect semantic differences.
 
+Current Phase 2 start:
+
+- `chat-app-backend/src/main/java/com/hello/chatapp/storage/S3ObjectStorageProvider.java`
+  now uses AWS SDK v2 for:
+  - presigned single-part `PUT`
+  - presigned `GET`
+  - multipart create/upload-part/complete/abort
+  - object existence checks
+  - delete
+  - create-if-missing bucket check when S3 is the active provider
+- Added backend S3 credentials config entries in:
+  - `chat-app-backend/src/main/resources/application.yaml`
+  - `chat-app-backend/.env.example`
+  - `chat-app-backend/.env.local.example`
+- Added `chat-app-backend/src/test/java/com/hello/chatapp/storage/S3ObjectStorageProviderIntegrationTest.java`
+  to verify the real backend S3 provider against the disposable S3-compatible
+  container.
+- Verified locally with:
+  - `./mvnw -Dtest=S3ObjectStorageProviderIntegrationTest,MessageResponseMapperTest,ObjectStorageProviderRegistryTest test`
+
+Still remaining in Phase 2:
+
+- move `media-processing` uploader/downloader off the MinIO SDK
+- decide whether `ObjectStorageProviderType.S3` should later be renamed or
+  generalized to an explicit `S3_COMPATIBLE` type
+- run the same provider-oriented checks against RustFS and then against the
+  chosen production target (AWS S3 or Cloudflare R2)
+
 ### Phase 3 - Pilot RustFS for local development and CI
 
 - Pin an exact RustFS 1.0.x image digest; do not use `latest`.

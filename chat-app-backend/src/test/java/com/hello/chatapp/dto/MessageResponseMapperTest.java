@@ -9,9 +9,11 @@ import com.hello.chatapp.entity.Message;
 import com.hello.chatapp.entity.MessageMedia;
 import com.hello.chatapp.entity.User;
 import com.hello.chatapp.model.SystemEventPayload;
+import com.hello.chatapp.storage.ObjectStorageCompletedPart;
+import com.hello.chatapp.storage.ObjectStorageProvider;
+import com.hello.chatapp.storage.ObjectStorageProviderDescriptor;
 import com.hello.chatapp.storage.ObjectStorageProviderRegistry;
 import com.hello.chatapp.storage.ObjectStorageProviderType;
-import com.hello.chatapp.storage.S3ObjectStorageProvider;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -32,10 +34,7 @@ class MessageResponseMapperTest {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
-        MessageResponseMapper mapper = new MessageResponseMapper(
-                new ObjectStorageProviderRegistry(
-                        List.of(new S3ObjectStorageProvider(properties)),
-                        properties));
+        MessageResponseMapper mapper = mapperWithStorage(properties);
 
         User user = new User("alice", "secret", "Alice");
         user.setId(1L);
@@ -75,10 +74,7 @@ class MessageResponseMapperTest {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
-        MessageResponseMapper mapper = new MessageResponseMapper(
-                new ObjectStorageProviderRegistry(
-                        List.of(new S3ObjectStorageProvider(properties)),
-                        properties));
+        MessageResponseMapper mapper = mapperWithStorage(properties);
 
         User user = new User("alice", "secret", "Alice");
         user.setId(1L);
@@ -135,10 +131,7 @@ class MessageResponseMapperTest {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
-        MessageResponseMapper mapper = new MessageResponseMapper(
-                new ObjectStorageProviderRegistry(
-                        List.of(new S3ObjectStorageProvider(properties)),
-                        properties));
+        MessageResponseMapper mapper = mapperWithStorage(properties);
 
         User actor = new User("alice", "secret", "Alice");
         actor.setId(1L);
@@ -171,10 +164,7 @@ class MessageResponseMapperTest {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
-        MessageResponseMapper mapper = new MessageResponseMapper(
-                new ObjectStorageProviderRegistry(
-                        List.of(new S3ObjectStorageProvider(properties)),
-                        properties));
+        MessageResponseMapper mapper = mapperWithStorage(properties);
 
         User actor = new User("alice", "secret", "Alice");
         User subject = new User("bob", "secret", "Bob");
@@ -200,10 +190,7 @@ class MessageResponseMapperTest {
         MediaStorageProperties properties = new MediaStorageProperties();
         properties.setProvider(ObjectStorageProviderType.S3);
 
-        MessageResponseMapper mapper = new MessageResponseMapper(
-                new ObjectStorageProviderRegistry(
-                        List.of(new S3ObjectStorageProvider(properties)),
-                        properties));
+        MessageResponseMapper mapper = mapperWithStorage(properties);
 
         Instant messageTimestamp = Instant.parse("2026-09-24T11:00:00Z");
         Instant attachmentUpdatedAt = messageTimestamp.plusSeconds(2 * 60L);
@@ -234,5 +221,140 @@ class MessageResponseMapperTest {
         MessageResponse response = mapper.toResponse(message);
 
         assertThat(response.getFreshnessKey()).isEqualTo(attachmentUpdatedAt.toString());
+    }
+
+    /**
+     * Creates a mapper backed by a simple always-present S3 stub so these tests remain pure mapping checks.
+     *
+     * @param properties active media storage properties
+     * @return mapper configured with a deterministic storage provider
+     */
+    private MessageResponseMapper mapperWithStorage(MediaStorageProperties properties) {
+        return new MessageResponseMapper(new ObjectStorageProviderRegistry(
+                List.of(new StubS3Provider()),
+                properties));
+    }
+
+    /**
+     * Minimal S3 provider stub for mapper-only tests.
+     */
+    private static final class StubS3Provider implements ObjectStorageProvider {
+
+        /**
+         * Returns deterministic descriptor metadata for stubbed mapper tests.
+         *
+         * @return fixed provider descriptor
+         */
+        @Override
+        public ObjectStorageProviderDescriptor describe() {
+            return new ObjectStorageProviderDescriptor(
+                    ObjectStorageProviderType.S3,
+                    "chat-media",
+                    "ap-southeast-1",
+                    "https://storage.example.test",
+                    true,
+                    true);
+        }
+
+        /**
+         * Returns the provider type represented by this stub.
+         *
+         * @return {@link ObjectStorageProviderType#S3}
+         */
+        @Override
+        public ObjectStorageProviderType getType() {
+            return ObjectStorageProviderType.S3;
+        }
+
+        /**
+         * Returns a deterministic upload URL for the given object key.
+         *
+         * @param objectKey destination object key
+         * @return stable fake upload URL
+         */
+        @Override
+        public String buildUploadUrl(String objectKey) {
+            return "https://storage.example.test/chat-media/" + objectKey + "?upload=1";
+        }
+
+        /**
+         * Multipart uploads are not exercised in mapper-only tests.
+         *
+         * @param objectKey destination object key
+         * @return fixed upload id
+         */
+        @Override
+        public String createMultipartUpload(String objectKey) {
+            return "stub-upload-id";
+        }
+
+        /**
+         * Returns a deterministic upload-part URL for mapper-only tests.
+         *
+         * @param objectKey destination object key
+         * @param multipartUploadId ignored stub value
+         * @param partNumber multipart part number
+         * @return stable fake upload-part URL
+         */
+        @Override
+        public String buildMultipartUploadPartUrl(String objectKey, String multipartUploadId, int partNumber) {
+            return "https://storage.example.test/chat-media/" + objectKey
+                    + "?uploadId=" + multipartUploadId + "&partNumber=" + partNumber;
+        }
+
+        /**
+         * Multipart completion is not exercised in mapper-only tests.
+         *
+         * @param objectKey destination object key
+         * @param multipartUploadId ignored stub value
+         * @param parts ignored stub parts
+         */
+        @Override
+        public void completeMultipartUpload(String objectKey, String multipartUploadId, List<ObjectStorageCompletedPart> parts) {
+            // No-op in mapper tests.
+        }
+
+        /**
+         * Multipart abort is not exercised in mapper-only tests.
+         *
+         * @param objectKey destination object key
+         * @param multipartUploadId ignored stub value
+         */
+        @Override
+        public void abortMultipartUpload(String objectKey, String multipartUploadId) {
+            // No-op in mapper tests.
+        }
+
+        /**
+         * Returns a deterministic read URL for the given object key.
+         *
+         * @param objectKey object key to expose
+         * @return stable fake read URL
+         */
+        @Override
+        public String buildReadUrl(String objectKey) {
+            return "https://storage.example.test/chat-media/" + objectKey + "?read=1";
+        }
+
+        /**
+         * Pretends every requested object exists so mapping logic can populate derived URLs.
+         *
+         * @param objectKey ignored stub key
+         * @return always {@code true}
+         */
+        @Override
+        public boolean objectExists(String objectKey) {
+            return true;
+        }
+
+        /**
+         * Deletion is not exercised in mapper-only tests.
+         *
+         * @param objectKey ignored stub key
+         */
+        @Override
+        public void deleteObject(String objectKey) {
+            // No-op in mapper tests.
+        }
     }
 }
