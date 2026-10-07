@@ -74,7 +74,10 @@ services:
 
   # MinIO (local object storage for media uploads)
   minio:
-    image: minio/minio:latest
+    # Phase 0 bridge: pullable MinIO-compatible image pinned by immutable digest.
+    # Quay historical images now return 401, so local bootstrap uses a short-lived bridge image
+    # until Phase 3 moves local development to RustFS.
+    image: cgr.dev/chainguard/minio@sha256:e7ca559d9f7c0b5f24f5f669bb92f40f3ca88d56273b808bf3a7c116c17d2ffa
     container_name: chat-app-minio
     command: server /data --console-address ":9001"
     environment:

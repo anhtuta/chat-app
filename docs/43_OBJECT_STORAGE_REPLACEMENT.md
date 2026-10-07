@@ -463,10 +463,27 @@ Garage, Ceph, and managed providers substantially safer.
 
 ### Phase 0 - Restore reproducible builds
 
-- Replace `minio/minio:latest` temporarily with an immutable historical Quay
-  tag/digest or internal mirror.
+- Replace `minio/minio:latest` temporarily with an immutable, pullable bridge
+  image or internal mirror.
 - Record the image digest and verify a cold pull in CI.
 - Do not expose the frozen service publicly.
+
+Current Phase 0 bridge:
+
+- Quay historical MinIO images are no longer usable here; registry requests now
+  return `401 UNAUTHORIZED`, so the original Quay fallback is not reliable.
+- `chat-app-backend/docker-compose.yml` now uses the pullable bridge image
+  `cgr.dev/chainguard/minio@sha256:e7ca559d9f7c0b5f24f5f669bb92f40f3ca88d56273b808bf3a7c116c17d2ffa`.
+- This digest was verified locally by:
+  - pulling the image successfully,
+  - confirming the `minio` CLI is present and reports
+    `RELEASE.2026-09-22T19-25-18Z`,
+  - starting the container with `server /data --console-address ":9001"`,
+  - and checking `GET /minio/health/live`.
+- This remains a short-lived local-development bridge only, until Phase 3 moves
+  local development to RustFS.
+- The remaining Phase 0 task is to repeat the same validation in CI or another
+  clean bootstrap environment.
 
 ### Phase 1 - Add an executable storage contract suite
 
