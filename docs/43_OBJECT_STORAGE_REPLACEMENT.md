@@ -504,6 +504,7 @@ Current Phase 1 coverage:
   - single-part presigned `PUT` upload
   - object metadata visibility through storage `stat`
   - presigned `GET` readback of uploaded bytes
+  - presigned `GET` with HTTP `Range` support returning `206 Partial Content`
   - object delete and missing-object behavior
   - multipart create/upload-part/complete with returned ETags
   - multipart abort leaving no finalized object behind
@@ -513,7 +514,6 @@ Current Phase 1 coverage:
 Still remaining in Phase 1:
 
 - browser-origin CORS validation
-- `Range` request coverage for video playback
 - restart/interruption scenarios during multipart flows
 - object count and content-hash inventory assertions
 

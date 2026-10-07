@@ -144,6 +144,42 @@ class ObjectStorageContractIntegrationTest {
     }
 
     /**
+     * Verifies presigned reads honor HTTP range requests used by video-like partial playback.
+     */
+    @Test
+    void presignedGet_honorsRangeRequests() throws Exception {
+        String objectKey = "contract/" + UUID.randomUUID() + "/range.bin";
+        byte[] body = repeatedAlphabetBytes(8192);
+        int start = 1024;
+        int endInclusive = 4095;
+        byte[] expected = new byte[endInclusive - start + 1];
+        System.arraycopy(body, start, expected, 0, expected.length);
+
+        HttpRequest uploadRequest = HttpRequest.newBuilder()
+                .uri(URI.create(presignedPutUrl(objectKey)))
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<Void> uploadResponse = httpClient.send(uploadRequest, HttpResponse.BodyHandlers.discarding());
+        assertThat(uploadResponse.statusCode()).isEqualTo(200);
+
+        HttpRequest rangeRequest = HttpRequest.newBuilder()
+                .uri(URI.create(presignedGetUrl(objectKey)))
+                .header("Range", "bytes=" + start + "-" + endInclusive)
+                .GET()
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<byte[]> rangeResponse = httpClient.send(rangeRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(rangeResponse.statusCode()).isEqualTo(206);
+        assertThat(rangeResponse.headers().firstValue("Content-Range"))
+                .hasValue("bytes " + start + "-" + endInclusive + "/" + body.length);
+        assertThat(rangeResponse.body()).isEqualTo(expected);
+    }
+
+    /**
      * Verifies cleanup removes objects so callers can distinguish present data from missing keys.
      */
     @Test
@@ -408,6 +444,20 @@ class ObjectStorageContractIntegrationTest {
         byte[] bytes = new byte[length];
         for (int i = 0; i < length; i++) {
             bytes[i] = value;
+        }
+        return bytes;
+    }
+
+    /**
+     * Builds deterministic test content with repeating ASCII letters so range assertions stay readable.
+     *
+     * @param length desired byte count
+     * @return byte array cycling through {@code a-z}
+     */
+    private byte[] repeatedAlphabetBytes(int length) {
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++) {
+            bytes[i] = (byte) ('a' + (i % 26));
         }
         return bytes;
     }
