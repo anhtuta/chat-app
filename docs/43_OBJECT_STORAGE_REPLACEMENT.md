@@ -514,6 +514,9 @@ Current Phase 1 coverage:
 Still remaining in Phase 1:
 
 - browser-origin CORS validation
+  - Attempted against the current Phase 0 bridge image, but bucket CORS
+    configuration returned `501 NotImplemented`, so this check is blocked until
+    local storage moves to an engine with working bucket CORS support.
 - restart/interruption scenarios during multipart flows
 - object count and content-hash inventory assertions
 

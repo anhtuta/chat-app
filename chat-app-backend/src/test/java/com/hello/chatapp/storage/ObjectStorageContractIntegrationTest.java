@@ -10,12 +10,15 @@ import io.minio.MinioAsyncClient;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.RemoveObjectArgs;
+import io.minio.SetBucketCorsArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.errors.ErrorResponseException;
+import io.minio.messages.CORSConfiguration;
 import io.minio.messages.Part;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.slf4j.Logger;
@@ -177,6 +180,64 @@ class ObjectStorageContractIntegrationTest {
         assertThat(rangeResponse.headers().firstValue("Content-Range"))
                 .hasValue("bytes " + start + "-" + endInclusive + "/" + body.length);
         assertThat(rangeResponse.body()).isEqualTo(expected);
+    }
+
+    /**
+     * Verifies browser-style cross-origin requests succeed only after bucket CORS rules are configured.
+     */
+    @Test
+    @Disabled("Current Phase 0 bridge image returns 501 NotImplemented for bucket CORS configuration; re-enable after local storage moves to an engine with CORS support.")
+    void browserOriginCors_allowsPreflightPutAndCrossOriginGet() throws Exception {
+        String origin = "http://localhost:3000";
+        String objectKey = "contract/" + UUID.randomUUID() + "/cors.txt";
+        byte[] body = "cors-contract-body".getBytes(StandardCharsets.UTF_8);
+
+        ensureBucketCorsConfigured(origin);
+
+        String uploadUrl = presignedPutUrl(objectKey);
+        HttpRequest preflightRequest = HttpRequest.newBuilder()
+                .uri(URI.create(uploadUrl))
+                .header("Origin", origin)
+                .header("Access-Control-Request-Method", "PUT")
+                .header("Access-Control-Request-Headers", "content-type")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<Void> preflightResponse = httpClient.send(preflightRequest, HttpResponse.BodyHandlers.discarding());
+
+        assertThat(preflightResponse.statusCode()).isIn(200, 204);
+        assertThat(preflightResponse.headers().firstValue("Access-Control-Allow-Origin")).hasValue(origin);
+        assertThat(preflightResponse.headers().firstValue("Access-Control-Allow-Methods"))
+                .hasValueSatisfying(value -> assertThat(value).contains("PUT"));
+        assertThat(preflightResponse.headers().firstValue("Access-Control-Allow-Headers"))
+                .hasValueSatisfying(value -> assertThat(value.toLowerCase()).contains("content-type"));
+
+        HttpRequest uploadRequest = HttpRequest.newBuilder()
+                .uri(URI.create(uploadUrl))
+                .header("Origin", origin)
+                .header("Content-Type", "text/plain")
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<Void> uploadResponse = httpClient.send(uploadRequest, HttpResponse.BodyHandlers.discarding());
+
+        assertThat(uploadResponse.statusCode()).isEqualTo(200);
+        assertThat(uploadResponse.headers().firstValue("Access-Control-Allow-Origin")).hasValue(origin);
+
+        HttpRequest readRequest = HttpRequest.newBuilder()
+                .uri(URI.create(presignedGetUrl(objectKey)))
+                .header("Origin", origin)
+                .GET()
+                .timeout(Duration.ofSeconds(10))
+                .build();
+
+        HttpResponse<byte[]> readResponse = httpClient.send(readRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(readResponse.statusCode()).isEqualTo(200);
+        assertThat(readResponse.headers().firstValue("Access-Control-Allow-Origin")).hasValue(origin);
+        assertThat(readResponse.body()).isEqualTo(body);
     }
 
     /**
@@ -472,6 +533,26 @@ class ObjectStorageContractIntegrationTest {
         if (!exists) {
             client.makeBucket(MakeBucketArgs.builder().bucket(BUCKET).build());
         }
+    }
+
+    /**
+     * Configures a minimal bucket CORS policy for browser upload and readback checks.
+     *
+     * @param origin browser origin allowed to access presigned object URLs
+     */
+    private void ensureBucketCorsConfigured(String origin) throws Exception {
+        ensureBucketExists(minioClient());
+        minioClient().setBucketCors(SetBucketCorsArgs.builder()
+                .bucket(BUCKET)
+                .config(new CORSConfiguration(List.of(
+                        new CORSConfiguration.CORSRule(
+                                List.of("content-type"),
+                                List.of("GET", "PUT", "HEAD"),
+                                List.of(origin),
+                                List.of("Accept-Ranges", "Content-Length", "Content-Range", "ETag"),
+                                "contract-cors",
+                                3600))))
+                .build());
     }
 
     /**
