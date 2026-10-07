@@ -505,13 +505,14 @@ Current Phase 1 coverage:
   - object metadata visibility through storage `stat`
   - presigned `GET` readback of uploaded bytes
   - object delete and missing-object behavior
+  - multipart create/upload-part/complete with returned ETags
+  - multipart abort leaving no finalized object behind
 - Verified locally with:
   - `./mvnw -Dtest=ObjectStorageContractIntegrationTest test`
 
 Still remaining in Phase 1:
 
 - browser-origin CORS validation
-- multipart create/upload/complete/abort coverage
 - `Range` request coverage for video playback
 - restart/interruption scenarios during multipart flows
 - object count and content-hash inventory assertions

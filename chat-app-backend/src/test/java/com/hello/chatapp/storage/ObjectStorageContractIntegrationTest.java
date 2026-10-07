@@ -1,14 +1,19 @@
 package com.hello.chatapp.storage;
 
+import io.minio.AbortMultipartUploadArgs;
 import io.minio.BucketExistsArgs;
+import io.minio.CompleteMultipartUploadArgs;
+import io.minio.CreateMultipartUploadArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.Http;
+import io.minio.MinioAsyncClient;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.errors.ErrorResponseException;
+import io.minio.messages.Part;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -25,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -169,6 +175,75 @@ class ObjectStorageContractIntegrationTest {
     }
 
     /**
+     * Verifies multipart upload create, per-part presigned PUT, completion, and final readback.
+     */
+    @Test
+    void multipartUpload_completeRoundTripsObjectBytes() throws Exception {
+        String objectKey = "contract/" + UUID.randomUUID() + "/multipart.bin";
+        byte[] partOne = repeatedBytes(5 * 1024 * 1024, (byte) 'A');
+        byte[] partTwo = repeatedBytes(1024 * 1024, (byte) 'B');
+        byte[] expected = new byte[partOne.length + partTwo.length];
+        System.arraycopy(partOne, 0, expected, 0, partOne.length);
+        System.arraycopy(partTwo, 0, expected, partOne.length, partTwo.length);
+
+        String uploadId = startMultipartUpload(objectKey);
+
+        HttpResponse<Void> partOneResponse = uploadMultipartPart(objectKey, uploadId, 1, partOne);
+        HttpResponse<Void> partTwoResponse = uploadMultipartPart(objectKey, uploadId, 2, partTwo);
+
+        assertThat(partOneResponse.statusCode()).isEqualTo(200);
+        assertThat(partTwoResponse.statusCode()).isEqualTo(200);
+
+        completeMultipartUpload(
+                objectKey,
+                uploadId,
+                new Part(1, responseEtag(partOneResponse)),
+                new Part(2, responseEtag(partTwoResponse)));
+
+        StatObjectResponse stat = minioClient().statObject(StatObjectArgs.builder()
+                .bucket(BUCKET)
+                .object(objectKey)
+                .build());
+
+        assertThat(stat.size()).isEqualTo(expected.length);
+        assertThat(stat.etag()).contains("-");
+
+        HttpRequest readRequest = HttpRequest.newBuilder()
+                .uri(URI.create(presignedGetUrl(objectKey)))
+                .GET()
+                .timeout(Duration.ofSeconds(20))
+                .build();
+
+        HttpResponse<byte[]> readResponse = httpClient.send(readRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+        assertThat(readResponse.statusCode()).isEqualTo(200);
+        assertThat(readResponse.body()).isEqualTo(expected);
+    }
+
+    /**
+     * Verifies aborting a multipart upload leaves no finalized object behind.
+     */
+    @Test
+    void multipartUpload_abortLeavesNoFinalObject() throws Exception {
+        String objectKey = "contract/" + UUID.randomUUID() + "/aborted.bin";
+        byte[] partOne = repeatedBytes(5 * 1024 * 1024, (byte) 'C');
+
+        String uploadId = startMultipartUpload(objectKey);
+        HttpResponse<Void> uploadResponse = uploadMultipartPart(objectKey, uploadId, 1, partOne);
+        assertThat(uploadResponse.statusCode()).isEqualTo(200);
+
+        abortMultipartUpload(objectKey, uploadId);
+
+        assertThatThrownBy(() -> minioClient().statObject(StatObjectArgs.builder()
+                .bucket(BUCKET)
+                .object(objectKey)
+                .build()))
+                .isInstanceOf(ErrorResponseException.class)
+                .satisfies(error -> assertThat(((ErrorResponseException) error).errorResponse().code())
+                        .isIn("NoSuchKey", "NoSuchObject"));
+    }
+
+    /**
      * Returns the S3 endpoint exposed by the disposable storage container.
      *
      * @return HTTP endpoint for S3-compatible requests
@@ -223,6 +298,121 @@ class ObjectStorageContractIntegrationTest {
     }
 
     /**
+     * Starts a multipart upload and returns the provider upload id.
+     *
+     * @param objectKey destination key for the final object
+     * @return provider-issued multipart upload id
+     */
+    private String startMultipartUpload(String objectKey) throws Exception {
+        ensureBucketExists(minioClient());
+        return minioAsyncClient().createMultipartUpload(CreateMultipartUploadArgs.builder()
+                .bucket(BUCKET)
+                .object(objectKey)
+                .build())
+                .join()
+                .result()
+                .uploadId();
+    }
+
+    /**
+     * Uploads one multipart part through a presigned URL.
+     *
+     * @param objectKey multipart object key
+     * @param uploadId provider multipart upload id
+     * @param partNumber one-based multipart part number
+     * @param body bytes to upload for this part
+     * @return HTTP response from the upload-part request
+     */
+    private HttpResponse<Void> uploadMultipartPart(String objectKey, String uploadId, int partNumber, byte[] body)
+            throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(presignedMultipartPartUrl(objectKey, uploadId, partNumber)))
+                .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
+                .timeout(Duration.ofSeconds(20))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+    }
+
+    /**
+     * Builds a presigned upload-part URL for one multipart part.
+     *
+     * @param objectKey multipart object key
+     * @param uploadId provider multipart upload id
+     * @param partNumber one-based multipart part number
+     * @return presigned part PUT URL
+     */
+    private String presignedMultipartPartUrl(String objectKey, String uploadId, int partNumber) throws Exception {
+        return minioClient().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                .method(Http.Method.PUT)
+                .bucket(BUCKET)
+                .object(objectKey)
+                .expiry(15 * 60)
+                .extraQueryParams(Map.of(
+                        "uploadId", uploadId,
+                        "partNumber", String.valueOf(partNumber)))
+                .build());
+    }
+
+    /**
+     * Completes a multipart upload using the uploaded part numbers and ETags.
+     *
+     * @param objectKey multipart object key
+     * @param uploadId provider multipart upload id
+     * @param parts ordered parts returned by successful upload-part calls
+     */
+    private void completeMultipartUpload(String objectKey, String uploadId, Part... parts) throws Exception {
+        minioAsyncClient().completeMultipartUpload(CompleteMultipartUploadArgs.builder()
+                .bucket(BUCKET)
+                .object(objectKey)
+                .uploadId(uploadId)
+                .parts(parts)
+                .build())
+                .join();
+    }
+
+    /**
+     * Aborts a multipart upload so uploaded parts do not become a finalized object.
+     *
+     * @param objectKey multipart object key
+     * @param uploadId provider multipart upload id
+     */
+    private void abortMultipartUpload(String objectKey, String uploadId) throws Exception {
+        minioAsyncClient().abortMultipartUpload(AbortMultipartUploadArgs.builder()
+                .bucket(BUCKET)
+                .object(objectKey)
+                .uploadId(uploadId)
+                .build())
+                .join();
+    }
+
+    /**
+     * Returns the ETag header from one successful multipart part response.
+     *
+     * @param response upload-part HTTP response
+     * @return provider-generated ETag header value
+     */
+    private String responseEtag(HttpResponse<Void> response) {
+        return response.headers()
+                .firstValue("etag")
+                .orElseThrow(() -> new IllegalStateException("Multipart upload response did not include ETag"));
+    }
+
+    /**
+     * Builds a byte array filled with one repeated value.
+     *
+     * @param length desired byte count
+     * @param value byte value repeated through the array
+     * @return filled byte array
+     */
+    private byte[] repeatedBytes(int length, byte value) {
+        byte[] bytes = new byte[length];
+        for (int i = 0; i < length; i++) {
+            bytes[i] = value;
+        }
+        return bytes;
+    }
+
+    /**
      * Creates the contract bucket on first use so each test can run independently.
      *
      * @param client client bound to the disposable storage container
@@ -232,6 +422,18 @@ class ObjectStorageContractIntegrationTest {
         if (!exists) {
             client.makeBucket(MakeBucketArgs.builder().bucket(BUCKET).build());
         }
+    }
+
+    /**
+     * Creates an async MinIO client for multipart lifecycle operations against the disposable container.
+     *
+     * @return initialized async client
+     */
+    private MinioAsyncClient minioAsyncClient() {
+        return MinioAsyncClient.builder()
+                .endpoint(endpoint())
+                .credentials(ACCESS_KEY, SECRET_KEY)
+                .build();
     }
 
     /**
