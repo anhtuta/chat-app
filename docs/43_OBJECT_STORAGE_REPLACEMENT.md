@@ -31,20 +31,21 @@ service yet.
 
 ## Recommendation
 
-Use a two-track decision:
+Use this plan:
 
-1. **Local development and CI: pilot RustFS 1.0 behind the standard S3 API.**
+1. **Local development and CI: use RustFS 1.0 behind the standard S3 API.**
    It is the closest operational replacement for the current one-container
    MinIO setup, is Apache-2.0 licensed, supports the required presigned and
    multipart operations, and documents compatibility with MinIO clients.
-2. **Production: prefer a managed S3 service if policy and budget allow it.**
-   AWS S3 has the lowest API-compatibility risk. Cloudflare R2 or Backblaze B2
-   are candidates when media egress cost is more important, after passing the
-   same contract tests.
-3. **If production must be self-hosted: evaluate SeaweedFS first and Garage
-   second.** SeaweedFS has the longer project history and broad S3 coverage;
-   Garage is attractive for a small geo-distributed cluster but uses roughly
-   3x replication and has a smaller S3 feature surface.
+2. **Production: use a managed S3-compatible provider.**
+   The final production choice is still open between **AWS S3** and
+   **Cloudflare R2**. AWS S3 has the lowest API-compatibility risk; R2 is
+   attractive if media egress cost is materially better after validation.
+3. **Self-hosted production is now a fallback path, not the primary plan.**
+   If managed production storage is rejected later, evaluate SeaweedFS first
+   and Garage second. SeaweedFS has the longer project history and broad S3
+   coverage; Garage is attractive for a small geo-distributed cluster but uses
+   roughly 3x replication and has a smaller S3 feature surface.
 
 Do **not** make RustFS the production default solely because it is the easiest
 Docker Compose swap. RustFS reached 1.0 GA only in September 2026, and its
@@ -67,18 +68,68 @@ Suggested production order:
    especially if the application already runs on AWS.
 2. **Cloudflare R2** when users frequently stream chat videos and internet
    egress cost is expected to dominate.
-3. **Backblaze B2** when low storage cost is the priority and its S3 differences
-   pass the application contract suite.
 
 Local development should still use a local S3-compatible container such as
 RustFS. Local and production storage do not need to be the same product if both
 pass the same provider-neutral S3 contract tests.
 
+### Can local and production use different storage?
+
+Yes. This is the preferred path for the current project:
+
+- **Local development and CI:** RustFS
+- **Production:** AWS S3 or Cloudflare R2
+
+This split is safe **if the application code talks only to a provider-neutral
+S3 contract**. The application should not rely on MinIO-specific or
+RustFS-specific APIs outside the storage adapter layer.
+
+Practical implication:
+
+- We can start with RustFS locally **before** choosing production storage.
+- We should still finish the standard S3 implementation early, so production is
+  a configuration and validation choice rather than another storage rewrite.
+
+### How much code change would a later production choice require?
+
+There are two different answers:
+
+1. **If we keep the current MinIO-specific implementation:** choosing AWS S3 or
+   R2 later will require a **meaningful but bounded refactor** in both
+   `chat-app-backend` and `media-processing`.
+2. **If we first finish a provider-neutral S3 adapter:** choosing between AWS
+   S3 and R2 later should be **small**, mostly configuration, validation, and
+   environment setup.
+
+Current code reality:
+
+- The backend already has a useful abstraction in `ObjectStorageProvider`, but
+  the concrete `S3ObjectStorageProvider` is still mostly a placeholder and does
+  not yet implement real presigning, multipart lifecycle, existence checks, or
+  deletion.
+- The active MinIO implementation uses the MinIO Java SDK directly for the
+  multipart and presign flow.
+- The media-processing worker is also still wired to MinIO-specific uploader and
+  downloader implementations.
+
+Recommended engineering path:
+
+1. Keep the product decision open: **RustFS locally, AWS S3 or R2 in
+   production**.
+2. Replace MinIO SDK coupling with **AWS SDK v2 S3 client/presigner-based**
+   adapters in both services.
+3. Treat RustFS, AWS S3, and R2 as configuration targets behind the same
+   contract.
+4. Run the same contract suite against all three before cutover.
+
+If we follow that path, deciding "AWS S3 vs R2" later should not require large
+application changes.
+
 ### Recommendation for the current deployment
 
 Production currently runs on VPS/dedicated hosted servers and serves active
-external users. Managed storage is acceptable for evaluation after comparing
-cost and privacy.
+external users. The plan is to move production media to a managed
+S3-compatible provider after comparing cost and privacy.
 
 For this context:
 
@@ -88,7 +139,8 @@ For this context:
 - Do not replace production MinIO with a single-node RustFS container. That
   would restore image availability but would not improve the single-node
   failure domain.
-- If managed storage is rejected, use a real multi-node self-hosted PoC:
+- If the managed production path is rejected later, use a real multi-node
+  self-hosted PoC:
   SeaweedFS first, Garage second, or RustFS only after its four-node distributed
   topology passes failure testing.
 - Keep the storage region close to both the production VPS and the majority of
@@ -445,12 +497,12 @@ Garage, Ceph, and managed providers substantially safer.
 
 ### Phase 4 - Select the production path
 
-- **Managed allowed:** run the contract suite against AWS S3 and the selected
-  lower-cost alternative; include monthly storage/request/egress estimates.
-- **Self-host required:** run at least a SeaweedFS and Garage PoC. Include node
-  loss, disk loss, restore, rolling upgrade, and capacity expansion.
-- Consider RustFS production only after its intended multi-node topology passes
-  the same tests and an agreed soak period.
+- Run the contract suite against **AWS S3** and **Cloudflare R2**.
+- Compare monthly storage, request, and egress estimates for both.
+- Choose production between S3 and R2 after the contract suite and cost
+  comparison.
+- Keep the self-hosted evaluation as fallback only if managed production
+  storage is rejected later.
 
 ### Phase 5 - Migrate existing objects
 
@@ -481,12 +533,15 @@ Garage, Ceph, and managed providers substantially safer.
 
 - The replacement covers **both local development and production**; MinIO is
   currently used in both environments.
+- The chosen direction is **RustFS for local development/CI** and a
+  **managed S3-compatible provider for production**.
+- The final production provider is still open between **AWS S3** and
+  **Cloudflare R2**.
 - Existing MinIO objects are durable application data and must be migrated.
 - AGPL-3.0 infrastructure is acceptable, so Garage remains eligible.
 - A one-time outage of up to 24 hours is tolerable if necessary.
 - Production runs on VPS/dedicated hosted servers and has active external
   users.
-- Third-party managed storage may be used after cost and privacy comparison.
 - Production media currently occupies approximately 100 GB–1 TB.
 - Three servers are available for a self-hosted production storage cluster.
 - The production VPS is in Asia and most users are in Vietnam/Southeast Asia;
@@ -543,11 +598,13 @@ Minimum production baseline even when advanced DR is deferred:
 - TODO: For the three self-hosting servers, record disks per server, usable
   capacity, network capacity, and whether they are in independent failure
   domains.
-- TODO: Choose the production path only after cost estimation and contract
-  tests: managed S3, or self-hosted SeaweedFS/Garage/RustFS.
+- TODO: Choose the production provider between AWS S3 and Cloudflare R2 after
+  cost estimation and contract tests.
+- TODO: Keep the self-hosted fallback documented in case the managed production
+  path is rejected later.
 
-Until those items are answered, use **RustFS for a reversible local/CI pilot**
-and keep the production choice open.
+Until those items are answered, proceed with **RustFS locally** and keep the
+final production provider open between **AWS S3** and **Cloudflare R2**.
 
 ## Sources
 
