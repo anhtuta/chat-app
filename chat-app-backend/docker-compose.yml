@@ -135,6 +135,55 @@ services:
     profiles:
       - minio-rollback
 
+  # Local Phase 5A migration source, mounted to the old MinIO data directory.
+  minio-migration-source:
+    image: cgr.dev/chainguard/minio@sha256:e7ca559d9f7c0b5f24f5f669bb92f40f3ca88d56273b808bf3a7c116c17d2ffa
+    container_name: chat-app-minio-migration-source
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - ${LOCAL_MINIO_SOURCE_DATA_DIR:-./docker/data/minio}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+    profiles:
+      - local-migration
+
+  # One-shot local copy helper for MinIO -> RustFS migration rehearsal.
+  local-storage-migrator:
+    image: rclone/rclone@sha256:1f497a86a6466395e62a5886613a14b7b18809543566ef9fa35fa1371a7ecc0f
+    entrypoint: ["/bin/sh", "/migration/migrate-minio-to-rustfs.sh"]
+    environment:
+      MINIO_SOURCE_ENDPOINT: http://minio-migration-source:9000
+      MINIO_SOURCE_BUCKET: ${LOCAL_MINIO_SOURCE_BUCKET:-chat-media}
+      MINIO_SOURCE_REGION: us-east-1
+      MINIO_SOURCE_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SOURCE_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
+      RUSTFS_TARGET_ENDPOINT: http://rustfs:9000
+      RUSTFS_TARGET_BUCKET: ${LOCAL_RUSTFS_TARGET_BUCKET:-chat-media}
+      RUSTFS_TARGET_REGION: us-east-1
+      RUSTFS_TARGET_ACCESS_KEY: ${CHAT_MEDIA_S3_ACCESS_KEY:-rustfslocal}
+      RUSTFS_TARGET_SECRET_KEY: ${CHAT_MEDIA_S3_SECRET_KEY:-rustfslocalsecret}
+    volumes:
+      - ./docker/object-storage/migrate-minio-to-rustfs.sh:/migration/migrate-minio-to-rustfs.sh:ro
+    depends_on:
+      minio-migration-source:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      rustfs-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - chat-network
+    profiles:
+      - local-migration
+
   # Spring Boot Application
   # Compose auto-tags the built image as <project-name>-<service-name>. So the image will be chat-app-instance-1
   instance-1:

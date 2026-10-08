@@ -738,7 +738,66 @@ Still remaining in Phase 3:
 - Keep the self-hosted evaluation as fallback only if managed production
   storage is rejected later.
 
-### Phase 5 - Migrate existing objects
+Do **not** skip Phase 4 entirely. The application can start migration
+preparation before the final production choice, but the actual production copy,
+cutover, and rollback plan still need a concrete destination.
+
+### Phase 5A - Start migration preparation now
+
+- Take an inventory by bucket, object count, bytes, and object-key prefix.
+- Record the largest objects, multipart-heavy objects, and representative media
+  samples for validation.
+- Verify current content types, object-key patterns, and any metadata that must
+  survive migration.
+- Prepare the migration tooling and dry-run plan so it can target either AWS S3
+  or Cloudflare R2 once Phase 4 is complete.
+- Define the final validation checklist now: object count, bytes, spot-check
+  downloads, video playback/range checks, and metadata parity.
+
+This phase is safe to start **before** the final production target is chosen.
+
+Current local Phase 5A pilot support:
+
+- `chat-app-backend/docker-compose.yml` now includes:
+  - `minio-migration-source` under the `local-migration` profile, pointed by
+    default at the old local MinIO data directory
+    `chat-app-backend/docker/data/minio`
+  - `local-storage-migrator`, a one-shot `rclone`-based copy helper from MinIO
+    to RustFS
+- `chat-app-backend/Makefile` now includes:
+  - `make storage.migration.up`
+  - `make storage.migrate.local`
+
+Recommended local migration rehearsal:
+
+1. Keep the application pointed at RustFS as the active local backend.
+2. Start the source and target storage services with
+   `make storage.migration.up`.
+3. Copy the current local MinIO bucket into RustFS with
+   `make storage.migrate.local`.
+4. Validate object count, total bytes, sample downloads, and video playback
+   against RustFS.
+5. Keep the MinIO source data available until the RustFS validation passes.
+
+Important local caveat:
+
+- The local migration source defaults to the historical MinIO data path
+  `chat-app-backend/docker/data/minio`.
+- For smoke tests that should not touch real local data, override
+  `LOCAL_MINIO_SOURCE_DATA_DIR` and optionally `LOCAL_MINIO_SOURCE_BUCKET` /
+  `LOCAL_RUSTFS_TARGET_BUCKET` before running the migration helper.
+
+Current local pilot result:
+
+- The helper was smoke-tested first against a temporary MinIO source directory
+  and temporary buckets.
+- After that, the real local MinIO data was copied into RustFS with:
+  - `make storage.migrate.local`
+- Post-copy bucket inventory matched between local MinIO and RustFS:
+  - object count: `88`
+  - total bytes: `607538430`
+
+### Phase 5B - Execute migration after Phase 4 is decided
 
 - Take an inventory by bucket, object count, bytes, and object-key prefix.
 - Copy S3-to-S3 with a resumable tool such as `rclone`; preserve content type
