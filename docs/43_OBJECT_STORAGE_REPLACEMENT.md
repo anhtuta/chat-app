@@ -26,8 +26,9 @@ Changing only the image name is not enough for a durable solution:
 - The replacement must preserve object keys and database references during
   migration.
 
-This document evaluates replacements. It does **not** change the running storage
-service yet.
+This document evaluates replacements and tracks the staged implementation. The
+local-development storage path is now being moved to RustFS, while production
+cutover remains pending.
 
 ## Recommendation
 
@@ -497,10 +498,11 @@ Current Phase 0 bridge:
 Current Phase 1 coverage:
 
 - Added `chat-app-backend/src/test/java/com/hello/chatapp/storage/ObjectStorageContractIntegrationTest`.
-- The suite starts a disposable MinIO-compatible container through the local
-  Docker CLI instead of relying on a long-running developer stack.
+- The suite now starts a disposable RustFS-backed S3-compatible container
+  through the local Docker CLI instead of relying on a long-running developer
+  stack.
 - Verified:
-  - `GET /minio/health/live`
+  - `GET /health`
   - single-part presigned `PUT` upload
   - object metadata visibility through storage `stat`
   - presigned `GET` readback of uploaded bytes
@@ -514,9 +516,10 @@ Current Phase 1 coverage:
 Still remaining in Phase 1:
 
 - browser-origin CORS validation
-  - Attempted against the current Phase 0 bridge image, but bucket CORS
-    configuration returned `501 NotImplemented`, so this check is blocked until
-    local storage moves to an engine with working bucket CORS support.
+  - This was blocked on the Phase 0 bridge image because bucket CORS
+    configuration returned `501 NotImplemented`.
+  - Re-try it against RustFS after local bucket-bootstrap/CORS automation is in
+    place; the test remains skipped for now.
 - restart/interruption scenarios during multipart flows
 - object count and content-hash inventory assertions
 
@@ -544,8 +547,8 @@ Current Phase 2 start:
   - `chat-app-backend/.env.example`
   - `chat-app-backend/.env.local.example`
 - Added `chat-app-backend/src/test/java/com/hello/chatapp/storage/S3ObjectStorageProviderIntegrationTest.java`
-  to verify the real backend S3 provider against the disposable S3-compatible
-  container.
+  to verify the real backend S3 provider against the disposable RustFS-backed
+  S3-compatible container.
 - Verified locally with:
   - `./mvnw -Dtest=S3ObjectStorageProviderIntegrationTest,MessageResponseMapperTest,ObjectStorageProviderRegistryTest test`
 
@@ -565,6 +568,34 @@ Still remaining in Phase 2:
 - Exercise single-part images and multipart videos end to end.
 - Keep the temporary MinIO Compose profile available for one release as a
   rollback comparison.
+
+Current Phase 3 progress:
+
+- `chat-app-backend/docker-compose.yml` now defaults local object storage to:
+  - `rustfs/rustfs@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c`
+  - non-default local credentials
+  - persistent data in `chat-app-backend/docker/data/rustfs`
+  - health checks on `GET /health`
+- Local backend instances now default to the standard S3 provider against
+  `http://rustfs:9000` with path-style access enabled.
+- The previous bridge image remains available as an explicit local
+  `minio-rollback` Compose profile for short-term rollback comparison.
+- Both executable backend suites now run against a disposable RustFS-backed
+  container:
+  - `./mvnw -Dtest=ObjectStorageContractIntegrationTest,S3ObjectStorageProviderIntegrationTest test`
+  - result: passing locally with `10` tests green and `1` intentionally skipped
+    CORS case
+- `docker compose -f docker-compose.yml config` validates the updated local
+  stack.
+
+Still remaining in Phase 3:
+
+- add local bucket-bootstrap automation for browser-upload CORS rules
+- refresh existing developer `.env` / `.env.local` files if they were copied
+  before the RustFS switch, because old MinIO-oriented values may still be
+  present outside the checked-in examples
+- run a fuller local browser upload check after the CORS bootstrap step is in
+  place
 
 ### Phase 4 - Select the production path
 

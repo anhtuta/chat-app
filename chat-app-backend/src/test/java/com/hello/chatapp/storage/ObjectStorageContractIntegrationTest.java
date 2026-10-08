@@ -41,17 +41,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Exercises the first executable object-storage contract slice against a disposable
- * MinIO-compatible container.
+ * S3-compatible container.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ObjectStorageContractIntegrationTest {
 
-    private static final String ACCESS_KEY = "minioadmin";
-    private static final String SECRET_KEY = "minioadmin";
+    private static final String ACCESS_KEY = "rustfslocal";
+    private static final String SECRET_KEY = "rustfslocalsecret";
     private static final String BUCKET = "chat-media";
     private static final String CONTAINER_NAME = "chat-app-storage-contract-test";
-    private static final String BRIDGE_IMAGE =
-            "cgr.dev/chainguard/minio@sha256:e7ca559d9f7c0b5f24f5f669bb92f40f3ca88d56273b808bf3a7c116c17d2ffa";
+    private static final String STORAGE_IMAGE =
+            "rustfs/rustfs@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c";
     private static final Logger logger = LoggerFactory.getLogger(ObjectStorageContractIntegrationTest.class);
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
@@ -59,7 +59,7 @@ class ObjectStorageContractIntegrationTest {
     private int consolePort;
 
     /**
-     * Starts a disposable MinIO-compatible container through the local Docker CLI and
+     * Starts a disposable S3-compatible container through the local Docker CLI and
      * waits for the S3 health endpoint used by the application.
      */
     @BeforeAll
@@ -70,10 +70,13 @@ class ObjectStorageContractIntegrationTest {
                 "--name", CONTAINER_NAME,
                 "-p", "127.0.0.1::9000",
                 "-p", "127.0.0.1::9001",
-                "-e", "MINIO_ROOT_USER=" + ACCESS_KEY,
-                "-e", "MINIO_ROOT_PASSWORD=" + SECRET_KEY,
-                BRIDGE_IMAGE,
-                "server", "/data", "--console-address", ":9001"));
+                "-e", "RUSTFS_ACCESS_KEY=" + ACCESS_KEY,
+                "-e", "RUSTFS_SECRET_KEY=" + SECRET_KEY,
+                "-e", "RUSTFS_ADDRESS=:9000",
+                "-e", "RUSTFS_CONSOLE_ADDRESS=:9001",
+                "-e", "RUSTFS_CONSOLE_ENABLE=true",
+                STORAGE_IMAGE,
+                "/data"));
         s3Port = resolveMappedPort("9000/tcp");
         consolePort = resolveMappedPort("9001/tcp");
         logger.info("Started disposable storage container {} with S3 endpoint {} and console http://127.0.0.1:{}",
@@ -90,13 +93,13 @@ class ObjectStorageContractIntegrationTest {
     }
 
     /**
-     * Verifies the disposable container exposes the same MinIO-style liveness endpoint
+     * Verifies the disposable container exposes the same liveness endpoint
      * used by local Compose health checks.
      */
     @Test
     void healthEndpoint_returnsOk() throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint() + "/minio/health/live"))
+                .uri(URI.create(endpoint() + "/health"))
                 .GET()
                 .timeout(Duration.ofSeconds(10))
                 .build();
@@ -574,7 +577,7 @@ class ObjectStorageContractIntegrationTest {
         Instant deadline = Instant.now().plusSeconds(30);
         while (Instant.now().isBefore(deadline)) {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint() + "/minio/health/live"))
+                    .uri(URI.create(endpoint() + "/health"))
                     .GET()
                     .timeout(Duration.ofSeconds(3))
                     .build();

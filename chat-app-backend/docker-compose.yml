@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # PostgreSQL Database
   postgres:
@@ -63,7 +61,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -qO- \"http://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@127.0.0.1:15672/api/aliveness-test/%2F\" | grep -q '\"status\":\"ok\"'",
+          'wget -qO- "http://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@127.0.0.1:15672/api/aliveness-test/%2F" | grep -q ''"status":"ok"''',
         ]
       interval: 30s
       timeout: 5s
@@ -72,22 +70,40 @@ services:
     networks:
       - chat-network
 
-  # MinIO (local object storage for media uploads)
-  minio:
-    # Phase 0 bridge: pullable MinIO-compatible image pinned by immutable digest.
-    # Quay historical images now return 401, so local bootstrap uses a short-lived bridge image
-    # until Phase 3 moves local development to RustFS.
+  # RustFS (local object storage for media uploads)
+  rustfs:
+    image: rustfs/rustfs@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    container_name: chat-app-rustfs
+    command: /data
+    environment:
+      RUSTFS_ACCESS_KEY: ${CHAT_MEDIA_S3_ACCESS_KEY:-rustfslocal}
+      RUSTFS_SECRET_KEY: ${CHAT_MEDIA_S3_SECRET_KEY:-rustfslocalsecret}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    # ports:
+    #   - "9000:9000"
+    #   - "9001:9001"
+    volumes:
+      - ./docker/data/rustfs:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  # Temporary Phase 3 rollback path for local storage comparison.
+  minio-rollback:
     image: cgr.dev/chainguard/minio@sha256:e7ca559d9f7c0b5f24f5f669bb92f40f3ca88d56273b808bf3a7c116c17d2ffa
-    container_name: chat-app-minio
+    container_name: chat-app-minio-rollback
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
-      - ./docker/data/minio:/data
+      - ./docker/data/minio-rollback:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -95,6 +111,8 @@ services:
       retries: 5
     networks:
       - chat-network
+    profiles:
+      - minio-rollback
 
   # Spring Boot Application
   # Compose auto-tags the built image as <project-name>-<service-name>. So the image will be chat-app-instance-1
@@ -119,12 +137,13 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
-      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
-      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
-      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
+      CHAT_MEDIA_PROVIDER: S3
+      CHAT_MEDIA_S3_ENDPOINT: http://rustfs:9000
+      CHAT_MEDIA_S3_ACCESS_KEY: ${CHAT_MEDIA_S3_ACCESS_KEY:-rustfslocal}
+      CHAT_MEDIA_S3_SECRET_KEY: ${CHAT_MEDIA_S3_SECRET_KEY:-rustfslocalsecret}
+      CHAT_MEDIA_S3_BUCKET: chat-media
+      CHAT_MEDIA_S3_REGION: us-east-1
+      CHAT_MEDIA_S3_PATH_STYLE_ACCESS: "true"
       MEDIA_PROCESSING_ENABLED: ${MEDIA_PROCESSING_ENABLED:-false}
       MEDIA_PROCESSING_EXCHANGE: ${MEDIA_PROCESSING_EXCHANGE:-media.processing}
       MEDIA_PROCESSING_QUEUE: ${MEDIA_PROCESSING_QUEUE:-media.processing.jobs}
@@ -147,7 +166,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     networks:
       - chat-network
@@ -175,12 +194,13 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
-      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
-      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
-      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
+      CHAT_MEDIA_PROVIDER: S3
+      CHAT_MEDIA_S3_ENDPOINT: http://rustfs:9000
+      CHAT_MEDIA_S3_ACCESS_KEY: ${CHAT_MEDIA_S3_ACCESS_KEY:-rustfslocal}
+      CHAT_MEDIA_S3_SECRET_KEY: ${CHAT_MEDIA_S3_SECRET_KEY:-rustfslocalsecret}
+      CHAT_MEDIA_S3_BUCKET: chat-media
+      CHAT_MEDIA_S3_REGION: us-east-1
+      CHAT_MEDIA_S3_PATH_STYLE_ACCESS: "true"
       MEDIA_PROCESSING_ENABLED: ${MEDIA_PROCESSING_ENABLED:-false}
       MEDIA_PROCESSING_EXCHANGE: ${MEDIA_PROCESSING_EXCHANGE:-media.processing}
       MEDIA_PROCESSING_QUEUE: ${MEDIA_PROCESSING_QUEUE:-media.processing.jobs}
@@ -203,7 +223,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     networks:
       - chat-network
@@ -233,12 +253,13 @@ services:
       SPRING_RABBITMQ_PORT: 5672
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-      CHAT_MEDIA_PROVIDER: ${CHAT_MEDIA_PROVIDER:-MINIO}
-      CHAT_MEDIA_MINIO_ENDPOINT: ${CHAT_MEDIA_MINIO_ENDPOINT:-http://minio:9000}
-      CHAT_MEDIA_MINIO_ACCESS_KEY: ${CHAT_MEDIA_MINIO_ACCESS_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_SECRET_KEY: ${CHAT_MEDIA_MINIO_SECRET_KEY:-minioadmin}
-      CHAT_MEDIA_MINIO_BUCKET: ${CHAT_MEDIA_MINIO_BUCKET:-chat-media}
-      CHAT_MEDIA_MINIO_REGION: ${CHAT_MEDIA_MINIO_REGION:-us-east-1}
+      CHAT_MEDIA_PROVIDER: S3
+      CHAT_MEDIA_S3_ENDPOINT: http://rustfs:9000
+      CHAT_MEDIA_S3_ACCESS_KEY: ${CHAT_MEDIA_S3_ACCESS_KEY:-rustfslocal}
+      CHAT_MEDIA_S3_SECRET_KEY: ${CHAT_MEDIA_S3_SECRET_KEY:-rustfslocalsecret}
+      CHAT_MEDIA_S3_BUCKET: chat-media
+      CHAT_MEDIA_S3_REGION: us-east-1
+      CHAT_MEDIA_S3_PATH_STYLE_ACCESS: "true"
       MEDIA_PROCESSING_ENABLED: ${MEDIA_PROCESSING_ENABLED:-false}
       MEDIA_PROCESSING_EXCHANGE: ${MEDIA_PROCESSING_EXCHANGE:-media.processing}
       MEDIA_PROCESSING_QUEUE: ${MEDIA_PROCESSING_QUEUE:-media.processing.jobs}
@@ -261,7 +282,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     networks:
       - chat-network
