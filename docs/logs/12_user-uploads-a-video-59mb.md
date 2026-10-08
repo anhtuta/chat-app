@@ -122,6 +122,19 @@ Response (with 4 presigned URLs for the first 4 parts):
 
 3. Browser uploads the video to the presigned URLs for the parts in the multipart upload session (directly to object storage):
 
+Note on CORS:
+
+- The documented `curl` commands below show the main `PUT` requests, but `curl`
+  itself does not enforce browser CORS.
+- Because the page origin is `http://localhost:9010` while the presigned object
+  URL targets `http://localhost:9000`, a real browser-origin upload with
+  `Content-Type: video/mp4` should also involve an `OPTIONS` preflight that is
+  not shown in this condensed log.
+- If this flow worked against the old local MinIO stack, the most likely reason
+  is that the bucket already had CORS configured in persisted local state or
+  had been configured manually outside the repo. The absence of a checked-in
+  config file here does not prove that bucket CORS was unnecessary.
+
 First part:
 
 ```sh

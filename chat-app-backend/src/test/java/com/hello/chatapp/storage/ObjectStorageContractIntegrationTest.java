@@ -18,7 +18,6 @@ import io.minio.messages.CORSConfiguration;
 import io.minio.messages.Part;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.slf4j.Logger;
@@ -189,7 +188,6 @@ class ObjectStorageContractIntegrationTest {
      * Verifies browser-style cross-origin requests succeed only after bucket CORS rules are configured.
      */
     @Test
-    @Disabled("Current Phase 0 bridge image returns 501 NotImplemented for bucket CORS configuration; re-enable after local storage moves to an engine with CORS support.")
     void browserOriginCors_allowsPreflightPutAndCrossOriginGet() throws Exception {
         String origin = "http://localhost:3000";
         String objectKey = "contract/" + UUID.randomUUID() + "/cors.txt";

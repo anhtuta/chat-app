@@ -126,6 +126,32 @@ Recommended engineering path:
 If we follow that path, deciding "AWS S3 vs R2" later should not require large
 application changes.
 
+### Why bucket CORS and bootstrap are now explicit
+
+The application has two different CORS boundaries:
+
+- **browser -> backend** CORS, configured in Spring Boot;
+- **browser -> object storage** CORS, enforced by the bucket/object-store
+  endpoint when the frontend uses presigned URLs.
+
+For media upload and direct readback, the browser talks to object storage
+directly. That means bucket CORS is required even if backend CORS is already
+correct.
+
+Historically, local MinIO development could appear to work without explicit
+automation because:
+
+- bucket state can persist across container restarts via the local data volume;
+- a developer may have manually configured the bucket once and then forgotten
+  about it;
+- some flows do not exercise the browser-origin upload path on a fresh storage
+  volume.
+
+Phase 3 makes bucket creation and local CORS setup explicit so a clean machine,
+fresh Docker volume, and CI-like environment behave the same way. This is not a
+RustFS-only requirement; it is a property of the application's direct browser
+upload design.
+
 ### Recommendation for the current deployment
 
 Production currently runs on VPS/dedicated hosted servers and serves active
@@ -504,6 +530,7 @@ Current Phase 1 coverage:
 - Verified:
   - `GET /health`
   - single-part presigned `PUT` upload
+  - browser-origin CORS preflight plus cross-origin `PUT`/`GET` headers
   - object metadata visibility through storage `stat`
   - presigned `GET` readback of uploaded bytes
   - presigned `GET` with HTTP `Range` support returning `206 Partial Content`
@@ -515,11 +542,6 @@ Current Phase 1 coverage:
 
 Still remaining in Phase 1:
 
-- browser-origin CORS validation
-  - This was blocked on the Phase 0 bridge image because bucket CORS
-    configuration returned `501 NotImplemented`.
-  - Re-try it against RustFS after local bucket-bootstrap/CORS automation is in
-    place; the test remains skipped for now.
 - restart/interruption scenarios during multipart flows
 - object count and content-hash inventory assertions
 
@@ -578,24 +600,29 @@ Current Phase 3 progress:
   - health checks on `GET /health`
 - Local backend instances now default to the standard S3 provider against
   `http://rustfs:9000` with path-style access enabled.
+- Added a one-shot local `rustfs-bootstrap` Compose service that:
+  - creates the `chat-media` bucket if missing
+  - applies the local RustFS CORS policy for browser uploads from
+    `http://localhost:3000` and `http://127.0.0.1:3000`
+  - verifies the applied bucket CORS policy before app instances start
 - The previous bridge image remains available as an explicit local
   `minio-rollback` Compose profile for short-term rollback comparison.
 - Both executable backend suites now run against a disposable RustFS-backed
   container:
   - `./mvnw -Dtest=ObjectStorageContractIntegrationTest,S3ObjectStorageProviderIntegrationTest test`
-  - result: passing locally with `10` tests green and `1` intentionally skipped
-    CORS case
+  - result: passing locally with the browser-origin CORS case enabled
 - `docker compose -f docker-compose.yml config` validates the updated local
   stack.
+- Local bootstrap smoke test now succeeds with:
+  - `docker compose -f docker-compose.yml up -d rustfs`
+  - `docker compose -f docker-compose.yml run --rm --no-deps rustfs-bootstrap`
 
 Still remaining in Phase 3:
 
-- add local bucket-bootstrap automation for browser-upload CORS rules
 - refresh existing developer `.env` / `.env.local` files if they were copied
   before the RustFS switch, because old MinIO-oriented values may still be
   present outside the checked-in examples
-- run a fuller local browser upload check after the CORS bootstrap step is in
-  place
+- run a fuller local browser upload check against the Compose-backed stack
 
 ### Phase 4 - Select the production path
 
