@@ -173,6 +173,111 @@ For this context:
 - Keep the storage region close to both the production VPS and the majority of
   users to control latency and network cost.
 
+### Exact production CORS examples
+
+These examples are for the current application design where the browser uploads
+media directly to object storage via presigned URLs and later reads media back
+through presigned `GET` URLs.
+
+Use exact production frontend origins. Do **not** leave `localhost` origins in
+production bucket policy.
+
+Recommended baseline CORS shape for this app:
+
+- Allowed origins: exact frontend origins only
+- Allowed methods: `GET`, `HEAD`, `PUT`
+- Allowed headers: `*` for compatibility with browser upload variations
+- Exposed headers: `ETag`, `Accept-Ranges`, `Content-Length`, `Content-Range`
+- Max age: `3600`
+
+Example CORS JSON:
+
+```json
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": [
+        "https://chat.example.com",
+        "https://www.chat.example.com"
+      ],
+      "AllowedMethods": [
+        "GET",
+        "HEAD",
+        "PUT"
+      ],
+      "AllowedHeaders": [
+        "*"
+      ],
+      "ExposeHeaders": [
+        "ETag",
+        "Accept-Ranges",
+        "Content-Length",
+        "Content-Range"
+      ],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
+```
+
+#### AWS S3 example
+
+Save the JSON above as `cors.json`, then apply it with AWS CLI:
+
+```sh
+aws s3api put-bucket-cors \
+  --bucket your-production-media-bucket \
+  --cors-configuration file://cors.json
+```
+
+Read it back to confirm:
+
+```sh
+aws s3api get-bucket-cors \
+  --bucket your-production-media-bucket
+```
+
+Notes for AWS S3:
+
+- Prefer provisioning the bucket and CORS in Terraform or CloudFormation rather
+  than from application startup.
+- Keep the bucket private; presigned URLs remain the browser access path.
+- If CloudFront is added later, keep the bucket CORS aligned with the browser
+  origin that actually fetches the object URLs.
+
+#### Cloudflare R2 example
+
+R2 uses the same S3-style bucket CORS shape. Save the same JSON as `cors.json`,
+then apply it through the S3-compatible endpoint:
+
+```sh
+aws s3api put-bucket-cors \
+  --endpoint-url https://<account-id>.r2.cloudflarestorage.com \
+  --region auto \
+  --bucket your-production-media-bucket \
+  --cors-configuration file://cors.json
+```
+
+Read it back to confirm:
+
+```sh
+aws s3api get-bucket-cors \
+  --endpoint-url https://<account-id>.r2.cloudflarestorage.com \
+  --region auto \
+  --bucket your-production-media-bucket
+```
+
+Notes for Cloudflare R2:
+
+- Use the real R2 API token or S3-compatible access keys with least privilege.
+- Keep the bucket private; presigned URLs remain the intended browser access
+  path.
+- If a custom domain or Cloudflare-managed public hostname is added later,
+  allow the frontend origin, not the bucket hostname itself.
+
+In both providers, create the bucket first and treat CORS as infrastructure
+configuration, not as a per-deploy side effect from the application stack.
+
 Current sizing/topology information further narrows the choice:
 
 - Production MinIO currently stores approximately **100 GB–1 TB**.
