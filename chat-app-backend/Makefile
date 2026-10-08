@@ -3,6 +3,7 @@
 .PHONY: stop restart restart.be2 logs clean status check.env check.env.local
 .PHONY: db.migrate db.info db.clean db.repair
 .PHONY: test.be test.be.ut test.be.it test.fe test.e2e
+.PHONY: storage.migration.up storage.migrate.local
 
 .DEFAULT_GOAL := help
 
@@ -42,6 +43,8 @@ help:
 	@echo "  make logs        - View application logs (follow mode)"
 	@echo "  make status      - Show service status"
 	@echo "  make clean       - Remove stopped containers and volumes"
+	@echo "  make storage.migration.up    - Start local MinIO source + RustFS target for migration rehearsal"
+	@echo "  make storage.migrate.local   - Copy local MinIO objects into RustFS with the migration helper"
 	@echo ""
 	@echo "Database Migration Commands:"
 	@echo "  make db.migrate  - Run Flyway migrations"
@@ -77,21 +80,21 @@ start.all: check.env
 
 # Minimal infrastructure services
 upd: check.env
-	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ) for IDE debugging..."
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, RustFS) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d postgres redis rabbitmq minio
+	docker-compose up -d postgres redis rabbitmq rustfs rustfs-bootstrap
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 upd.full: check.env
-	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, Minio) for IDE debugging..."
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, RustFS) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d postgres redis rabbitmq prometheus grafana minio instance-2
+	docker-compose up -d postgres redis rabbitmq prometheus grafana rustfs rustfs-bootstrap instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 upbd: check.env
-	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, Minio) for IDE debugging..."
+	@echo "Starting infrastructure services (Postgres, Redis, RabbitMQ, Prometheus, Grafana, RustFS) for IDE debugging..."
 	@echo "Bringing up infrastructure containers without chat instances..."
-	docker-compose up -d --build postgres redis rabbitmq prometheus grafana minio instance-2
+	docker-compose up -d --build postgres redis rabbitmq prometheus grafana rustfs rustfs-bootstrap instance-2
 	@echo "Infra ready. Run the chat application from your IDE against postgres:5432, redis:6379, rabbitmq:5672."
 
 upbd.instance-2: check.env
@@ -147,6 +150,17 @@ run.fe:
 run.bot:
 	@echo "🚀 Running Bot simulator..."
 	cd ../bot-simulator && ./mvnw spring-boot:run
+
+storage.migration.up: check.env
+	@echo "🚚 Starting local MinIO source and RustFS target for migration rehearsal..."
+	docker compose --profile local-migration up -d minio-migration-source rustfs rustfs-bootstrap
+	@echo "✅ Source and target storage are ready for local migration."
+
+storage.migrate.local: check.env
+	@echo "🚚 Copying local MinIO bucket data into RustFS..."
+	docker compose --profile local-migration up -d minio-migration-source rustfs rustfs-bootstrap
+	docker compose --profile local-migration run --rm --no-deps local-storage-migrator
+	@echo "✅ Local migration helper finished."
 
 test.e2e:
 	@echo "🚀 Running E2E tests..."

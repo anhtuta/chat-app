@@ -111,6 +111,8 @@ chat:
       region: ${CHAT_MEDIA_MINIO_REGION:us-east-1}
       path-style-access: ${CHAT_MEDIA_MINIO_PATH_STYLE_ACCESS:true}
     s3:
+      access-key: ${CHAT_MEDIA_S3_ACCESS_KEY:test-access-key}
+      secret-key: ${CHAT_MEDIA_S3_SECRET_KEY:test-secret-key}
       bucket: ${CHAT_MEDIA_S3_BUCKET:chat-media}
       region: ${CHAT_MEDIA_S3_REGION:ap-southeast-1}
       endpoint: ${CHAT_MEDIA_S3_ENDPOINT:}
