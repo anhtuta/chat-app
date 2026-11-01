@@ -570,10 +570,104 @@ Do not bind substantial load tests to the default backend Maven lifecycle.
   distribution, SLOs, environment, and test ownership.
 - Record the hardware and dependency topology of the baseline environment.
 
-### Phase 1 - Standalone Gatling scaffold and HTTP smoke
+For a first performance-testing project, these terms usually mean:
 
-- Create the Java/Maven project, configuration model, login flow, feeders,
-  smoke profile, assertions, README, and report-artifact instructions.
+- **Expected concurrency**
+  - Meaning: how many users are connected or active at the same time.
+  - Why it matters: this drives WebSocket/session pressure, memory usage, and
+    fanout cost.
+  - Starter default:
+    - smoke: `5-10` connected users;
+    - baseline: `25-50` connected users;
+    - first load target: `100` connected users;
+    - first stress target: `250` connected users.
+- **Arrival rate**
+  - Meaning: how many new user journeys start per second, such as logins or
+    page-entry flows.
+  - Why it matters: this is the right model for most HTTP traffic because new
+    users keep arriving even when the app slows down.
+  - Starter default:
+    - smoke: `1 user every 2-5 seconds`;
+    - baseline: `2-5 users/second`;
+    - first stress ramp: `10-20 users/second`.
+- **Message rate**
+  - Meaning: how many chat messages the system receives per second.
+  - Why it matters: this is the core write pressure for the chat product and
+    strongly affects database, broker, and fanout behavior.
+  - Starter default:
+    - baseline: `5 messages/second` total;
+    - first load target: `20 messages/second` total;
+    - first stress target: `50 messages/second` total.
+- **Group-size distribution**
+  - Meaning: how many members are typically in a group, and what the mix of
+    small, medium, and large groups looks like.
+  - Why it matters: fanout cost for one message depends heavily on how many
+    subscribers receive it.
+  - Starter default:
+    - small: `5-10` members;
+    - medium: `25-50` members;
+    - large: `100-200` members.
+- **SLOs**
+  - Meaning: service-level objectives, or the latency/error targets that the
+    system should meet under a defined workload.
+  - Why it matters: without these, the team can generate load but cannot say
+    whether the result is acceptable.
+  - Starter default:
+    - read APIs: p95 under `300-500 ms`, p99 under `800-1000 ms`;
+    - login/bootstrap journey: p95 under `2 seconds`;
+    - WebSocket connect: p95 under `2-3 seconds`;
+    - message send-to-receive: p95 under `1 second`;
+    - failed requests: under `1%` in baseline/load tests.
+- **Environment**
+  - Meaning: where the tests run and what infrastructure shape they hit.
+  - Why it matters: laptop results are useful for learning, but not for
+    trustworthy capacity numbers.
+  - Starter default:
+    - local machine: script development and smoke only;
+    - one stable shared environment: baseline and regression tracking;
+    - manually approved environment: stress and soak.
+- **Test ownership**
+  - Meaning: who updates scripts, runs tests, watches dashboards, and signs off
+    on results.
+  - Why it matters: performance suites die quickly when everyone assumes
+    someone else owns them.
+  - Starter default:
+    - backend engineer owns the scripts;
+    - one teammate owns dashboards/report storage;
+    - product/backend lead approves thresholds and test scope.
+- **Hardware and dependency topology**
+  - Meaning: the CPU, memory, instance count, and dependency layout for the app,
+    PostgreSQL, Redis, RabbitMQ, and load generator.
+  - Why it matters: a result is hard to compare if the environment shape keeps
+    changing.
+  - Starter default:
+    - write down app instance count;
+    - CPU and RAM for each service;
+    - database/Redis/RabbitMQ host placement;
+    - whether Gatling runs on the same machine or a separate one.
+
+These starter defaults are not promises about production capacity. They are
+safe first assumptions so the team can learn the tooling, validate the
+scenarios, and establish a baseline before choosing harder targets.
+
+### Phase 1 - Standalone Gatling scaffold and HTTP smoke **Done**
+
+- What changed:
+  - added a standalone `gatling/` Maven project at the repository root;
+  - added a small HTTP smoke simulation for login, session check, group list,
+    and one group-history request;
+  - added a central environment/config helper;
+  - added a sample feeder file with seeded users;
+  - added a starter `README.md` and `gatling.conf`.
+- Why it changed:
+  - this gives the team a concrete project shape to inspect before adding more
+    workload types;
+  - it keeps performance-test code separate from `chat-app-backend`;
+  - it provides a minimal runnable baseline for later Phase 2 scenarios.
+- Rollout, migration, or backward-compatibility notes:
+  - the current scaffold is HTTP-only;
+  - SockJS/STOMP simulations are still deferred to the feasibility phase;
+  - Maven Wrapper can be added later if the team wants wrapper-based commands.
 
 ### Phase 2 - HTTP baseline and load scenarios
 
@@ -628,6 +722,115 @@ block meaningful load levels and pass/fail thresholds:
 
 TODO: Answer these questions with the product owner, backend owner, and
 operations owner before assigning numeric targets.
+
+### Suggested Default Starter Answers
+
+If the team has no production numbers yet, use the following defaults as a
+temporary starting point for the first Gatling project:
+
+1. **Expected average and peak concurrently connected users**
+   - Default starter answer:
+     - average: `25` connected users;
+     - peak: `100` connected users.
+   - Default options:
+     - `Small team / learning phase`: average `10`, peak `25`
+     - `Recommended starter`: average `25`, peak `100`
+     - `Aggressive early stretch`: average `100`, peak `250`
+   - Recommendation: begin with `Recommended starter`.
+
+2. **Expected average and peak messages per second**
+   - Default starter answer:
+     - average: `5 messages/second`;
+     - peak: `20 messages/second`.
+   - Default options:
+     - `Light chat traffic`: average `2`, peak `10`
+     - `Recommended starter`: average `5`, peak `20`
+     - `Aggressive early stretch`: average `20`, peak `50`
+   - Recommendation: begin with `Recommended starter`.
+
+3. **Definition of small, medium, and large groups**
+   - Default starter answer:
+     - small: `5-10` members;
+     - medium: `25-50` members;
+     - large: `100-200` members.
+   - Default options:
+     - `Conservative`: small `5`, medium `20`, large `50`
+     - `Recommended starter`: small `10`, medium `50`, large `200`
+     - `Fanout-heavy`: small `20`, medium `100`, large `500`
+   - Recommendation: begin with `Recommended starter`.
+
+4. **Latency percentiles and error-rate targets**
+   - Default starter answer:
+     - read APIs: p95 `< 500 ms`, p99 `< 1 s`;
+     - login/bootstrap: p95 `< 2 s`;
+     - WebSocket connect: p95 `< 3 s`;
+     - message send-to-receive: p95 `< 1 s`;
+     - failed requests: `< 1%`.
+   - Default options:
+     - `Loose starter`: p95 `< 1 s` for reads, `< 2%` failures
+     - `Recommended starter`: values above
+     - `Strict stretch`: p95 `< 300 ms` for reads, `< 0.5%` failures
+   - Recommendation: begin with `Recommended starter`.
+
+5. **Dedicated staging/performance environment**
+   - Default starter answer:
+     - yes, if available, use one stable shared environment for baseline runs;
+     - if not available, use local only for smoke and learning.
+   - Default options:
+     - `Local only`: fastest to begin, lowest confidence
+     - `Recommended starter`: one shared non-production environment
+     - `Advanced`: production-like dedicated performance environment
+   - Recommendation: begin with `Recommended starter` when possible.
+
+6. **What should CI run?**
+   - Default starter answer:
+     - pull requests run smoke only;
+     - scheduled job runs the baseline scenario.
+   - Default options:
+     - `PR smoke only`
+     - `Recommended starter`: PR smoke + nightly baseline
+     - `Advanced`: PR smoke + nightly baseline + weekly stress
+   - Recommendation: begin with `Recommended starter`.
+
+7. **How long should the soak test run?**
+   - Default starter answer: start with `1 hour`.
+   - Default options:
+     - `Quick soak`: `1 hour`
+     - `Recommended starter`: `4 hours`
+     - `Deep soak`: `8-12 hours`
+   - Recommendation: start with `1 hour` while building confidence, then move
+     to `4 hours`.
+
+8. **Community Edition or Enterprise?**
+   - Default starter answer: use **Gatling Community Edition** first.
+   - Default options:
+     - `Community only`: local/single-generator usage, static reports
+     - `Recommended starter`: Community now, re-evaluate later
+     - `Enterprise`: when distributed load and centralized history are needed
+   - Recommendation: begin with `Community now, re-evaluate later`.
+
+9. **Are media upload/download workloads in scope?**
+   - Default starter answer:
+     - phase 1: **no** for large media bytes;
+     - phase 1 may include only media metadata/control-plane APIs.
+   - Default options:
+     - `Out of scope initially`
+     - `Recommended starter`: metadata APIs only
+     - `Full scope later`: include real upload/download traffic
+   - Recommendation: begin with `Recommended starter`.
+
+10. **Is SockJS still required, or will native WebSocket replace it soon?**
+    - Default starter answer: assume **SockJS is still required** until the
+      frontend is officially migrated.
+    - Default options:
+      - `Current reality`: SockJS remains in scope
+      - `Recommended starter`: test the current SockJS/STOMP path first
+      - `Future migration path`: native WebSocket after a product decision
+    - Recommendation: begin with `Recommended starter`.
+
+TODO: Replace these starter answers with real product and operations data once
+the team has traffic expectations, a stable test environment, and early run
+history.
 
 ## Decision Criteria After the SockJS/STOMP Proof of Concept
 
